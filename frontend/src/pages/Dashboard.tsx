@@ -67,7 +67,7 @@ export default function Dashboard() {
 
         {/* Market Index Cards */}
         <Grid container spacing={2} sx={{ mb: 2 }}>
-          <Grid item xs={12} md={4}>
+          <Grid size={{ xs: 12, md: 4 }}>
             <Paper sx={{ p: 2, textAlign: 'center' }}>
               <Typography variant="body2" sx={{ color: '#666', textTransform: 'uppercase', fontSize: '0.65rem' }}>
                 Market Index (Avg Price)
@@ -77,7 +77,7 @@ export default function Dashboard() {
               </Typography>
             </Paper>
           </Grid>
-          <Grid item xs={12} md={4}>
+          <Grid size={{ xs: 12, md: 4 }}>
             <Paper sx={{ p: 2, textAlign: 'center' }}>
               <Typography variant="body2" sx={{ color: '#666', textTransform: 'uppercase', fontSize: '0.65rem' }}>
                 Total Market Cap
@@ -87,7 +87,7 @@ export default function Dashboard() {
               </Typography>
             </Paper>
           </Grid>
-          <Grid item xs={12} md={4}>
+          <Grid size={{ xs: 12, md: 4 }}>
             <Paper sx={{ p: 2, textAlign: 'center' }}>
               <Typography variant="body2" sx={{ color: '#666', textTransform: 'uppercase', fontSize: '0.65rem' }}>
                 Cards Tracked

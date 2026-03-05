@@ -32,7 +32,7 @@ export default function CardDetail() {
     <Box sx={{ p: 2 }}>
       <Grid container spacing={2}>
         {/* Left: Card Image + Info */}
-        <Grid item xs={12} md={3}>
+        <Grid size={{ xs: 12, md: 3 }}>
           <Paper sx={{ p: 2, textAlign: 'center' }}>
             <img
               src={card.image_large || card.image_small}
@@ -100,7 +100,7 @@ export default function CardDetail() {
         </Grid>
 
         {/* Right: Charts + Analysis */}
-        <Grid item xs={12} md={9}>
+        <Grid size={{ xs: 12, md: 9 }}>
           <Paper sx={{ p: 2, mb: 2 }}>
             <Typography variant="h3" sx={{ mb: 1, color: '#00bcd4' }}>
               PRICE HISTORY

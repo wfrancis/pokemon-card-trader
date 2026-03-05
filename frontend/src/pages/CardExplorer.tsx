@@ -96,7 +96,7 @@ export default function CardExplorer() {
       {/* Card Grid */}
       <Grid container spacing={1.5}>
         {cards.map(card => (
-          <Grid item xs={6} sm={4} md={3} lg={2} key={card.id}>
+          <Grid size={{ xs: 6, sm: 4, md: 3, lg: 2 }} key={card.id}>
             <Paper
               sx={{
                 p: 1,

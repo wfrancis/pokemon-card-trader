@@ -32,12 +32,14 @@ async def sync_cards(db: Session, page: int = 1, page_size: int = 250) -> dict:
     """Sync cards from Pokemon TCG API. Returns stats about the sync."""
     stats = {"created": 0, "updated": 0, "prices_recorded": 0, "errors": 0, "page": page}
 
-    async with httpx.AsyncClient(timeout=60.0) as client:
+    async with httpx.AsyncClient(
+        timeout=120.0,
+        headers={"User-Agent": "PokemonCardTrader/1.0"},
+    ) as client:
         url = f"{POKEMON_TCG_API}/cards"
         params = {
             "page": page,
             "pageSize": page_size,
-            "orderBy": "-set.releaseDate",
         }
         logger.info(f"Fetching cards page {page} from Pokemon TCG API")
         resp = await client.get(url, params=params)
