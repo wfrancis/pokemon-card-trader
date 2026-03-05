@@ -65,10 +65,10 @@ def health():
 
 @app.post("/api/sync/cards")
 async def trigger_card_sync(
-    pages: int = 3,
+    pages: int = 100,
     db: Session = Depends(get_db),
 ):
-    """Trigger a card sync from Pokemon TCG API."""
+    """Sync ALL English cards from Pokemon TCG API (price >= $2)."""
     try:
         stats = await sync_all_cards(db, max_pages=pages)
         return {"status": "complete", **stats}
