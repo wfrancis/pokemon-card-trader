@@ -96,7 +96,7 @@ export default function PriceChart({ priceData, analysis, showIndicators = true 
               borderRadius: 4,
               fontSize: 12,
             }}
-            formatter={(value: number) => [`$${value.toFixed(2)}`, '']}
+            formatter={(value: any) => [`$${Number(value).toFixed(2)}`, '']}
           />
 
           {/* Price range band */}

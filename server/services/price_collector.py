@@ -30,7 +30,10 @@ async def collect_prices_for_cards(db: Session, card_ids: list[int] | None = Non
     # Batch fetch by tcg_id
     tcg_ids = [c.tcg_id for c in cards]
 
-    async with httpx.AsyncClient(timeout=60.0) as client:
+    async with httpx.AsyncClient(
+        timeout=120.0,
+        headers={"User-Agent": "PokemonCardTrader/1.0"},
+    ) as client:
         # Pokemon TCG API supports querying by id
         for i in range(0, len(tcg_ids), 25):
             batch = tcg_ids[i:i + 25]

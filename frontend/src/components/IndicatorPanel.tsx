@@ -25,7 +25,7 @@ export default function IndicatorPanel({ analysis }: Props) {
 
   return (
     <Grid container spacing={1}>
-      <Grid item xs={12} md={4}>
+      <Grid size={{ xs: 12, md: 4 }}>
         <Paper sx={{ p: 1.5 }}>
           <Typography variant="h4" sx={{ mb: 1, color: '#00bcd4' }}>Moving Averages</Typography>
           <Box sx={{ display: 'flex', justifyContent: 'space-around' }}>
@@ -40,7 +40,7 @@ export default function IndicatorPanel({ analysis }: Props) {
         </Paper>
       </Grid>
 
-      <Grid item xs={12} md={4}>
+      <Grid size={{ xs: 12, md: 4 }}>
         <Paper sx={{ p: 1.5 }}>
           <Typography variant="h4" sx={{ mb: 1, color: '#00bcd4' }}>Oscillators</Typography>
           <Box sx={{ display: 'flex', justifyContent: 'space-around' }}>
@@ -59,7 +59,7 @@ export default function IndicatorPanel({ analysis }: Props) {
         </Paper>
       </Grid>
 
-      <Grid item xs={12} md={4}>
+      <Grid size={{ xs: 12, md: 4 }}>
         <Paper sx={{ p: 1.5 }}>
           <Typography variant="h4" sx={{ mb: 1, color: '#00bcd4' }}>Bollinger / S&R</Typography>
           <Box sx={{ display: 'flex', justifyContent: 'space-around' }}>
