@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import {
   Box,
   Typography,
@@ -19,7 +19,7 @@ const mono = { fontFamily: '"JetBrains Mono", "Fira Code", monospace' };
 function MarkdownBlock({ text }: { text: string }) {
   // Simple markdown-to-JSX: headers, bold, bullets, numbered lists
   const lines = text.split('\n');
-  const elements: JSX.Element[] = [];
+  const elements: React.ReactElement[] = [];
 
   lines.forEach((line, i) => {
     const trimmed = line.trim();
@@ -92,7 +92,7 @@ function MarkdownBlock({ text }: { text: string }) {
   return <>{elements}</>;
 }
 
-function renderBold(text: string): (string | JSX.Element)[] {
+function renderBold(text: string): React.ReactNode[] {
   const parts = text.split(/\*\*(.*?)\*\*/g);
   return parts.map((part, i) =>
     i % 2 === 1 ? (

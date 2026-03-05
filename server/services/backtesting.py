@@ -73,6 +73,9 @@ STRATEGIES = {
     "macd_signal": "MACD Signal Line",
     "bollinger_bounce": "Bollinger Band Bounce",
     "combined": "Combined Indicators",
+    "momentum_breakout": "Momentum Breakout",
+    "mean_reversion_bands": "Mean Reversion + Bands",
+    "trend_rider": "Trend Rider (EMA Stack)",
 }
 
 
@@ -207,6 +210,111 @@ def _combined_signal(indicators: dict, prev_indicators: dict | None, current_pri
     return None
 
 
+def _momentum_breakout_signal(indicators: dict, prev_indicators: dict | None, prices: list[float]) -> str | None:
+    """Momentum Breakout: buy when price breaks above resistance with strong momentum.
+
+    Collectibles-specific: cards often have sharp price spikes driven by tournament results,
+    YouTube openings, or nostalgia cycles. This strategy catches breakouts early.
+    """
+    sma_7 = indicators.get("sma_7")
+    sma_30 = indicators.get("sma_30")
+    rsi = indicators.get("rsi_14")
+    if sma_7 is None or sma_30 is None or rsi is None or len(prices) < 20:
+        return None
+
+    current = prices[-1]
+    recent_high = max(prices[-20:])
+    recent_low = min(prices[-20:])
+    price_range = recent_high - recent_low
+
+    if price_range <= 0:
+        return None
+
+    # Buy: price near 20-day high + upward momentum + RSI not yet overbought
+    position_in_range = (current - recent_low) / price_range
+    if position_in_range > 0.85 and sma_7 > sma_30 and rsi < 65:
+        return "buy"
+
+    # Sell: momentum fading (RSI dropping from high) or price drops below SMA30
+    if prev_indicators:
+        prev_rsi = prev_indicators.get("rsi_14")
+        if prev_rsi and prev_rsi > 70 and rsi < 65:
+            return "sell"
+    if current < sma_30 * 0.98:  # 2% below SMA30 = stop loss
+        return "sell"
+
+    return None
+
+
+def _mean_reversion_bands_signal(indicators: dict, current_price: float) -> str | None:
+    """Mean Reversion + Bands: buy at extreme lows, sell at mean.
+
+    Collectibles-specific: Pokemon cards tend to mean-revert after panic selling
+    or hype spikes. This is more conservative than pure Bollinger — it waits for
+    extreme deviations and sells at the middle band, not the upper.
+    """
+    upper, middle, lower = indicators.get("bollinger", (None, None, None))
+    rsi = indicators.get("rsi_14")
+    if upper is None or lower is None or middle is None or rsi is None:
+        return None
+
+    band_range = upper - lower
+    if band_range <= 0:
+        return None
+
+    position = (current_price - lower) / band_range
+
+    # Buy: extreme oversold — below lower band AND RSI confirms oversold
+    if position < 0.05 and rsi < 25:
+        return "buy"
+
+    # Sell: price returns to middle band (mean reversion target)
+    if position > 0.45 and position < 0.55 and rsi > 45:
+        return "sell"
+
+    # Stop loss: if price drops further below entry (20% below lower band)
+    if position < -0.2:
+        return "sell"
+
+    return None
+
+
+def _trend_rider_signal(indicators: dict, prev_indicators: dict | None) -> str | None:
+    """Trend Rider (EMA Stack): ride sustained trends using EMA alignment.
+
+    Collectibles-specific: when a card enters a sustained uptrend (new set hype,
+    competitive meta shift), EMAs stack bullishly. This strategy stays in the
+    trend longer than crossover strategies.
+    """
+    ema_12 = indicators.get("ema_12")
+    ema_26 = indicators.get("ema_26")
+    sma_7 = indicators.get("sma_7")
+    sma_30 = indicators.get("sma_30")
+    rsi = indicators.get("rsi_14")
+    if any(v is None for v in [ema_12, ema_26, sma_7, sma_30]):
+        return None
+
+    # Bullish stack: SMA7 > EMA12 > EMA26 > SMA30
+    bullish_stack = sma_7 > ema_12 > ema_26 and ema_12 > sma_30 * 0.99
+
+    # Bearish stack: SMA7 < EMA12 < EMA26
+    bearish_stack = sma_7 < ema_12 < ema_26
+
+    if prev_indicators:
+        prev_ema_12 = prev_indicators.get("ema_12")
+        prev_ema_26 = prev_indicators.get("ema_26")
+        if prev_ema_12 is not None and prev_ema_26 is not None:
+            was_bearish = prev_ema_12 < prev_ema_26
+            # Buy: transition from bearish to bullish stack
+            if bullish_stack and was_bearish:
+                return "buy"
+            # Sell: stack breaks down
+            if bearish_stack and not was_bearish:
+                return "sell"
+
+    return None
+
+
 def run_backtest(
     db: Session,
     card_id: int,
@@ -291,6 +399,12 @@ def run_backtest(
             signal = _bollinger_signal(indicators, current_price)
         elif strategy == "combined":
             signal = _combined_signal(indicators, prev_indicators, current_price)
+        elif strategy == "momentum_breakout":
+            signal = _momentum_breakout_signal(indicators, prev_indicators, price_slice)
+        elif strategy == "mean_reversion_bands":
+            signal = _mean_reversion_bands_signal(indicators, current_price)
+        elif strategy == "trend_rider":
+            signal = _trend_rider_signal(indicators, prev_indicators)
 
         # Execute trades
         if signal == "buy" and cash > 0 and holdings == 0:

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from server.database import get_db
 from server.models.card import Card
-from server.services.market_analysis import analyze_card, get_top_movers
+from server.services.market_analysis import analyze_card, get_top_movers, get_hot_cards
 
 router = APIRouter(prefix="/api", tags=["analysis"])
 
@@ -46,6 +46,15 @@ def market_index(db: Session = Depends(get_db)):
         "total_cards": result.total_cards or 0,
         "total_market_cap": round(result.total_market_cap, 2) if result.total_market_cap else 0,
     }
+
+
+@router.get("/market/hot")
+def hot_cards(
+    limit: int = Query(12, ge=1, le=50),
+    db: Session = Depends(get_db),
+):
+    """Get hottest cards ranked by activity score (volume proxy)."""
+    return get_hot_cards(db, limit=limit)
 
 
 @router.get("/market/ticker")

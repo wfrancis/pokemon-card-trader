@@ -104,9 +104,214 @@ export const api = {
       `/api/market/ticker?limit=${limit}`
     ),
 
+  getHotCards: (limit = 12) =>
+    fetchApi<HotCard[]>(`/api/market/hot?limit=${limit}`),
+
   syncCards: (pages = 3) =>
     fetchApi<Record<string, number>>(`/api/sync/cards?pages=${pages}`, { method: 'POST' }),
 
   syncPrices: (limit = 250) =>
     fetchApi<Record<string, number>>(`/api/sync/prices?limit=${limit}`, { method: 'POST' }),
+
+  // Backtesting
+  getStrategies: () =>
+    fetchApi<{ strategies: { key: string; name: string }[] }>('/api/backtest/strategies'),
+
+  backtestCard: (cardId: number, strategy = 'combined', capital = 1000) =>
+    fetchApi<BacktestResult>(
+      `/api/backtest/card/${cardId}?strategy=${strategy}&capital=${capital}`
+    ),
+
+  backtestCardAll: (cardId: number, capital = 1000) =>
+    fetchApi<{ results: BacktestResult[] }>(
+      `/api/backtest/card/${cardId}/all?capital=${capital}`
+    ),
+
+  backtestPortfolio: (strategy = 'combined', topN = 10, capital = 10000) =>
+    fetchApi<PortfolioBacktestResult>(
+      `/api/backtest/portfolio?strategy=${strategy}&top_n=${topN}&capital=${capital}`
+    ),
+
+  // AI Trader
+  getTraderAnalysis: () =>
+    fetchApi<TraderAnalysis>('/api/trader/analysis'),
+
+  getTraderCardAnalysis: (cardId: number) =>
+    fetchApi<TraderCardAnalysis>(`/api/trader/card/${cardId}`),
+
+  // Signals
+  getIndicators: () =>
+    fetchApi<{ cards: CardIndicator[]; total: number }>('/api/signals'),
+
+  generateAISignals: () =>
+    fetchApi<AISignalsResponse>('/api/signals/generate', { method: 'POST' }),
+
+  quickBacktest: (cardId: number) =>
+    fetchApi<QuickBacktestResult>(`/api/signals/${cardId}/quick-backtest`),
 };
+
+export interface BacktestTrade {
+  date: string;
+  action: string;
+  price: number;
+  signal_reason: string;
+}
+
+export interface BacktestDailyValue {
+  date: string;
+  price: number;
+  portfolio_value: number;
+  cash: number;
+  holdings_value: number;
+  in_position: boolean;
+}
+
+export interface BacktestResult {
+  strategy: string;
+  card_id: number;
+  card_name: string;
+  start_date: string;
+  end_date: string;
+  initial_price: number;
+  final_price: number;
+  buy_hold_return_pct: number;
+  strategy_return_pct: number;
+  total_trades: number;
+  winning_trades: number;
+  losing_trades: number;
+  win_rate: number;
+  max_drawdown_pct: number;
+  sharpe_ratio: number | null;
+  trades: BacktestTrade[];
+  daily_values: BacktestDailyValue[];
+  error?: string;
+}
+
+export interface PortfolioCardResult {
+  card_id: number;
+  card_name: string;
+  strategy_return_pct: number;
+  buy_hold_return_pct: number;
+  win_rate: number;
+  total_trades: number;
+  max_drawdown_pct: number;
+  sharpe_ratio: number | null;
+}
+
+export interface TraderAnalysis {
+  trader_name: string;
+  analysis?: string;
+  market_data_summary?: {
+    total_cards: number;
+    avg_price: number;
+    market_cap: number;
+    top_gainer: string | null;
+    top_loser: string | null;
+  };
+  tokens_used?: { input: number; output: number };
+  error?: string;
+}
+
+export interface TraderCardAnalysis {
+  trader_name: string;
+  card_name?: string;
+  card_id?: number;
+  analysis?: string;
+  tokens_used?: { input: number; output: number };
+  error?: string;
+}
+
+export interface PortfolioBacktestResult {
+  strategy: string;
+  cards_count: number;
+  initial_capital: number;
+  final_value: number;
+  portfolio_return_pct: number;
+  buy_hold_return_pct: number;
+  alpha: number;
+  total_trades: number;
+  card_results: PortfolioCardResult[];
+  error?: string;
+}
+
+export interface HotCard {
+  card_id: number;
+  tcg_id: string;
+  name: string;
+  set_name: string;
+  rarity: string;
+  image_small: string;
+  current_price: number;
+  activity_score: number;
+  volatility: number | null;
+  spread_ratio: number | null;
+  momentum: number | null;
+  price_change_7d: number | null;
+  signal: string;
+  signal_strength: number;
+}
+
+export interface CardIndicator {
+  card_id: number;
+  name: string;
+  set_name: string;
+  rarity: string;
+  image_small: string;
+  current_price: number;
+  rsi_14: number | null;
+  sma_7: number | null;
+  sma_30: number | null;
+  macd_histogram: number | null;
+  momentum: number | null;
+  price_change_7d: number | null;
+  price_change_30d: number | null;
+  support: number | null;
+  resistance: number | null;
+  bollinger_position: number | null;
+  volatility: number | null;
+  spread_ratio: number | null;
+  activity_score: number | null;
+  price_history_days: number;
+  can_backtest: boolean;
+  // AI signal fields (present after generate)
+  signal?: string;
+  conviction?: number;
+  reasoning?: string;
+  entry_price?: number | null;
+  target_price?: number | null;
+  stop_loss?: number | null;
+  best_strategy?: string;
+}
+
+export interface AISignalsResponse {
+  signals: CardIndicator[];
+  summary: {
+    total: number;
+    buy: number;
+    sell: number;
+    hold: number;
+  };
+  tokens_used: { input: number; output: number };
+  error?: string;
+}
+
+export interface QuickBacktestStrategy {
+  strategy_key: string;
+  strategy_name: string;
+  return_pct: number;
+  buy_hold_return_pct: number;
+  alpha: number;
+  win_rate: number;
+  total_trades: number;
+  max_drawdown_pct: number;
+  sharpe_ratio: number | null;
+}
+
+export interface QuickBacktestResult {
+  card_id: number;
+  card_name: string;
+  strategies: QuickBacktestStrategy[];
+  best_strategy: string;
+  best_return_pct: number;
+  error?: string;
+}

@@ -52,6 +52,9 @@ def _build_card_indicators(db: Session) -> list[dict]:
             "support": round(analysis.support, 2) if analysis.support else None,
             "resistance": round(analysis.resistance, 2) if analysis.resistance else None,
             "bollinger_position": None,
+            "volatility": round(analysis.volatility, 2) if analysis.volatility else None,
+            "spread_ratio": round(analysis.spread_ratio, 2) if analysis.spread_ratio else None,
+            "activity_score": analysis.activity_score,
             "price_history_days": price_count,
             "can_backtest": price_count >= 35,
         }
@@ -116,6 +119,9 @@ async def generate_ai_signals(db: Session = Depends(get_db)):
             "support": c["support"],
             "resistance": c["resistance"],
             "boll_pos": c["bollinger_position"],
+            "volatility": c.get("volatility"),
+            "spread": c.get("spread_ratio"),
+            "activity": c.get("activity_score"),
             "days": c["price_history_days"],
         })
 
@@ -132,11 +138,16 @@ Consider:
 - Momentum: rate of change
 - Support/resistance: is price near key levels?
 - Price change trends: 7-day and 30-day performance
+- Volatility: higher vol = more market interest/activity (proxy for volume)
+- Spread ratio: wider bid-ask spread = more active bidding
+- Activity score (0-100): composite hotness metric — high scores mean the card is "hot"
 
 Think like a trader, not a textbook. Collectibles have unique dynamics:
 - Hype cycles cause sharp spikes — don't chase late
 - Mean reversion is strong after panic sells
-- Low-volume cards can be manipulated
+- Low activity cards can be manipulated — be cautious
+- High activity + bullish technicals = strong BUY signal
+- High activity + bearish technicals = smart to SELL before the dump
 - Rarity drives long-term value
 
 Return JSON array with this exact structure:
