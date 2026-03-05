@@ -29,6 +29,10 @@ class AnalysisResult:
     price_change_pct_30d: float | None = None
     support: float | None = None
     resistance: float | None = None
+    volatility: float | None = None  # Std dev of daily returns (proxy for volume)
+    spread_ratio: float | None = None  # Avg (high-low)/market ratio
+    momentum_accel: float | None = None  # Change in momentum (2nd derivative)
+    activity_score: float | None = None  # Composite hotness 0-100
     signal: str = "hold"  # "bullish", "bearish", "hold"
     signal_strength: float = 0.0  # -1.0 (strong bear) to 1.0 (strong bull)
 
@@ -129,6 +133,88 @@ def _bollinger_bands(prices: list[float], period: int = 20, std_dev: float = 2.0
     return middle + std_dev * std, middle, middle - std_dev * std
 
 
+def _volatility(prices: list[float], period: int = 14) -> float | None:
+    """Annualized volatility from daily returns (proxy for trading activity)."""
+    if len(prices) < period + 1:
+        return None
+    window = prices[-(period + 1):]
+    returns = [(window[i] - window[i - 1]) / window[i - 1]
+               for i in range(1, len(window)) if window[i - 1] != 0]
+    if not returns:
+        return None
+    mean_r = sum(returns) / len(returns)
+    variance = sum((r - mean_r) ** 2 for r in returns) / len(returns)
+    return math.sqrt(variance) * 100  # as percentage
+
+
+def _spread_ratio(records: list, period: int = 14) -> float | None:
+    """Average (high-low)/market ratio — wider spread = more activity."""
+    recent = records[-period:] if len(records) >= period else records
+    ratios = []
+    for r in recent:
+        if r.high_price and r.low_price and r.market_price and r.market_price > 0:
+            ratios.append((r.high_price - r.low_price) / r.market_price)
+    if not ratios:
+        return None
+    return (sum(ratios) / len(ratios)) * 100
+
+
+def _momentum_acceleration(prices: list[float]) -> float | None:
+    """Second derivative of price — accelerating momentum = increasing interest."""
+    if len(prices) < 15:
+        return None
+    # Momentum at two points
+    if prices[-10] != 0 and prices[-5] != 0:
+        mom_recent = ((prices[-1] - prices[-5]) / prices[-5]) * 100
+        mom_prior = ((prices[-5] - prices[-10]) / prices[-10]) * 100
+        return mom_recent - mom_prior
+    return None
+
+
+def _activity_score(
+    volatility: float | None,
+    spread_ratio: float | None,
+    momentum_accel: float | None,
+    price_change_7d: float | None,
+    num_records: int,
+) -> float | None:
+    """Composite hotness score 0-100. Higher = more market activity."""
+    if num_records < 5:
+        return None
+
+    score = 0.0
+    weight = 0.0
+
+    # Volatility component (0-30 pts) — higher vol = hotter
+    if volatility is not None:
+        vol_pts = min(30, volatility * 5)  # 6% vol = max 30 pts
+        score += vol_pts
+        weight += 30
+
+    # Spread component (0-20 pts) — wider spread = more bidding activity
+    if spread_ratio is not None:
+        spread_pts = min(20, spread_ratio * 4)  # 5% spread = max 20 pts
+        score += spread_pts
+        weight += 20
+
+    # Momentum acceleration (0-25 pts) — accelerating = hot
+    if momentum_accel is not None:
+        accel_pts = min(25, abs(momentum_accel) * 2.5)
+        score += accel_pts
+        weight += 25
+
+    # Recent price change magnitude (0-25 pts) — big moves = hot
+    if price_change_7d is not None:
+        change_pts = min(25, abs(price_change_7d) * 2)
+        score += change_pts
+        weight += 25
+
+    if weight == 0:
+        return None
+
+    return round((score / weight) * 100, 1)
+
+
 def analyze_card(db: Session, card_id: int) -> AnalysisResult:
     """Run full technical analysis on a card's price history."""
     records = (
@@ -175,7 +261,16 @@ def analyze_card(db: Session, card_id: int) -> AnalysisResult:
     result.support = min(window)
     result.resistance = max(window)
 
-    # Generate signal
+    # Volume proxy metrics
+    result.volatility = _volatility(prices)
+    result.spread_ratio = _spread_ratio(records)
+    result.momentum_accel = _momentum_acceleration(prices)
+    result.activity_score = _activity_score(
+        result.volatility, result.spread_ratio, result.momentum_accel,
+        result.price_change_pct_7d, len(records),
+    )
+
+    # Generate signal (now includes volume proxy)
     result.signal, result.signal_strength = _generate_signal(result, prices)
 
     return result
@@ -235,6 +330,15 @@ def _generate_signal(analysis: AnalysisResult, prices: list[float]) -> tuple[str
         if analysis.momentum > 5:
             score += 0.3
         elif analysis.momentum < -5:
+            score -= 0.3
+        factors += 1
+
+    # Volume proxy: high activity amplifies existing signals
+    if analysis.activity_score is not None and analysis.activity_score > 50:
+        # Hot cards with positive momentum get a boost, negative get a penalty
+        if score > 0:
+            score += 0.3
+        elif score < 0:
             score -= 0.3
         factors += 1
 
@@ -304,3 +408,53 @@ def get_top_movers(db: Session, limit: int = 10) -> dict:
         "gainers": movers[:limit],
         "losers": list(reversed(movers[-limit:])) if len(movers) > limit else [],
     }
+
+
+def get_hot_cards(db: Session, limit: int = 12) -> list[dict]:
+    """Get cards ranked by activity score (volume proxy hotness)."""
+    from server.models.card import Card
+    from sqlalchemy import func
+
+    # Cards with at least 5 price records
+    subq = (
+        db.query(
+            PriceHistory.card_id,
+            func.count(PriceHistory.id).label("record_count")
+        )
+        .filter(PriceHistory.market_price.isnot(None))
+        .group_by(PriceHistory.card_id)
+        .having(func.count(PriceHistory.id) >= 5)
+        .subquery()
+    )
+
+    card_ids = [row[0] for row in db.query(subq.c.card_id).all()]
+
+    hot = []
+    for card_id in card_ids:
+        analysis = analyze_card(db, card_id)
+        if analysis.activity_score is None:
+            continue
+
+        card = db.query(Card).filter(Card.id == card_id).first()
+        if not card or not card.current_price:
+            continue
+
+        hot.append({
+            "card_id": card.id,
+            "tcg_id": card.tcg_id,
+            "name": card.name,
+            "set_name": card.set_name,
+            "rarity": card.rarity,
+            "image_small": card.image_small,
+            "current_price": card.current_price,
+            "activity_score": analysis.activity_score,
+            "volatility": round(analysis.volatility, 2) if analysis.volatility else None,
+            "spread_ratio": round(analysis.spread_ratio, 2) if analysis.spread_ratio else None,
+            "momentum": round(analysis.momentum, 2) if analysis.momentum else None,
+            "price_change_7d": round(analysis.price_change_pct_7d, 2) if analysis.price_change_pct_7d else None,
+            "signal": analysis.signal,
+            "signal_strength": round(analysis.signal_strength, 2),
+        })
+
+    hot.sort(key=lambda x: x["activity_score"], reverse=True)
+    return hot[:limit]

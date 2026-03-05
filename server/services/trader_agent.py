@@ -1,7 +1,7 @@
 """
 AI Trader Agent — Wall Street persona for Pokemon card market analysis.
 
-Uses Claude API to generate market commentary, card recommendations,
+Uses OpenAI GPT-5.4 to generate market commentary, card recommendations,
 and strategy suggestions based on current market data and backtesting results.
 """
 import os
@@ -59,7 +59,6 @@ def _gather_market_data(db: Session) -> dict:
     )
 
     # Get average price and total market cap
-    from sqlalchemy import distinct
     latest_prices = {}
     all_cards = db.query(Card).all()
     for card in all_cards:
@@ -168,20 +167,44 @@ def _gather_market_data(db: Session) -> dict:
     return data
 
 
-async def get_trader_analysis(db: Session) -> dict:
-    """Generate AI trader analysis using Claude API.
+def _call_openai(system: str, user_message: str, max_tokens: int = 4096) -> dict:
+    """Call OpenAI GPT-5.4 API and return response text + usage."""
+    import openai
 
-    Returns a dict with the trader's analysis sections:
-    - market_commentary: Overall market assessment
-    - recommendations: Specific card picks
-    - strategy_advice: Trading strategy suggestions
-    - risk_assessment: Risk analysis
-    - backtesting_improvements: Suggestions for new strategies
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        raise ValueError("OPENAI_API_KEY not configured")
+
+    client = openai.OpenAI(api_key=api_key)
+
+    response = client.chat.completions.create(
+        model="gpt-5.4",
+        max_tokens=max_tokens,
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": user_message},
+        ],
+    )
+
+    choice = response.choices[0]
+    return {
+        "text": choice.message.content,
+        "tokens_used": {
+            "input": response.usage.prompt_tokens,
+            "output": response.usage.completion_tokens,
+        },
+    }
+
+
+async def get_trader_analysis(db: Session) -> dict:
+    """Generate AI trader analysis using OpenAI GPT-5.4.
+
+    Returns a dict with the trader's analysis sections.
     """
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         return {
-            "error": "ANTHROPIC_API_KEY not configured. Set it to enable the AI trader agent.",
+            "error": "OPENAI_API_KEY not configured. Set it to enable the AI trader agent.",
             "trader_name": "Marcus 'The Collector' Vega",
         }
 
@@ -220,22 +243,11 @@ Give me your complete analysis covering:
 Be specific. Reference the actual numbers. This is a trading desk briefing, not a blog post."""
 
     try:
-        import anthropic
-
-        client = anthropic.Anthropic(api_key=api_key)
-
-        response = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=4096,
-            system=TRADER_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_prompt}],
-        )
-
-        analysis_text = response.content[0].text
+        result = _call_openai(TRADER_SYSTEM_PROMPT, user_prompt, max_tokens=4096)
 
         return {
             "trader_name": "Marcus 'The Collector' Vega",
-            "analysis": analysis_text,
+            "analysis": result["text"],
             "market_data_summary": {
                 "total_cards": market_data["market_overview"]["total_cards"],
                 "avg_price": market_data["market_overview"]["avg_price"],
@@ -243,15 +255,12 @@ Be specific. Reference the actual numbers. This is a trading desk briefing, not 
                 "top_gainer": market_data["top_movers"]["gainers"][0]["name"] if market_data["top_movers"].get("gainers") else None,
                 "top_loser": market_data["top_movers"]["losers"][0]["name"] if market_data["top_movers"].get("losers") else None,
             },
-            "tokens_used": {
-                "input": response.usage.input_tokens,
-                "output": response.usage.output_tokens,
-            },
+            "tokens_used": result["tokens_used"],
         }
 
     except ImportError:
         return {
-            "error": "anthropic package not installed. Run: pip install anthropic",
+            "error": "openai package not installed. Run: pip install openai",
             "trader_name": "Marcus 'The Collector' Vega",
         }
     except Exception as e:
@@ -264,9 +273,9 @@ Be specific. Reference the actual numbers. This is a trading desk briefing, not 
 
 async def get_card_trader_analysis(db: Session, card_id: int) -> dict:
     """Get trader analysis for a specific card."""
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
-        return {"error": "ANTHROPIC_API_KEY not configured."}
+        return {"error": "OPENAI_API_KEY not configured."}
 
     card = db.query(Card).filter(Card.id == card_id).first()
     if not card:
@@ -325,30 +334,18 @@ Give me a focused trading brief:
 Keep it tight — this is a single-card trade brief, not a dissertation."""
 
     try:
-        import anthropic
-
-        client = anthropic.Anthropic(api_key=api_key)
-
-        response = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=2048,
-            system=TRADER_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_prompt}],
-        )
+        result = _call_openai(TRADER_SYSTEM_PROMPT, user_prompt, max_tokens=2048)
 
         return {
             "trader_name": "Marcus 'The Collector' Vega",
             "card_name": card.name,
             "card_id": card_id,
-            "analysis": response.content[0].text,
-            "tokens_used": {
-                "input": response.usage.input_tokens,
-                "output": response.usage.output_tokens,
-            },
+            "analysis": result["text"],
+            "tokens_used": result["tokens_used"],
         }
 
     except ImportError:
-        return {"error": "anthropic package not installed."}
+        return {"error": "openai package not installed."}
     except Exception as e:
         logger.error(f"Card trader analysis failed: {e}")
         return {"error": f"Analysis failed: {str(e)}"}
