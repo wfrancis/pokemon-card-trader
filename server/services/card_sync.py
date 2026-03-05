@@ -1,6 +1,7 @@
 import httpx
 import json
 import logging
+import asyncio
 from datetime import date, datetime, timezone
 from sqlalchemy.orm import Session
 from server.models.card import Card
@@ -16,16 +17,34 @@ def _get_best_price(tcgplayer_data: dict) -> tuple[str | None, dict | None]:
     if not tcgplayer_data or "prices" not in tcgplayer_data:
         return None, None
     prices = tcgplayer_data["prices"]
-    # Prefer holofoil > reverseHolofoil > normal (holos tend to be more valuable/interesting)
     for variant in ["holofoil", "reverseHolofoil", "normal",
                      "1stEditionHolofoil", "1stEditionNormal"]:
         if variant in prices and prices[variant].get("market"):
             return variant, prices[variant]
-    # Fallback: return first variant with any market price
     for variant, price_data in prices.items():
         if price_data.get("market"):
             return variant, price_data
     return None, None
+
+
+async def _fetch_with_retry(client: httpx.AsyncClient, url: str, params: dict, retries: int = 3) -> httpx.Response:
+    """Fetch with retry logic for intermittent API issues."""
+    for attempt in range(retries):
+        try:
+            resp = await client.get(url, params=params)
+            if resp.status_code == 404 and attempt < retries - 1:
+                logger.warning(f"Got 404 from API (attempt {attempt + 1}/{retries}), retrying in {2 ** attempt}s...")
+                await asyncio.sleep(2 ** attempt)
+                continue
+            resp.raise_for_status()
+            return resp
+        except (httpx.HTTPStatusError, httpx.ConnectError, httpx.ReadTimeout) as e:
+            if attempt < retries - 1:
+                logger.warning(f"API request failed (attempt {attempt + 1}/{retries}): {e}")
+                await asyncio.sleep(2 ** attempt)
+            else:
+                raise
+    raise httpx.HTTPStatusError("Max retries exceeded", request=None, response=None)
 
 
 async def sync_cards(db: Session, page: int = 1, page_size: int = 250) -> dict:
@@ -35,15 +54,13 @@ async def sync_cards(db: Session, page: int = 1, page_size: int = 250) -> dict:
     async with httpx.AsyncClient(
         timeout=120.0,
         headers={"User-Agent": "PokemonCardTrader/1.0"},
+        follow_redirects=True,
     ) as client:
         url = f"{POKEMON_TCG_API}/cards"
-        params = {
-            "page": page,
-            "pageSize": page_size,
-        }
+        params = {"page": page, "pageSize": page_size}
         logger.info(f"Fetching cards page {page} from Pokemon TCG API")
-        resp = await client.get(url, params=params)
-        resp.raise_for_status()
+
+        resp = await _fetch_with_retry(client, url, params)
         data = resp.json()
 
         cards_data = data.get("data", [])
@@ -87,9 +104,7 @@ async def sync_cards(db: Session, page: int = 1, page_size: int = 250) -> dict:
                     db.flush()
                     stats["created"] += 1
 
-                # Record price history if we have price data
                 if price_data and card_obj.id:
-                    # Check if we already have a price for this card today
                     existing_price = db.query(PriceHistory).filter(
                         PriceHistory.card_id == card_obj.id,
                         PriceHistory.date == today,
@@ -97,7 +112,7 @@ async def sync_cards(db: Session, page: int = 1, page_size: int = 250) -> dict:
                     ).first()
 
                     if not existing_price:
-                        price_record = PriceHistory(
+                        db.add(PriceHistory(
                             card_id=card_obj.id,
                             date=today,
                             variant=variant,
@@ -105,8 +120,7 @@ async def sync_cards(db: Session, page: int = 1, page_size: int = 250) -> dict:
                             low_price=price_data.get("low"),
                             mid_price=price_data.get("mid"),
                             high_price=price_data.get("high"),
-                        )
-                        db.add(price_record)
+                        ))
                         stats["prices_recorded"] += 1
 
             except Exception as e:
@@ -130,7 +144,6 @@ async def sync_all_cards(db: Session, max_pages: int = 10) -> dict:
         all_stats["total_prices"] += stats["prices_recorded"]
         all_stats["pages_synced"] += 1
 
-        # Stop if we've fetched everything
         if stats["fetched"] < 250:
             break
 

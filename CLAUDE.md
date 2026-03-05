@@ -10,8 +10,10 @@ Wall Street-style trading terminal for Pokemon cards. Track card prices, compute
 - **Deployment:** Fly.io (single service — FastAPI serves API + static React build)
 
 ## Testing & Deployment Constraints
-- **All testing happens on Fly.io** — do not test locally with localhost
-- Deploy with `fly deploy` from the project root
+- **All changes must be deployed to Fly.io and tested using Chrome MCP** — do not rely on localhost testing
+- Unit tests and curl commands can be used for quick checks, but a fix is only considered complete after verifying on the live Fly deployment via Chrome MCP browser tools
+- Deploy with `fly deploy` from the project root (flyctl at `~/.fly/bin/flyctl`)
+- Live URL: https://pokemon-card-trader.fly.dev/
 - SQLite database persists via Fly.io volume mount at `/data/`
 - Single service: frontend build is served by FastAPI as static files
 

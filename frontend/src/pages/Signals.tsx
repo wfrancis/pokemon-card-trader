@@ -13,219 +13,573 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  IconButton,
-  Tabs,
-  Tab,
   LinearProgress,
+  Divider,
 } from '@mui/material';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
-import CloseIcon from '@mui/icons-material/Close';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import RemoveIcon from '@mui/icons-material/Remove';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ScienceIcon from '@mui/icons-material/Science';
 import { api } from '../services/api';
 import type { CardIndicator, AISignalsResponse, QuickBacktestResult } from '../services/api';
 
 const mono = { fontFamily: '"JetBrains Mono", "Fira Code", monospace' };
 
-function SignalChip({ signal, conviction }: { signal: string; conviction?: number }) {
-  const config: Record<string, { bg: string; color: string; icon: React.ReactElement }> = {
-    BUY: { bg: '#0a2e0a', color: '#00ff41', icon: <TrendingUpIcon sx={{ fontSize: 14 }} /> },
-    SELL: { bg: '#2e0a0a', color: '#ff1744', icon: <TrendingDownIcon sx={{ fontSize: 14 }} /> },
-    HOLD: { bg: '#1a1a2e', color: '#00bcd4', icon: <RemoveIcon sx={{ fontSize: 14 }} /> },
-  };
-  const c = config[signal] || config.HOLD;
+type SvgIconComponent = typeof TrendingUpIcon;
+
+const SIGNAL_CONFIG: Record<string, { bg: string; border: string; color: string; label: string; Icon: SvgIconComponent }> = {
+  BUY: { bg: '#040e04', border: '#0a3a0a', color: '#00ff41', label: 'BUY', Icon: TrendingUpIcon },
+  SELL: { bg: '#0e0404', border: '#3a0a0a', color: '#ff1744', label: 'SELL', Icon: TrendingDownIcon },
+  HOLD: { bg: '#04040e', border: '#0a0a3a', color: '#00bcd4', label: 'HOLD', Icon: RemoveIcon },
+};
+
+/* ─── Card tile in the BUY/SELL/HOLD grid ─── */
+function SignalCard({
+  card,
+  onClick,
+}: {
+  card: CardIndicator;
+  onClick: () => void;
+}) {
+  const cfg = SIGNAL_CONFIG[card.signal || 'HOLD'];
   return (
-    <Chip
-      icon={c.icon}
-      label={`${signal}${conviction ? ` (${conviction}/10)` : ''}`}
-      size="small"
-      sx={{ bgcolor: c.bg, color: c.color, ...mono, fontSize: '0.75rem', fontWeight: 700 }}
-    />
+    <Paper
+      onClick={onClick}
+      sx={{
+        p: 2,
+        bgcolor: cfg.bg,
+        border: `1px solid ${cfg.border}`,
+        cursor: 'pointer',
+        transition: 'all 0.15s',
+        '&:hover': { borderColor: cfg.color, transform: 'translateY(-2px)' },
+        display: 'flex',
+        gap: 1.5,
+        alignItems: 'flex-start',
+      }}
+    >
+      {card.image_small && (
+        <img
+          src={card.image_small}
+          alt=""
+          style={{ width: 48, height: 68, objectFit: 'contain', borderRadius: 4, flexShrink: 0 }}
+        />
+      )}
+      <Box sx={{ flex: 1, minWidth: 0 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+          <Typography
+            sx={{
+              color: '#fff',
+              fontSize: '0.85rem',
+              fontWeight: 700,
+              ...mono,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {card.name}
+          </Typography>
+          <Chip
+            label={`${card.conviction}/10`}
+            size="small"
+            sx={{
+              bgcolor: cfg.border,
+              color: cfg.color,
+              ...mono,
+              fontSize: '0.7rem',
+              fontWeight: 700,
+              height: 20,
+              flexShrink: 0,
+            }}
+          />
+        </Box>
+        <Typography sx={{ color: '#555', fontSize: '0.7rem', ...mono }}>
+          {card.set_name} · {card.rarity}
+        </Typography>
+
+        <Box sx={{ display: 'flex', gap: 2, mt: 1, alignItems: 'baseline' }}>
+          <Typography sx={{ color: '#00bcd4', fontSize: '1rem', fontWeight: 700, ...mono }}>
+            ${card.current_price?.toFixed(2)}
+          </Typography>
+          {card.price_change_7d != null && (
+            <Typography
+              sx={{
+                color: card.price_change_7d >= 0 ? '#00ff41' : '#ff1744',
+                fontSize: '0.75rem',
+                ...mono,
+              }}
+            >
+              {card.price_change_7d >= 0 ? '+' : ''}
+              {card.price_change_7d.toFixed(1)}% 7d
+            </Typography>
+          )}
+        </Box>
+
+        {card.reasoning && (
+          <Typography
+            sx={{
+              color: '#888',
+              fontSize: '0.7rem',
+              ...mono,
+              mt: 0.5,
+              lineHeight: 1.4,
+              display: '-webkit-box',
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: 'vertical',
+              overflow: 'hidden',
+            }}
+          >
+            {card.reasoning}
+          </Typography>
+        )}
+
+        {/* Price targets row */}
+        {(card.entry_price != null || card.target_price != null || card.stop_loss != null) && (
+          <Box sx={{ display: 'flex', gap: 1.5, mt: 0.5 }}>
+            {card.entry_price != null && (
+              <Typography sx={{ color: '#666', fontSize: '0.65rem', ...mono }}>
+                ENTRY <span style={{ color: '#fff' }}>${card.entry_price.toFixed(2)}</span>
+              </Typography>
+            )}
+            {card.target_price != null && (
+              <Typography sx={{ color: '#666', fontSize: '0.65rem', ...mono }}>
+                TARGET <span style={{ color: '#4caf50' }}>${card.target_price.toFixed(2)}</span>
+              </Typography>
+            )}
+            {card.stop_loss != null && (
+              <Typography sx={{ color: '#666', fontSize: '0.65rem', ...mono }}>
+                STOP <span style={{ color: '#f44336' }}>${card.stop_loss.toFixed(2)}</span>
+              </Typography>
+            )}
+          </Box>
+        )}
+      </Box>
+    </Paper>
   );
 }
 
-function BacktestDialog({
-  open,
-  onClose,
-  cardId,
-  cardName,
+/* ─── Signal group (BUY / SELL / HOLD section) ─── */
+function SignalGroup({
+  signal,
+  cards,
+  onCardClick,
 }: {
-  open: boolean;
-  onClose: () => void;
-  cardId: number;
-  cardName: string;
+  signal: string;
+  cards: CardIndicator[];
+  onCardClick: (card: CardIndicator) => void;
 }) {
-  const [result, setResult] = useState<QuickBacktestResult | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (open && cardId) {
-      setLoading(true);
-      setError(null);
-      api
-        .quickBacktest(cardId)
-        .then((r) => {
-          if (r.error) setError(r.error);
-          else setResult(r);
-        })
-        .catch((e) => setError(e.message))
-        .finally(() => setLoading(false));
-    }
-  }, [open, cardId]);
+  const cfg = SIGNAL_CONFIG[signal];
+  if (cards.length === 0) return null;
 
   return (
-    <Dialog
-      open={open}
-      onClose={onClose}
-      maxWidth="md"
-      fullWidth
-      PaperProps={{ sx: { bgcolor: '#111', color: '#ccc', border: '1px solid #333' } }}
-    >
-      <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Typography sx={{ color: '#00bcd4', fontWeight: 700, ...mono }}>
-          QUICK BACKTEST — {cardName}
+    <Box sx={{ mb: 3 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+        <cfg.Icon sx={{ color: cfg.color, fontSize: 24 }} />
+        <Typography variant="h6" sx={{ color: cfg.color, fontWeight: 700, ...mono }}>
+          {cfg.label}
         </Typography>
-        <IconButton onClick={onClose} sx={{ color: '#666' }}>
-          <CloseIcon />
-        </IconButton>
-      </DialogTitle>
-      <DialogContent>
-        {loading && (
-          <Box sx={{ textAlign: 'center', py: 4 }}>
-            <CircularProgress sx={{ color: '#00bcd4' }} />
-            <Typography sx={{ color: '#666', mt: 2, ...mono, fontSize: '0.8rem' }}>
-              Running all 8 strategies on daily data...
+        <Chip
+          label={cards.length}
+          size="small"
+          sx={{ bgcolor: cfg.border, color: cfg.color, ...mono, fontSize: '0.8rem', fontWeight: 700 }}
+        />
+      </Box>
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', lg: '1fr 1fr 1fr' },
+          gap: 1.5,
+        }}
+      >
+        {cards.map((c) => (
+          <SignalCard key={c.card_id} card={c} onClick={() => onCardClick(c)} />
+        ))}
+      </Box>
+    </Box>
+  );
+}
+
+/* ─── Drill-down detail view for a single card ─── */
+function CardDrillDown({
+  card,
+  onBack,
+}: {
+  card: CardIndicator;
+  onBack: () => void;
+}) {
+  const [backtest, setBacktest] = useState<QuickBacktestResult | null>(null);
+  const [btLoading, setBtLoading] = useState(false);
+  const [btError, setBtError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (card.can_backtest) {
+      setBtLoading(true);
+      setBtError(null);
+      api
+        .quickBacktest(card.card_id)
+        .then((r) => {
+          if (r.error) setBtError(r.error);
+          else setBacktest(r);
+        })
+        .catch((e) => setBtError(e.message))
+        .finally(() => setBtLoading(false));
+    }
+  }, [card.card_id, card.can_backtest]);
+
+  const cfg = SIGNAL_CONFIG[card.signal || 'HOLD'];
+
+  return (
+    <Box>
+      {/* Back button */}
+      <Button
+        startIcon={<ArrowBackIcon />}
+        onClick={onBack}
+        sx={{ color: '#666', ...mono, textTransform: 'none', mb: 2 }}
+      >
+        Back to signals
+      </Button>
+
+      {/* Card header */}
+      <Paper
+        sx={{
+          p: 3,
+          mb: 2,
+          bgcolor: cfg.bg,
+          border: `1px solid ${cfg.border}`,
+        }}
+      >
+        <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+          {card.image_small && (
+            <img
+              src={card.image_small}
+              alt=""
+              style={{ width: 80, height: 112, objectFit: 'contain', borderRadius: 6 }}
+            />
+          )}
+          <Box sx={{ flex: 1 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
+              <Typography variant="h5" sx={{ color: '#fff', fontWeight: 700, ...mono }}>
+                {card.name}
+              </Typography>
+              {card.signal && (
+                <Chip
+                  icon={<cfg.Icon sx={{ color: `${cfg.color} !important`, fontSize: 16 }} />}
+                  label={`${card.signal} — ${card.conviction}/10 conviction`}
+                  sx={{
+                    bgcolor: cfg.border,
+                    color: cfg.color,
+                    ...mono,
+                    fontSize: '0.8rem',
+                    fontWeight: 700,
+                  }}
+                />
+              )}
+            </Box>
+            <Typography sx={{ color: '#666', ...mono, fontSize: '0.85rem' }}>
+              {card.set_name} · {card.rarity}
+            </Typography>
+
+            <Box sx={{ display: 'flex', gap: 4, mt: 2, flexWrap: 'wrap' }}>
+              <Box>
+                <Typography sx={{ color: '#555', fontSize: '0.65rem', ...mono }}>PRICE</Typography>
+                <Typography sx={{ color: '#00bcd4', fontSize: '1.3rem', fontWeight: 700, ...mono }}>
+                  ${card.current_price?.toFixed(2)}
+                </Typography>
+              </Box>
+              {card.entry_price != null && (
+                <Box>
+                  <Typography sx={{ color: '#555', fontSize: '0.65rem', ...mono }}>ENTRY</Typography>
+                  <Typography sx={{ color: '#fff', fontSize: '1.3rem', fontWeight: 700, ...mono }}>
+                    ${card.entry_price.toFixed(2)}
+                  </Typography>
+                </Box>
+              )}
+              {card.target_price != null && (
+                <Box>
+                  <Typography sx={{ color: '#555', fontSize: '0.65rem', ...mono }}>TARGET</Typography>
+                  <Typography sx={{ color: '#4caf50', fontSize: '1.3rem', fontWeight: 700, ...mono }}>
+                    ${card.target_price.toFixed(2)}
+                  </Typography>
+                </Box>
+              )}
+              {card.stop_loss != null && (
+                <Box>
+                  <Typography sx={{ color: '#555', fontSize: '0.65rem', ...mono }}>STOP LOSS</Typography>
+                  <Typography sx={{ color: '#f44336', fontSize: '1.3rem', fontWeight: 700, ...mono }}>
+                    ${card.stop_loss.toFixed(2)}
+                  </Typography>
+                </Box>
+              )}
+            </Box>
+          </Box>
+        </Box>
+      </Paper>
+
+      {/* AI Reasoning */}
+      <Paper sx={{ p: 3, mb: 2, bgcolor: '#111', border: '1px solid #1e1e1e' }}>
+        <Typography sx={{ color: '#ffd700', fontWeight: 700, ...mono, mb: 1.5, fontSize: '0.9rem' }}>
+          AI REASONING
+        </Typography>
+        <Typography sx={{ color: '#ccc', ...mono, fontSize: '0.85rem', lineHeight: 1.7 }}>
+          {card.reasoning || 'No reasoning available — generate AI signals first.'}
+        </Typography>
+        {card.best_strategy && (
+          <Box sx={{ mt: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+            <ScienceIcon sx={{ color: '#00bcd4', fontSize: 18 }} />
+            <Typography sx={{ color: '#00bcd4', ...mono, fontSize: '0.8rem' }}>
+              RECOMMENDED STRATEGY: <span style={{ color: '#fff', fontWeight: 700 }}>{card.best_strategy}</span>
             </Typography>
           </Box>
         )}
-        {error && <Alert severity="error" sx={{ bgcolor: '#1a0000', color: '#ff4444' }}>{error}</Alert>}
-        {result && (
+      </Paper>
+
+      {/* Technical Indicators */}
+      <Paper sx={{ p: 3, mb: 2, bgcolor: '#111', border: '1px solid #1e1e1e' }}>
+        <Typography sx={{ color: '#00bcd4', fontWeight: 700, ...mono, mb: 1.5, fontSize: '0.9rem' }}>
+          TECHNICAL INDICATORS
+        </Typography>
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: { xs: '1fr 1fr', sm: '1fr 1fr 1fr 1fr' },
+            gap: 2,
+          }}
+        >
+          <IndicatorBox label="RSI (14)" value={card.rsi_14?.toFixed(1) ?? '—'} color={
+            card.rsi_14 != null ? (card.rsi_14 < 30 ? '#00ff41' : card.rsi_14 > 70 ? '#ff1744' : '#ccc') : '#555'
+          } sub={card.rsi_14 != null ? (card.rsi_14 < 30 ? 'OVERSOLD' : card.rsi_14 > 70 ? 'OVERBOUGHT' : 'NEUTRAL') : undefined} />
+          <IndicatorBox label="SMA 7" value={card.sma_7 != null ? `$${card.sma_7.toFixed(2)}` : '—'} color="#ccc" />
+          <IndicatorBox label="SMA 30" value={card.sma_30 != null ? `$${card.sma_30.toFixed(2)}` : '—'} color="#ccc" />
+          <IndicatorBox label="MACD HIST" value={card.macd_histogram?.toFixed(4) ?? '—'} color={
+            card.macd_histogram != null ? (card.macd_histogram > 0 ? '#00ff41' : '#ff1744') : '#555'
+          } />
+          <IndicatorBox label="MOMENTUM" value={card.momentum?.toFixed(2) ?? '—'} color={
+            card.momentum != null ? (card.momentum > 0 ? '#00ff41' : '#ff1744') : '#555'
+          } />
+          <IndicatorBox label="7D CHANGE" value={card.price_change_7d != null ? `${card.price_change_7d >= 0 ? '+' : ''}${card.price_change_7d.toFixed(1)}%` : '—'} color={
+            card.price_change_7d != null ? (card.price_change_7d >= 0 ? '#00ff41' : '#ff1744') : '#555'
+          } />
+          <IndicatorBox label="30D CHANGE" value={card.price_change_30d != null ? `${card.price_change_30d >= 0 ? '+' : ''}${card.price_change_30d.toFixed(1)}%` : '—'} color={
+            card.price_change_30d != null ? (card.price_change_30d >= 0 ? '#00ff41' : '#ff1744') : '#555'
+          } />
+          <IndicatorBox label="BOLLINGER POS" value={card.bollinger_position?.toFixed(2) ?? '—'} color={
+            card.bollinger_position != null ? (card.bollinger_position < 0.2 ? '#00ff41' : card.bollinger_position > 0.8 ? '#ff1744' : '#00bcd4') : '#555'
+          } sub={card.bollinger_position != null ? (card.bollinger_position < 0.2 ? 'NEAR LOWER' : card.bollinger_position > 0.8 ? 'NEAR UPPER' : 'MID-BAND') : undefined} />
+          <IndicatorBox label="SUPPORT" value={card.support != null ? `$${card.support.toFixed(2)}` : '—'} color="#4caf50" />
+          <IndicatorBox label="RESISTANCE" value={card.resistance != null ? `$${card.resistance.toFixed(2)}` : '—'} color="#f44336" />
+          <IndicatorBox label="VOLATILITY" value={card.volatility != null ? `${card.volatility.toFixed(1)}%` : '—'} color={
+            card.volatility != null ? (card.volatility > 5 ? '#ff6d00' : '#888') : '#555'
+          } sub={card.volatility != null ? (card.volatility > 5 ? 'HIGH' : card.volatility > 2 ? 'MODERATE' : 'LOW') : undefined} />
+          <IndicatorBox label="SPREAD" value={card.spread_ratio != null ? `${card.spread_ratio.toFixed(1)}%` : '—'} color={
+            card.spread_ratio != null ? (card.spread_ratio > 3 ? '#ff6d00' : '#888') : '#555'
+          } />
+          <IndicatorBox label="ACTIVITY" value={card.activity_score != null ? card.activity_score.toFixed(0) : '—'} color={
+            card.activity_score != null ? (card.activity_score > 60 ? '#ff6d00' : card.activity_score > 30 ? '#ffab00' : '#888') : '#555'
+          } sub={card.activity_score != null ? (card.activity_score > 60 ? 'HOT' : card.activity_score > 30 ? 'ACTIVE' : 'QUIET') : undefined} />
+          <IndicatorBox label="PRICE DATA" value={`${card.price_history_days} days`} color="#888" />
+        </Box>
+      </Paper>
+
+      {/* Backtest Results */}
+      <Paper sx={{ p: 3, bgcolor: '#111', border: '1px solid #1e1e1e' }}>
+        <Typography sx={{ color: '#00bcd4', fontWeight: 700, ...mono, mb: 1.5, fontSize: '0.9rem' }}>
+          BACKTEST — ALL 8 STRATEGIES
+        </Typography>
+
+        {!card.can_backtest && (
+          <Typography sx={{ color: '#666', ...mono, fontSize: '0.8rem' }}>
+            Need 35+ days of price history to backtest (currently {card.price_history_days} days).
+          </Typography>
+        )}
+
+        {btLoading && (
+          <Box sx={{ textAlign: 'center', py: 3 }}>
+            <CircularProgress size={24} sx={{ color: '#00bcd4' }} />
+            <Typography sx={{ color: '#666', mt: 1, ...mono, fontSize: '0.8rem' }}>
+              Running all strategies on daily data...
+            </Typography>
+          </Box>
+        )}
+
+        {btError && (
+          <Alert severity="error" sx={{ bgcolor: '#1a0000', color: '#ff4444' }}>
+            {btError}
+          </Alert>
+        )}
+
+        {backtest && (
           <>
             <Box sx={{ mb: 2, p: 1.5, bgcolor: '#0a0a0a', borderRadius: 1, border: '1px solid #222' }}>
               <Typography sx={{ color: '#00ff41', fontWeight: 700, ...mono }}>
-                BEST: {result.best_strategy} ({result.best_return_pct > 0 ? '+' : ''}
-                {result.best_return_pct.toFixed(1)}%)
+                BEST STRATEGY: {backtest.best_strategy} ({backtest.best_return_pct > 0 ? '+' : ''}
+                {backtest.best_return_pct.toFixed(1)}% return)
               </Typography>
             </Box>
             <TableContainer>
               <Table size="small">
                 <TableHead>
                   <TableRow>
-                    <TableCell sx={{ color: '#666', ...mono, fontSize: '0.7rem', borderColor: '#222' }}>
-                      STRATEGY
-                    </TableCell>
-                    <TableCell align="right" sx={{ color: '#666', ...mono, fontSize: '0.7rem', borderColor: '#222' }}>
-                      RETURN
-                    </TableCell>
-                    <TableCell align="right" sx={{ color: '#666', ...mono, fontSize: '0.7rem', borderColor: '#222' }}>
-                      B&H
-                    </TableCell>
-                    <TableCell align="right" sx={{ color: '#666', ...mono, fontSize: '0.7rem', borderColor: '#222' }}>
-                      ALPHA
-                    </TableCell>
-                    <TableCell align="right" sx={{ color: '#666', ...mono, fontSize: '0.7rem', borderColor: '#222' }}>
-                      WIN%
-                    </TableCell>
-                    <TableCell align="right" sx={{ color: '#666', ...mono, fontSize: '0.7rem', borderColor: '#222' }}>
-                      TRADES
-                    </TableCell>
-                    <TableCell align="right" sx={{ color: '#666', ...mono, fontSize: '0.7rem', borderColor: '#222' }}>
-                      MAX DD
-                    </TableCell>
+                    {['STRATEGY', 'RETURN', 'BUY & HOLD', 'ALPHA', 'WIN RATE', 'TRADES', 'MAX DRAWDOWN', 'SHARPE'].map(
+                      (h) => (
+                        <TableCell
+                          key={h}
+                          align={h === 'STRATEGY' ? 'left' : 'right'}
+                          sx={{ color: '#666', ...mono, fontSize: '0.7rem', borderColor: '#222' }}
+                        >
+                          {h}
+                        </TableCell>
+                      )
+                    )}
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {result.strategies.map((s) => (
-                    <TableRow
-                      key={s.strategy_key}
-                      sx={{
-                        bgcolor: s.strategy_key === result.best_strategy ? '#0a1a0a' : 'transparent',
-                      }}
-                    >
-                      <TableCell sx={{ color: '#ccc', ...mono, fontSize: '0.75rem', borderColor: '#222' }}>
-                        {s.strategy_name}
-                        {s.strategy_key === result.best_strategy && (
-                          <Chip label="BEST" size="small" sx={{ ml: 1, bgcolor: '#1a3a1a', color: '#00ff41', height: 18, fontSize: '0.6rem' }} />
-                        )}
-                      </TableCell>
-                      <TableCell
-                        align="right"
-                        sx={{
-                          color: s.return_pct >= 0 ? '#00ff41' : '#ff1744',
-                          ...mono,
-                          fontSize: '0.75rem',
-                          fontWeight: 700,
-                          borderColor: '#222',
-                        }}
-                      >
-                        {s.return_pct >= 0 ? '+' : ''}{s.return_pct.toFixed(1)}%
-                      </TableCell>
-                      <TableCell
-                        align="right"
-                        sx={{
-                          color: s.buy_hold_return_pct >= 0 ? '#4caf50' : '#f44336',
-                          ...mono,
-                          fontSize: '0.75rem',
-                          borderColor: '#222',
-                        }}
-                      >
-                        {s.buy_hold_return_pct >= 0 ? '+' : ''}{s.buy_hold_return_pct.toFixed(1)}%
-                      </TableCell>
-                      <TableCell
-                        align="right"
-                        sx={{
-                          color: s.alpha >= 0 ? '#00bcd4' : '#ff9800',
-                          ...mono,
-                          fontSize: '0.75rem',
-                          borderColor: '#222',
-                        }}
-                      >
-                        {s.alpha >= 0 ? '+' : ''}{s.alpha.toFixed(1)}%
-                      </TableCell>
-                      <TableCell
-                        align="right"
-                        sx={{ color: '#ccc', ...mono, fontSize: '0.75rem', borderColor: '#222' }}
-                      >
-                        {(s.win_rate * 100).toFixed(0)}%
-                      </TableCell>
-                      <TableCell
-                        align="right"
-                        sx={{ color: '#ccc', ...mono, fontSize: '0.75rem', borderColor: '#222' }}
-                      >
-                        {s.total_trades}
-                      </TableCell>
-                      <TableCell
-                        align="right"
-                        sx={{ color: '#ff9800', ...mono, fontSize: '0.75rem', borderColor: '#222' }}
-                      >
-                        {s.max_drawdown_pct.toFixed(1)}%
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {backtest.strategies.map((s) => {
+                    const isBest = s.strategy_key === backtest.best_strategy;
+                    const isRecommended = s.strategy_key === card.best_strategy;
+                    return (
+                      <TableRow key={s.strategy_key} sx={{ bgcolor: isBest ? '#0a1a0a' : isRecommended ? '#0a0a1a' : 'transparent' }}>
+                        <TableCell sx={{ color: '#ccc', ...mono, fontSize: '0.75rem', borderColor: '#222' }}>
+                          {s.strategy_name}
+                          {isBest && (
+                            <Chip label="BEST" size="small" sx={{ ml: 1, bgcolor: '#1a3a1a', color: '#00ff41', height: 18, fontSize: '0.6rem' }} />
+                          )}
+                          {isRecommended && !isBest && (
+                            <Chip label="AI PICK" size="small" sx={{ ml: 1, bgcolor: '#1a1a3a', color: '#ffd700', height: 18, fontSize: '0.6rem' }} />
+                          )}
+                        </TableCell>
+                        <TableCell align="right" sx={{ color: s.return_pct >= 0 ? '#00ff41' : '#ff1744', ...mono, fontSize: '0.75rem', fontWeight: 700, borderColor: '#222' }}>
+                          {s.return_pct >= 0 ? '+' : ''}{s.return_pct.toFixed(1)}%
+                        </TableCell>
+                        <TableCell align="right" sx={{ color: s.buy_hold_return_pct >= 0 ? '#4caf50' : '#f44336', ...mono, fontSize: '0.75rem', borderColor: '#222' }}>
+                          {s.buy_hold_return_pct >= 0 ? '+' : ''}{s.buy_hold_return_pct.toFixed(1)}%
+                        </TableCell>
+                        <TableCell align="right" sx={{ color: s.alpha >= 0 ? '#00bcd4' : '#ff9800', ...mono, fontSize: '0.75rem', borderColor: '#222' }}>
+                          {s.alpha >= 0 ? '+' : ''}{s.alpha.toFixed(1)}%
+                        </TableCell>
+                        <TableCell align="right" sx={{ color: '#ccc', ...mono, fontSize: '0.75rem', borderColor: '#222' }}>
+                          {(s.win_rate * 100).toFixed(0)}%
+                        </TableCell>
+                        <TableCell align="right" sx={{ color: '#ccc', ...mono, fontSize: '0.75rem', borderColor: '#222' }}>
+                          {s.total_trades}
+                        </TableCell>
+                        <TableCell align="right" sx={{ color: '#ff9800', ...mono, fontSize: '0.75rem', borderColor: '#222' }}>
+                          {s.max_drawdown_pct.toFixed(1)}%
+                        </TableCell>
+                        <TableCell align="right" sx={{ color: '#ccc', ...mono, fontSize: '0.75rem', borderColor: '#222' }}>
+                          {s.sharpe_ratio != null ? s.sharpe_ratio.toFixed(2) : '—'}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </TableContainer>
           </>
         )}
-      </DialogContent>
-    </Dialog>
+      </Paper>
+    </Box>
   );
 }
 
+function IndicatorBox({ label, value, color, sub }: { label: string; value: string; color: string; sub?: string }) {
+  return (
+    <Box sx={{ p: 1.5, bgcolor: '#0a0a0a', borderRadius: 1, border: '1px solid #1a1a1a' }}>
+      <Typography sx={{ color: '#555', fontSize: '0.6rem', ...mono, mb: 0.5 }}>{label}</Typography>
+      <Typography sx={{ color, fontSize: '1rem', fontWeight: 700, ...mono }}>{value}</Typography>
+      {sub && (
+        <Typography sx={{ color: color, fontSize: '0.6rem', ...mono, opacity: 0.7 }}>{sub}</Typography>
+      )}
+    </Box>
+  );
+}
+
+/* ─── Pre-signal view: indicator table (before AI is run) ─── */
+function IndicatorTable({ cards, onCardClick }: { cards: CardIndicator[]; onCardClick: (c: CardIndicator) => void }) {
+  return (
+    <TableContainer component={Paper} sx={{ bgcolor: '#111', border: '1px solid #1e1e1e' }}>
+      <Table size="small">
+        <TableHead>
+          <TableRow>
+            {['CARD', 'PRICE', 'RSI', '7D CHG', '30D CHG', 'BOLL POS', 'MOMENTUM', 'DAYS'].map((h) => (
+              <TableCell
+                key={h}
+                align={h === 'CARD' ? 'left' : 'right'}
+                sx={{ color: '#666', ...mono, fontSize: '0.7rem', borderColor: '#222' }}
+              >
+                {h}
+              </TableCell>
+            ))}
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {cards.map((card) => (
+            <TableRow
+              key={card.card_id}
+              onClick={() => onCardClick(card)}
+              sx={{ cursor: 'pointer', '&:hover': { bgcolor: '#1a1a1a' } }}
+            >
+              <TableCell sx={{ borderColor: '#222' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  {card.image_small && (
+                    <img src={card.image_small} alt="" style={{ width: 28, height: 40, objectFit: 'contain', borderRadius: 2 }} />
+                  )}
+                  <Box>
+                    <Typography sx={{ color: '#fff', fontSize: '0.8rem', ...mono, fontWeight: 600 }}>{card.name}</Typography>
+                    <Typography sx={{ color: '#555', fontSize: '0.65rem', ...mono }}>{card.set_name}</Typography>
+                  </Box>
+                </Box>
+              </TableCell>
+              <TableCell align="right" sx={{ color: '#00bcd4', ...mono, fontSize: '0.8rem', fontWeight: 700, borderColor: '#222' }}>
+                ${card.current_price?.toFixed(2)}
+              </TableCell>
+              <TableCell align="right" sx={{
+                color: card.rsi_14 != null ? (card.rsi_14 < 30 ? '#00ff41' : card.rsi_14 > 70 ? '#ff1744' : '#ccc') : '#333',
+                ...mono, fontSize: '0.8rem', borderColor: '#222',
+              }}>
+                {card.rsi_14?.toFixed(0) ?? '—'}
+              </TableCell>
+              <TableCell align="right" sx={{
+                color: card.price_change_7d != null ? (card.price_change_7d >= 0 ? '#00ff41' : '#ff1744') : '#333',
+                ...mono, fontSize: '0.8rem', borderColor: '#222',
+              }}>
+                {card.price_change_7d != null ? `${card.price_change_7d >= 0 ? '+' : ''}${card.price_change_7d.toFixed(1)}%` : '—'}
+              </TableCell>
+              <TableCell align="right" sx={{
+                color: card.price_change_30d != null ? (card.price_change_30d >= 0 ? '#00ff41' : '#ff1744') : '#333',
+                ...mono, fontSize: '0.8rem', borderColor: '#222',
+              }}>
+                {card.price_change_30d != null ? `${card.price_change_30d >= 0 ? '+' : ''}${card.price_change_30d.toFixed(1)}%` : '—'}
+              </TableCell>
+              <TableCell align="right" sx={{ color: '#888', ...mono, fontSize: '0.8rem', borderColor: '#222' }}>
+                {card.bollinger_position?.toFixed(2) ?? '—'}
+              </TableCell>
+              <TableCell align="right" sx={{
+                color: card.momentum != null ? (card.momentum > 0 ? '#00ff41' : '#ff1744') : '#333',
+                ...mono, fontSize: '0.8rem', borderColor: '#222',
+              }}>
+                {card.momentum?.toFixed(2) ?? '—'}
+              </TableCell>
+              <TableCell align="right" sx={{ color: '#666', ...mono, fontSize: '0.8rem', borderColor: '#222' }}>
+                {card.price_history_days}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </TableContainer>
+  );
+}
+
+/* ─── Main Signals Page ─── */
 export default function Signals() {
   const [indicators, setIndicators] = useState<CardIndicator[]>([]);
   const [aiSignals, setAiSignals] = useState<AISignalsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [aiLoading, setAiLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState(0); // 0=all, 1=buy, 2=sell, 3=hold
-  const [backtestCard, setBacktestCard] = useState<{ id: number; name: string } | null>(null);
+  const [selectedCard, setSelectedCard] = useState<CardIndicator | null>(null);
 
   useEffect(() => {
     api
@@ -253,18 +607,18 @@ export default function Signals() {
   };
 
   const cards = aiSignals ? aiSignals.signals : indicators;
-  const filtered =
-    tab === 0
-      ? cards
-      : tab === 1
-        ? cards.filter((c) => c.signal === 'BUY')
-        : tab === 2
-          ? cards.filter((c) => c.signal === 'SELL')
-          : cards.filter((c) => c.signal === 'HOLD');
+  const buyCards = cards.filter((c) => c.signal === 'BUY').sort((a, b) => (b.conviction ?? 0) - (a.conviction ?? 0));
+  const sellCards = cards.filter((c) => c.signal === 'SELL').sort((a, b) => (b.conviction ?? 0) - (a.conviction ?? 0));
+  const holdCards = cards.filter((c) => c.signal === 'HOLD').sort((a, b) => (b.conviction ?? 0) - (a.conviction ?? 0));
 
-  const buyCount = aiSignals?.summary?.buy ?? 0;
-  const sellCount = aiSignals?.summary?.sell ?? 0;
-  const holdCount = aiSignals?.summary?.hold ?? 0;
+  // Drill-down view
+  if (selectedCard) {
+    return (
+      <Box sx={{ p: 2, maxWidth: 1200, mx: 'auto' }}>
+        <CardDrillDown card={selectedCard} onBack={() => setSelectedCard(null)} />
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ p: 2, maxWidth: 1400, mx: 'auto' }}>
@@ -286,7 +640,7 @@ export default function Signals() {
                 AI TRADING SIGNALS
               </Typography>
               <Typography sx={{ color: '#666', fontSize: '0.8rem', ...mono }}>
-                GPT-POWERED BUY/SELL/HOLD — DAILY TECHNICAL ANALYSIS
+                GPT-POWERED BUY/SELL/HOLD — CLICK ANY CARD TO DRILL DOWN
               </Typography>
             </Box>
           </Box>
@@ -324,270 +678,83 @@ export default function Signals() {
         </Alert>
       )}
 
-      {/* Summary bar (only when AI signals are generated) */}
-      {aiSignals && (
-        <Paper sx={{ p: 2, mb: 2, bgcolor: '#111', border: '1px solid #1e1e1e' }}>
-          <Box sx={{ display: 'flex', gap: 3, alignItems: 'center', flexWrap: 'wrap' }}>
-            <Box>
-              <Typography sx={{ color: '#666', fontSize: '0.65rem', ...mono }}>TOTAL</Typography>
-              <Typography sx={{ color: '#fff', fontWeight: 700, ...mono, fontSize: '1.2rem' }}>
-                {aiSignals.summary.total}
-              </Typography>
-            </Box>
-            <Box>
-              <Typography sx={{ color: '#666', fontSize: '0.65rem', ...mono }}>BUY</Typography>
-              <Typography sx={{ color: '#00ff41', fontWeight: 700, ...mono, fontSize: '1.2rem' }}>
-                {buyCount}
-              </Typography>
-            </Box>
-            <Box>
-              <Typography sx={{ color: '#666', fontSize: '0.65rem', ...mono }}>SELL</Typography>
-              <Typography sx={{ color: '#ff1744', fontWeight: 700, ...mono, fontSize: '1.2rem' }}>
-                {sellCount}
-              </Typography>
-            </Box>
-            <Box>
-              <Typography sx={{ color: '#666', fontSize: '0.65rem', ...mono }}>HOLD</Typography>
-              <Typography sx={{ color: '#00bcd4', fontWeight: 700, ...mono, fontSize: '1.2rem' }}>
-                {holdCount}
-              </Typography>
-            </Box>
-            {aiSignals.tokens_used && (
-              <Box sx={{ ml: 'auto' }}>
-                <Typography sx={{ color: '#444', fontSize: '0.65rem', ...mono }}>
-                  TOKENS: {aiSignals.tokens_used.input.toLocaleString()} in / {aiSignals.tokens_used.output.toLocaleString()} out
-                </Typography>
-              </Box>
-            )}
-          </Box>
-        </Paper>
-      )}
-
-      {/* Tabs for filtering */}
-      {aiSignals && (
-        <Tabs
-          value={tab}
-          onChange={(_, v) => setTab(v)}
-          sx={{
-            mb: 2,
-            '& .MuiTab-root': { color: '#666', ...mono, fontSize: '0.8rem', textTransform: 'none', minHeight: 36 },
-            '& .Mui-selected': { color: '#00bcd4' },
-            '& .MuiTabs-indicator': { bgcolor: '#00bcd4' },
-          }}
-        >
-          <Tab label={`All (${aiSignals.summary.total})`} />
-          <Tab label={`Buy (${buyCount})`} />
-          <Tab label={`Sell (${sellCount})`} />
-          <Tab label={`Hold (${holdCount})`} />
-        </Tabs>
-      )}
-
-      {/* Cards table */}
-      {loading ? (
+      {loading && (
         <Box sx={{ textAlign: 'center', py: 4 }}>
           <CircularProgress sx={{ color: '#00bcd4' }} />
         </Box>
-      ) : (
-        <TableContainer component={Paper} sx={{ bgcolor: '#111', border: '1px solid #1e1e1e' }}>
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell sx={{ color: '#666', ...mono, fontSize: '0.7rem', borderColor: '#222' }}>CARD</TableCell>
-                <TableCell align="right" sx={{ color: '#666', ...mono, fontSize: '0.7rem', borderColor: '#222' }}>
-                  PRICE
-                </TableCell>
-                <TableCell align="right" sx={{ color: '#666', ...mono, fontSize: '0.7rem', borderColor: '#222' }}>
-                  RSI
-                </TableCell>
-                <TableCell align="right" sx={{ color: '#666', ...mono, fontSize: '0.7rem', borderColor: '#222' }}>
-                  7D CHG
-                </TableCell>
-                <TableCell align="right" sx={{ color: '#666', ...mono, fontSize: '0.7rem', borderColor: '#222' }}>
-                  30D CHG
-                </TableCell>
-                <TableCell align="right" sx={{ color: '#666', ...mono, fontSize: '0.7rem', borderColor: '#222' }}>
-                  BOLL POS
-                </TableCell>
-                {aiSignals && (
-                  <>
-                    <TableCell sx={{ color: '#666', ...mono, fontSize: '0.7rem', borderColor: '#222' }}>SIGNAL</TableCell>
-                    <TableCell sx={{ color: '#666', ...mono, fontSize: '0.7rem', borderColor: '#222' }}>REASONING</TableCell>
-                    <TableCell align="right" sx={{ color: '#666', ...mono, fontSize: '0.7rem', borderColor: '#222' }}>
-                      TARGET
-                    </TableCell>
-                    <TableCell align="right" sx={{ color: '#666', ...mono, fontSize: '0.7rem', borderColor: '#222' }}>
-                      STOP
-                    </TableCell>
-                  </>
-                )}
-                <TableCell sx={{ color: '#666', ...mono, fontSize: '0.7rem', borderColor: '#222' }}>ACTIONS</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {filtered.map((card) => (
-                <TableRow
-                  key={card.card_id}
-                  sx={{
-                    '&:hover': { bgcolor: '#1a1a1a' },
-                    bgcolor:
-                      card.signal === 'BUY'
-                        ? '#040e04'
-                        : card.signal === 'SELL'
-                          ? '#0e0404'
-                          : 'transparent',
-                  }}
-                >
-                  <TableCell sx={{ borderColor: '#222' }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      {card.image_small && (
-                        <img
-                          src={card.image_small}
-                          alt=""
-                          style={{ width: 28, height: 40, objectFit: 'contain', borderRadius: 2 }}
-                        />
-                      )}
-                      <Box>
-                        <Typography sx={{ color: '#fff', fontSize: '0.8rem', ...mono, fontWeight: 600 }}>
-                          {card.name}
-                        </Typography>
-                        <Typography sx={{ color: '#555', fontSize: '0.65rem', ...mono }}>
-                          {card.set_name} · {card.rarity}
-                        </Typography>
-                      </Box>
-                    </Box>
-                  </TableCell>
-                  <TableCell align="right" sx={{ color: '#00bcd4', ...mono, fontSize: '0.8rem', fontWeight: 700, borderColor: '#222' }}>
-                    ${card.current_price?.toFixed(2)}
-                  </TableCell>
-                  <TableCell
-                    align="right"
-                    sx={{
-                      color: card.rsi_14 != null ? (card.rsi_14 < 30 ? '#00ff41' : card.rsi_14 > 70 ? '#ff1744' : '#ccc') : '#333',
-                      ...mono,
-                      fontSize: '0.8rem',
-                      borderColor: '#222',
-                    }}
-                  >
-                    {card.rsi_14?.toFixed(0) ?? '—'}
-                  </TableCell>
-                  <TableCell
-                    align="right"
-                    sx={{
-                      color: card.price_change_7d != null ? (card.price_change_7d >= 0 ? '#00ff41' : '#ff1744') : '#333',
-                      ...mono,
-                      fontSize: '0.8rem',
-                      borderColor: '#222',
-                    }}
-                  >
-                    {card.price_change_7d != null ? `${card.price_change_7d >= 0 ? '+' : ''}${card.price_change_7d.toFixed(1)}%` : '—'}
-                  </TableCell>
-                  <TableCell
-                    align="right"
-                    sx={{
-                      color: card.price_change_30d != null ? (card.price_change_30d >= 0 ? '#00ff41' : '#ff1744') : '#333',
-                      ...mono,
-                      fontSize: '0.8rem',
-                      borderColor: '#222',
-                    }}
-                  >
-                    {card.price_change_30d != null ? `${card.price_change_30d >= 0 ? '+' : ''}${card.price_change_30d.toFixed(1)}%` : '—'}
-                  </TableCell>
-                  <TableCell align="right" sx={{ borderColor: '#222' }}>
-                    {card.bollinger_position != null ? (
-                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5 }}>
-                        <Box sx={{ width: 40, height: 6, bgcolor: '#222', borderRadius: 1, position: 'relative' }}>
-                          <Box
-                            sx={{
-                              position: 'absolute',
-                              left: `${Math.min(Math.max(card.bollinger_position * 100, 0), 100)}%`,
-                              top: -1,
-                              width: 8,
-                              height: 8,
-                              borderRadius: '50%',
-                              bgcolor:
-                                card.bollinger_position < 0.2
-                                  ? '#00ff41'
-                                  : card.bollinger_position > 0.8
-                                    ? '#ff1744'
-                                    : '#00bcd4',
-                              transform: 'translateX(-50%)',
-                            }}
-                          />
-                        </Box>
-                        <Typography sx={{ color: '#888', ...mono, fontSize: '0.7rem' }}>
-                          {card.bollinger_position.toFixed(2)}
-                        </Typography>
-                      </Box>
-                    ) : (
-                      <Typography sx={{ color: '#333', ...mono, fontSize: '0.8rem' }}>—</Typography>
-                    )}
-                  </TableCell>
-                  {aiSignals && (
-                    <>
-                      <TableCell sx={{ borderColor: '#222' }}>
-                        {card.signal ? <SignalChip signal={card.signal} conviction={card.conviction} /> : '—'}
-                      </TableCell>
-                      <TableCell sx={{ borderColor: '#222', maxWidth: 250 }}>
-                        <Typography sx={{ color: '#999', ...mono, fontSize: '0.7rem', lineHeight: 1.3 }}>
-                          {card.reasoning || '—'}
-                        </Typography>
-                      </TableCell>
-                      <TableCell
-                        align="right"
-                        sx={{ color: '#4caf50', ...mono, fontSize: '0.75rem', borderColor: '#222' }}
-                      >
-                        {card.target_price != null ? `$${card.target_price.toFixed(2)}` : '—'}
-                      </TableCell>
-                      <TableCell
-                        align="right"
-                        sx={{ color: '#f44336', ...mono, fontSize: '0.75rem', borderColor: '#222' }}
-                      >
-                        {card.stop_loss != null ? `$${card.stop_loss.toFixed(2)}` : '—'}
-                      </TableCell>
-                    </>
-                  )}
-                  <TableCell sx={{ borderColor: '#222' }}>
-                    {card.can_backtest && (
-                      <Button
-                        size="small"
-                        startIcon={<ScienceIcon sx={{ fontSize: 14 }} />}
-                        onClick={() => setBacktestCard({ id: card.card_id, name: card.name })}
-                        sx={{
-                          color: '#00bcd4',
-                          ...mono,
-                          fontSize: '0.65rem',
-                          textTransform: 'none',
-                          minWidth: 'auto',
-                          py: 0.25,
-                        }}
-                      >
-                        Backtest
-                      </Button>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </TableContainer>
       )}
 
-      {!loading && filtered.length === 0 && (
+      {/* Before AI signals: show indicator table */}
+      {!loading && !aiSignals && (
+        <>
+          <Paper sx={{ p: 2, mb: 2, bgcolor: '#111', border: '1px solid #1e1e1e' }}>
+            <Typography sx={{ color: '#888', ...mono, fontSize: '0.8rem' }}>
+              Showing raw technical indicators for {indicators.length} cards. Click &quot;GENERATE AI SIGNALS&quot; to get BUY/SELL/HOLD recommendations from GPT.
+            </Typography>
+          </Paper>
+          <IndicatorTable cards={indicators} onCardClick={setSelectedCard} />
+        </>
+      )}
+
+      {/* After AI signals: show BUY / SELL / HOLD sections */}
+      {!loading && aiSignals && (
+        <>
+          {/* Summary bar */}
+          <Paper sx={{ p: 2, mb: 3, bgcolor: '#111', border: '1px solid #1e1e1e' }}>
+            <Box sx={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
+              <Box>
+                <Typography sx={{ color: '#666', fontSize: '0.65rem', ...mono }}>TOTAL</Typography>
+                <Typography sx={{ color: '#fff', fontWeight: 700, ...mono, fontSize: '1.3rem' }}>
+                  {aiSignals.summary.total}
+                </Typography>
+              </Box>
+              <Divider orientation="vertical" flexItem sx={{ borderColor: '#222' }} />
+              <Box>
+                <Typography sx={{ color: '#666', fontSize: '0.65rem', ...mono }}>BUY</Typography>
+                <Typography sx={{ color: '#00ff41', fontWeight: 700, ...mono, fontSize: '1.3rem' }}>
+                  {aiSignals.summary.buy}
+                </Typography>
+              </Box>
+              <Box>
+                <Typography sx={{ color: '#666', fontSize: '0.65rem', ...mono }}>SELL</Typography>
+                <Typography sx={{ color: '#ff1744', fontWeight: 700, ...mono, fontSize: '1.3rem' }}>
+                  {aiSignals.summary.sell}
+                </Typography>
+              </Box>
+              <Box>
+                <Typography sx={{ color: '#666', fontSize: '0.65rem', ...mono }}>HOLD</Typography>
+                <Typography sx={{ color: '#00bcd4', fontWeight: 700, ...mono, fontSize: '1.3rem' }}>
+                  {aiSignals.summary.hold}
+                </Typography>
+              </Box>
+              {aiSignals.tokens_used && (
+                <Box sx={{ ml: 'auto' }}>
+                  <Typography sx={{ color: '#444', fontSize: '0.65rem', ...mono }}>
+                    TOKENS: {aiSignals.tokens_used.input.toLocaleString()} in / {aiSignals.tokens_used.output.toLocaleString()} out
+                  </Typography>
+                </Box>
+              )}
+            </Box>
+          </Paper>
+
+          {/* BUY section */}
+          <SignalGroup signal="BUY" cards={buyCards} onCardClick={setSelectedCard} />
+
+          {/* SELL section */}
+          <SignalGroup signal="SELL" cards={sellCards} onCardClick={setSelectedCard} />
+
+          {/* HOLD section */}
+          <SignalGroup signal="HOLD" cards={holdCards} onCardClick={setSelectedCard} />
+        </>
+      )}
+
+      {/* Empty state */}
+      {!loading && cards.length === 0 && (
         <Paper sx={{ p: 4, bgcolor: '#111', border: '1px solid #1e1e1e', textAlign: 'center' }}>
           <Typography sx={{ color: '#666', ...mono }}>
-            {aiSignals ? 'No cards match this filter.' : 'No cards with sufficient daily price data.'}
+            No cards with sufficient daily price data.
           </Typography>
         </Paper>
-      )}
-
-      {/* Backtest dialog */}
-      {backtestCard && (
-        <BacktestDialog
-          open={!!backtestCard}
-          onClose={() => setBacktestCard(null)}
-          cardId={backtestCard.id}
-          cardName={backtestCard.name}
-        />
       )}
     </Box>
   );
