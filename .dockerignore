@@ -1,0 +1,10 @@
+node_modules
+frontend/node_modules
+frontend/build
+.venv
+__pycache__
+*.db
+.git
+.idea
+.DS_Store
+*.pyc
