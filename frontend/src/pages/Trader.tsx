@@ -117,6 +117,8 @@ export default function Trader() {
       const result = await api.getTraderAnalysis();
       if (result.error) {
         setError(result.error);
+      } else if (!result.analysis) {
+        setError('AI model returned empty analysis. This can happen when the model uses all tokens on reasoning. Please try again.');
       } else {
         setAnalysis(result);
       }

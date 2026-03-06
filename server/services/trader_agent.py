@@ -58,9 +58,9 @@ def _gather_market_data(db: Session) -> dict:
         or 0
     )
 
-    # Get average price and total market cap
+    # Get average price and total market cap (tracked cards only)
     latest_prices = {}
-    all_cards = db.query(Card).all()
+    all_cards = db.query(Card).filter(Card.is_tracked == True).all()
     for card in all_cards:
         latest = (
             db.query(PriceHistory)
@@ -123,22 +123,30 @@ def _gather_market_data(db: Session) -> dict:
                         (info["price"] - analysis.bollinger_lower) / band_range, 2
                     )
 
-    data["card_analyses"] = sorted(card_analyses, key=lambda x: abs(x.get("signal_strength", 0)), reverse=True)
+    data["card_analyses"] = sorted(card_analyses, key=lambda x: abs(x.get("signal_strength", 0)), reverse=True)[:15]
 
-    # 4. Backtest results — portfolio with combined strategy
+    # 4. Backtest results — portfolio with combined strategy (summary only, no daily values)
     try:
         portfolio_result = run_portfolio_backtest(db, strategy="combined", top_n=10, initial_capital=10000)
+        # Strip daily_values to reduce token count
+        if isinstance(portfolio_result, dict):
+            portfolio_result.pop("daily_values", None)
+            for card_res in portfolio_result.get("card_results", []):
+                if isinstance(card_res, dict):
+                    card_res.pop("daily_values", None)
+                    card_res.pop("trades", None)
         data["portfolio_backtest"] = portfolio_result
     except Exception as e:
         logger.warning(f"Portfolio backtest failed: {e}")
         data["portfolio_backtest"] = {"error": str(e)}
 
-    # 5. Strategy comparison for top cards
+    # 5. Strategy comparison for top cards (limited to top 3 cards, top 3 strategies)
     strategy_comparison = []
-    top_card_ids = [a["card_id"] for a in card_analyses[:5]]
+    top_card_ids = [a["card_id"] for a in card_analyses[:3]]
+    top_strategies = ["sma_crossover", "bollinger_bounce", "macd_signal"]
     for card_id in top_card_ids:
         card_strats = {}
-        for strat_key in STRATEGIES:
+        for strat_key in top_strategies:
             try:
                 result = run_backtest(db, card_id, strategy=strat_key, initial_capital=1000)
                 if result:
@@ -167,8 +175,12 @@ def _gather_market_data(db: Session) -> dict:
     return data
 
 
-def _call_openai(system: str, user_message: str, max_tokens: int = 4096) -> dict:
-    """Call OpenAI GPT-5.4 API and return response text + usage."""
+def _call_openai(system: str, user_message: str, max_tokens: int = 16384) -> dict:
+    """Call OpenAI GPT-5.4 API and return response text + usage.
+
+    Note: GPT-5.4 is a reasoning model — max_completion_tokens covers both
+    reasoning tokens AND output tokens. Must be large enough for both.
+    """
     import openai
 
     api_key = os.environ.get("OPENAI_API_KEY")
@@ -179,7 +191,7 @@ def _call_openai(system: str, user_message: str, max_tokens: int = 4096) -> dict
 
     response = client.chat.completions.create(
         model="gpt-5.4",
-        max_tokens=max_tokens,
+        max_completion_tokens=max_tokens,
         messages=[
             {"role": "system", "content": system},
             {"role": "user", "content": user_message},
@@ -187,8 +199,16 @@ def _call_openai(system: str, user_message: str, max_tokens: int = 4096) -> dict
     )
 
     choice = response.choices[0]
+    text = choice.message.content or ""
+
+    if not text:
+        logger.warning(
+            f"GPT-5.4 returned empty content. finish_reason={choice.finish_reason}, "
+            f"tokens: input={response.usage.prompt_tokens}, output={response.usage.completion_tokens}"
+        )
+
     return {
-        "text": choice.message.content,
+        "text": text,
         "tokens_used": {
             "input": response.usage.prompt_tokens,
             "output": response.usage.completion_tokens,
@@ -220,13 +240,13 @@ async def get_trader_analysis(db: Session) -> dict:
 ## Top Movers (Gainers & Losers)
 {json.dumps(market_data['top_movers'], indent=2)}
 
-## Technical Analysis (All Cards)
+## Technical Analysis (Top 15 Cards by Signal Strength)
 {json.dumps(market_data['card_analyses'], indent=2)}
 
-## Portfolio Backtest (Combined Strategy, $10K, Top 10 Cards)
+## Portfolio Backtest Summary (Combined Strategy, $10K, Top 10 Cards)
 {json.dumps(market_data['portfolio_backtest'], indent=2)}
 
-## Strategy Comparison (Top 5 Cards x All Strategies)
+## Strategy Comparison (Top 3 Cards x 3 Strategies)
 {json.dumps(market_data['strategy_comparison'], indent=2)}
 
 ## Available Trading Strategies
@@ -243,7 +263,7 @@ Give me your complete analysis covering:
 Be specific. Reference the actual numbers. This is a trading desk briefing, not a blog post."""
 
     try:
-        result = _call_openai(TRADER_SYSTEM_PROMPT, user_prompt, max_tokens=4096)
+        result = _call_openai(TRADER_SYSTEM_PROMPT, user_prompt, max_tokens=16384)
 
         return {
             "trader_name": "Marcus 'The Collector' Vega",
@@ -334,7 +354,7 @@ Give me a focused trading brief:
 Keep it tight — this is a single-card trade brief, not a dissertation."""
 
     try:
-        result = _call_openai(TRADER_SYSTEM_PROMPT, user_prompt, max_tokens=2048)
+        result = _call_openai(TRADER_SYSTEM_PROMPT, user_prompt, max_tokens=8192)
 
         return {
             "trader_name": "Marcus 'The Collector' Vega",
