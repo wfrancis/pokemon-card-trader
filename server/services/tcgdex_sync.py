@@ -17,6 +17,7 @@ from datetime import date, datetime, timezone
 from sqlalchemy.orm import Session
 from server.models.card import Card
 from server.models.price_history import PriceHistory
+from server.models.card_set import CardSet
 
 logger = logging.getLogger(__name__)
 
@@ -136,6 +137,105 @@ def _dedupe_prices(records: list[dict]) -> list[dict]:
                 by_date[d] = r
 
     return list(by_date.values())
+
+
+async def sync_tcgdex_sets(db: Session) -> dict:
+    """Fetch all set metadata from TCGdex API, including release dates.
+
+    Gets set list, then fetches detail for each to get releaseDate.
+    Caches results in card_sets table.
+    """
+    stats = {"sets_synced": 0, "sets_updated": 0, "errors": 0}
+
+    import httpx
+    async with httpx.AsyncClient(
+        timeout=60.0,
+        headers={"User-Agent": "PokemonCardTrader/1.0"},
+        follow_redirects=True,
+    ) as client:
+        # Get set list
+        logger.info("Fetching set list from TCGdex...")
+        resp = await _fetch(client, f"{TCGDEX_API}/sets")
+        if not resp:
+            return stats
+
+        sets_list = resp.json()
+        if not isinstance(sets_list, list):
+            return stats
+
+        logger.info(f"Got {len(sets_list)} sets from TCGdex, fetching details...")
+        sem = asyncio.Semaphore(5)
+
+        async def get_set_detail(set_summary):
+            sid = set_summary.get("id", "")
+            if not sid:
+                return None
+            async with sem:
+                r = await _fetch(client, f"{TCGDEX_API}/sets/{sid}")
+                if not r:
+                    return None
+                try:
+                    return r.json()
+                except Exception:
+                    return None
+
+        batch_size = 20
+        for i in range(0, len(sets_list), batch_size):
+            batch = sets_list[i:i + batch_size]
+            results = await asyncio.gather(*[get_set_detail(s) for s in batch], return_exceptions=True)
+
+            for result in results:
+                if isinstance(result, Exception) or result is None:
+                    stats["errors"] += 1 if isinstance(result, Exception) else 0
+                    continue
+
+                try:
+                    sid = result.get("id", "")
+                    if not sid:
+                        continue
+
+                    release_str = result.get("releaseDate")
+                    release_date = None
+                    if release_str:
+                        try:
+                            release_date = datetime.strptime(release_str, "%Y-%m-%d").date()
+                        except ValueError:
+                            pass
+
+                    card_count_info = result.get("cardCount", {})
+                    card_count = card_count_info.get("total", 0) if isinstance(card_count_info, dict) else 0
+
+                    serie_info = result.get("serie", {})
+                    series_name = serie_info.get("name", "") if isinstance(serie_info, dict) else ""
+
+                    existing = db.query(CardSet).filter(CardSet.id == sid).first()
+                    if existing:
+                        existing.name = result.get("name", existing.name)
+                        existing.release_date = release_date or existing.release_date
+                        existing.card_count = card_count or existing.card_count
+                        existing.series_name = series_name or existing.series_name
+                        existing.fetched_at = datetime.now(timezone.utc)
+                        stats["sets_updated"] += 1
+                    else:
+                        db.add(CardSet(
+                            id=sid,
+                            name=result.get("name", ""),
+                            release_date=release_date,
+                            card_count=card_count,
+                            series_name=series_name,
+                            logo_url=result.get("logo", ""),
+                        ))
+                        stats["sets_synced"] += 1
+                except Exception as e:
+                    logger.error(f"Error processing set: {e}")
+                    stats["errors"] += 1
+
+            db.commit()
+            if i + batch_size < len(sets_list):
+                await asyncio.sleep(0.5)
+
+    logger.info(f"TCGdex set sync: {stats}")
+    return stats
 
 
 async def sync_tcgdex_cards(db: Session, max_cards: int = 25000) -> dict:
@@ -258,15 +358,16 @@ def _map_card(data: dict) -> dict:
     }
 
 
-async def import_tcgdex_prices(db: Session, min_price_cents: int = MIN_PRICE_CENTS) -> dict:
+async def import_tcgdex_prices(db: Session, min_price_cents: int = MIN_PRICE_CENTS, tracked_only: bool = False) -> dict:
     """Import prices from tcgdex/price-history GitHub repo.
 
     Strategy:
     1. Get full file tree from GitHub (one API call)
-    2. Fetch each price file from raw.githubusercontent.com (no rate limit)
-    3. Parse prices, skip cards under min_price
-    4. Create cards (from TCGdex) if not in DB
-    5. Insert price history records
+    2. If tracked_only, filter to only tracked card tcg_ids
+    3. Fetch each price file from raw.githubusercontent.com (no rate limit)
+    4. Parse prices, skip cards under min_price
+    5. Create cards (from TCGdex) if not in DB
+    6. Insert price history records
     """
     stats = {
         "files_found": 0, "files_processed": 0, "cards_created": 0,
@@ -310,6 +411,18 @@ async def import_tcgdex_prices(db: Session, min_price_cents: int = MIN_PRICE_CEN
 
         stats["files_found"] = len(price_files)
         logger.info(f"Found {len(price_files)} price files across {len(set(f['set_id'] for f in price_files))} sets")
+
+        # Filter to tracked cards only if requested
+        if tracked_only:
+            tracked_tcg_ids = set(
+                row[0] for row in db.query(Card.tcg_id)
+                .filter(Card.is_tracked == True).all()
+            )
+            # Also include blue chip IDs (may not be in DB yet)
+            from server.config.blue_chips import BLUE_CHIP_TCG_IDS
+            tracked_tcg_ids |= BLUE_CHIP_TCG_IDS
+            price_files = [pf for pf in price_files if pf["tcg_id"] in tracked_tcg_ids]
+            logger.info(f"Filtered to {len(price_files)} price files for tracked cards")
 
         # Step 2: Fetch and process price files in batches
         sem = asyncio.Semaphore(20)  # raw.githubusercontent.com handles high concurrency

@@ -93,7 +93,7 @@ async def sync_poketrace_prices(
     if card_ids:
         cards = db.query(Card).filter(Card.tcg_id.in_(card_ids)).all()
     else:
-        cards = db.query(Card).all()
+        cards = db.query(Card).filter(Card.is_tracked == True).all()
 
     if not cards:
         logger.info("No cards in database for PokeTrace sync")

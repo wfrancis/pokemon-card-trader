@@ -567,12 +567,14 @@ def run_portfolio_backtest(
     """
     from sqlalchemy import func
 
-    # Find cards with most price history
+    # Find tracked cards with most price history
+    from server.models.card import Card
     card_ids = [
         row[0]
         for row in (
             db.query(PriceHistory.card_id, func.count(PriceHistory.id).label("cnt"))
-            .filter(PriceHistory.market_price.isnot(None))
+            .join(Card, Card.id == PriceHistory.card_id)
+            .filter(PriceHistory.market_price.isnot(None), Card.is_tracked == True)
             .group_by(PriceHistory.card_id)
             .having(func.count(PriceHistory.id) >= 35)
             .order_by(func.count(PriceHistory.id).desc())

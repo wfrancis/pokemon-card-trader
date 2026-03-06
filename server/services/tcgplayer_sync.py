@@ -157,7 +157,7 @@ async def sync_tcgplayer_prices(db: Session, limit: int = 100) -> dict:
     card_rows = (
         db.query(Card, func.count(PriceHistory.id).label("cnt"))
         .outerjoin(PriceHistory, PriceHistory.card_id == Card.id)
-        .filter(Card.current_price.isnot(None))
+        .filter(Card.current_price.isnot(None), Card.is_tracked == True)
         .group_by(Card.id)
         .order_by(desc("cnt"))
         .limit(limit)
