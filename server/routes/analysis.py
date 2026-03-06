@@ -39,7 +39,7 @@ def market_index(db: Session = Depends(get_db)):
         func.avg(Card.current_price).label("avg_price"),
         func.count(Card.id).label("total_cards"),
         func.sum(Card.current_price).label("total_market_cap"),
-    ).filter(Card.current_price.isnot(None), Card.current_price > 0).first()
+    ).filter(Card.current_price.isnot(None), Card.current_price > 0, Card.is_tracked == True).first()
 
     return {
         "avg_price": round(result.avg_price, 2) if result.avg_price else 0,
@@ -65,7 +65,7 @@ def market_ticker(
     """Cards for the scrolling ticker — top priced cards with their current values."""
     cards = (
         db.query(Card)
-        .filter(Card.current_price.isnot(None), Card.current_price > 0)
+        .filter(Card.current_price.isnot(None), Card.current_price > 0, Card.is_tracked == True)
         .order_by(Card.current_price.desc())
         .limit(limit)
         .all()

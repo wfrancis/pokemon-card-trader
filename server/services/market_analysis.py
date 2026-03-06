@@ -595,7 +595,8 @@ def get_top_movers(db: Session, limit: int = 10) -> dict:
         )
         .join(recent, Card.id == recent.c.card_id)
         .join(prev, Card.id == prev.c.card_id)
-        .filter(prev.c.prev_avg > 0, Card.current_price.isnot(None), Card.current_price >= 2.0)
+        .filter(prev.c.prev_avg > 0, Card.current_price.isnot(None), Card.current_price >= 2.0,
+                Card.is_tracked == True)
         .all()
     )
 
@@ -654,6 +655,7 @@ def get_set_relative_strength(db: Session, days: int = 30) -> dict[str, float]:
             PriceHistory.market_price.isnot(None),
             Card.current_price.isnot(None),
             Card.current_price >= 2.0,
+            Card.is_tracked == True,
         )
         .group_by(Card.set_id)
         .all()
@@ -757,7 +759,7 @@ def get_hot_cards(db: Session, limit: int = 12) -> list[dict]:
             ((stats.c.max_price - stats.c.min_price) / stats.c.avg_price).label("range_ratio"),
         )
         .join(Card, Card.id == stats.c.card_id)
-        .filter(Card.current_price.isnot(None), Card.current_price >= 2.0)
+        .filter(Card.current_price.isnot(None), Card.current_price >= 2.0, Card.is_tracked == True)
         .filter(stats.c.avg_price >= 2.0)
         .order_by(desc("range_ratio"))
         .limit(candidate_limit)

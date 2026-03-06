@@ -61,7 +61,7 @@ def _build_card_indicators(db: Session, max_cards: int = 100) -> list[dict]:
 
     for row in card_ids_with_counts:
         card = db.query(Card).filter(Card.id == row.card_id).first()
-        if not card or not card.current_price:
+        if not card or not card.current_price or not card.is_tracked:
             continue
         # Skip cheap cards — not meaningful for trading signals
         if card.current_price < 5.0:

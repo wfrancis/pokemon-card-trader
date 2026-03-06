@@ -20,7 +20,7 @@ def list_cards(
     has_price: bool = Query(False, description="Only show cards with prices"),
     db: Session = Depends(get_db),
 ):
-    query = db.query(Card)
+    query = db.query(Card).filter(Card.is_tracked == True)
 
     if q:
         query = query.filter(Card.name.ilike(f"%{q}%"))

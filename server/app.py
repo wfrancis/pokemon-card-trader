@@ -16,9 +16,10 @@ from server.routes import signals
 from server.services.card_sync import sync_all_cards
 from server.services.price_collector import collect_prices_for_cards
 from server.services.seed_data import seed_database
-from server.services.tcgdex_sync import sync_tcgdex_cards, import_tcgdex_prices
+from server.services.tcgdex_sync import sync_tcgdex_cards, import_tcgdex_prices, sync_tcgdex_sets
 from server.services.poketrace_sync import sync_poketrace_prices
 from server.services.pricecharting_import import import_pricecharting_csv
+from server.services.tracking import rebuild_tracked_cards, get_tracked_stats
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -29,7 +30,7 @@ FRONTEND_BUILD = os.path.join(os.path.dirname(__file__), "..", "frontend", "buil
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
-    # Create composite index if missing (create_all won't add to existing tables)
+    # Migrations for existing tables (create_all won't add columns to existing tables)
     from sqlalchemy import text
     with engine.connect() as conn:
         try:
@@ -37,6 +38,17 @@ async def lifespan(app: FastAPI):
                 "CREATE INDEX IF NOT EXISTS ix_price_history_card_date "
                 "ON price_history (card_id, date)"
             ))
+            conn.commit()
+        except Exception:
+            pass
+        # Add is_tracked column if missing
+        try:
+            conn.execute(text("ALTER TABLE cards ADD COLUMN is_tracked BOOLEAN DEFAULT 0 NOT NULL"))
+            conn.commit()
+        except Exception:
+            pass
+        try:
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_cards_is_tracked ON cards (is_tracked)"))
             conn.commit()
         except Exception:
             pass
@@ -184,6 +196,74 @@ async def trigger_pricecharting_import(
     except Exception as e:
         logger.error(f"PriceCharting import failed: {e}")
         return {"status": "error", "message": str(e)}
+
+
+import threading
+
+_rebuild_status = {"running": False, "step": "", "stats": None, "error": None}
+
+
+@app.post("/api/rebuild")
+async def trigger_rebuild(db: Session = Depends(get_db)):
+    """Full rebuild: sync sets → mark tracked → import prices for tracked cards."""
+    if _rebuild_status["running"]:
+        return {"status": "already_running", "step": _rebuild_status["step"]}
+
+    def _run_rebuild():
+        from server.database import SessionLocal
+        db_local = SessionLocal()
+        try:
+            _rebuild_status["running"] = True
+            _rebuild_status["error"] = None
+            _rebuild_status["stats"] = {}
+
+            import asyncio
+            loop = asyncio.new_event_loop()
+
+            # Step 1: Sync set metadata (release dates)
+            _rebuild_status["step"] = "syncing_sets"
+            logger.info("Rebuild step 1: Syncing set metadata...")
+            set_stats = loop.run_until_complete(sync_tcgdex_sets(db_local))
+            _rebuild_status["stats"]["sets"] = set_stats
+
+            # Step 2: Mark tracked cards
+            _rebuild_status["step"] = "marking_tracked"
+            logger.info("Rebuild step 2: Marking tracked cards...")
+            track_stats = rebuild_tracked_cards(db_local)
+            _rebuild_status["stats"]["tracking"] = track_stats
+
+            # Step 3: Import price history for tracked cards
+            _rebuild_status["step"] = "importing_prices"
+            logger.info("Rebuild step 3: Importing prices for tracked cards...")
+            price_stats = loop.run_until_complete(
+                import_tcgdex_prices(db_local, min_price_cents=0, tracked_only=True)
+            )
+            _rebuild_status["stats"]["prices"] = price_stats
+
+            _rebuild_status["step"] = "complete"
+            logger.info(f"Rebuild complete: {_rebuild_status['stats']}")
+            loop.close()
+        except Exception as e:
+            logger.error(f"Rebuild failed: {e}")
+            _rebuild_status["error"] = str(e)
+            _rebuild_status["step"] = "error"
+        finally:
+            db_local.close()
+            _rebuild_status["running"] = False
+
+    thread = threading.Thread(target=_run_rebuild, daemon=True)
+    thread.start()
+    return {"status": "started", "message": "Rebuild started in background. Poll /api/rebuild/status."}
+
+
+@app.get("/api/rebuild/status")
+def rebuild_status():
+    return _rebuild_status
+
+
+@app.get("/api/tracked/stats")
+def tracked_stats(db: Session = Depends(get_db)):
+    return get_tracked_stats(db)
 
 
 # Serve React frontend — must be AFTER all API routes

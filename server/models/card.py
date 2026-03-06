@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime
+from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 from server.database import Base
@@ -23,6 +23,7 @@ class Card(Base):
     # Current price snapshot (latest sync)
     current_price = Column(Float)
     price_variant = Column(String)  # normal, holofoil, reverseHolofoil
+    is_tracked = Column(Boolean, default=False, nullable=False, index=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
