@@ -76,13 +76,16 @@ def _build_card_indicators(db: Session, max_cards: int = 100) -> list[dict]:
         def _r(val, d=2):
             return round(val, d) if val is not None else None
 
+        # Use analyzed price (from latest history) over potentially stale card.current_price
+        actual_price = analysis.last_analyzed_price or card.current_price
+
         entry = {
             "card_id": card.id,
             "name": card.name,
             "set_name": card.set_name,
             "rarity": card.rarity,
             "image_small": card.image_small,
-            "current_price": card.current_price,
+            "current_price": actual_price,
             "sma_7": _r(analysis.sma_7),
             "sma_30": _r(analysis.sma_30),
             "sma_90": _r(analysis.sma_90),
@@ -120,9 +123,9 @@ def _build_card_indicators(db: Session, max_cards: int = 100) -> list[dict]:
 
         if analysis.bollinger_upper and analysis.bollinger_lower:
             band_range = analysis.bollinger_upper - analysis.bollinger_lower
-            if band_range > 0 and card.current_price:
+            if band_range > 0 and actual_price:
                 entry["bollinger_position"] = round(
-                    (card.current_price - analysis.bollinger_lower) / band_range, 2
+                    (actual_price - analysis.bollinger_lower) / band_range, 2
                 )
 
         results.append(entry)

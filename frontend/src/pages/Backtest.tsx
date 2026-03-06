@@ -48,6 +48,7 @@ function PerformanceChart({ data }: { data: BacktestDailyValue[] }) {
           dataKey="date"
           tick={{ fill: '#666', fontSize: 10 }}
           tickFormatter={(v: string) => v.slice(5)}
+          interval={Math.max(1, Math.floor(chartData.length / 10))}
         />
         <YAxis
           tick={{ fill: '#666', fontSize: 10 }}

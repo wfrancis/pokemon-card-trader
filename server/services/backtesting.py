@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import asc
 from server.models.card import Card
 from server.models.price_history import PriceHistory
-from server.services.market_analysis import _sma, _ema, _rsi, _macd, _bollinger_bands
+from server.services.market_analysis import _sma, _ema, _rsi, _macd, _bollinger_bands, _filter_dominant_variant
 
 logger = logging.getLogger(__name__)
 
@@ -365,6 +365,9 @@ def run_backtest(
         .order_by(asc(PriceHistory.date), asc(PriceHistory.id))
         .all()
     )
+
+    # Filter to dominant variant to avoid mixed-variant noise
+    records = _filter_dominant_variant(records)
 
     if len(records) < 35:  # Need enough data for indicators
         return None

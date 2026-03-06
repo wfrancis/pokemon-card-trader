@@ -1,4 +1,5 @@
 import logging
+import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,18 +9,19 @@ from sqlalchemy.orm import Session
 import os
 
 from server.database import engine, Base, get_db
-from server.models import Card, PriceHistory
+from server.models import Card, PriceHistory, Sale
 from server.routes import cards, prices, analysis
 from server.routes import backtest
 from server.routes import trader
 from server.routes import signals
+from server.routes import sales
 from server.services.card_sync import sync_all_cards
 from server.services.price_collector import collect_prices_for_cards
 from server.services.seed_data import seed_database
 from server.services.tcgdex_sync import sync_tcgdex_cards, import_tcgdex_prices, sync_tcgdex_sets
 from server.services.poketrace_sync import sync_poketrace_prices
 from server.services.pricecharting_import import import_pricecharting_csv
-from server.services.tracking import rebuild_tracked_cards, get_tracked_stats
+from server.services.tracking import rebuild_tracked_cards, get_tracked_stats, enforce_data_quality, refresh_current_prices
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -53,7 +55,45 @@ async def lifespan(app: FastAPI):
         except Exception:
             pass
     logger.info("Database tables created")
+
+    # Background price sync: runs TCGPlayer sync every 6 hours
+    sync_task = asyncio.create_task(_background_price_sync())
     yield
+    sync_task.cancel()
+
+
+async def _background_price_sync():
+    """Background task: sync TCGPlayer prices + collect sales every 6 hours."""
+    SYNC_INTERVAL = 6 * 60 * 60  # 6 hours in seconds
+    # Wait 60s after startup before first sync (let app fully initialize)
+    await asyncio.sleep(60)
+    while True:
+        from server.database import SessionLocal
+        # 1. TCGPlayer price sync
+        try:
+            from server.services.tcgplayer_sync import sync_tcgplayer_prices
+            db = SessionLocal()
+            try:
+                logger.info("Background sync: starting TCGPlayer price update...")
+                stats = await sync_tcgplayer_prices(db)
+                logger.info(f"Background price sync complete: {stats}")
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Background price sync failed: {e}")
+        # 2. Collect individual sales
+        try:
+            from server.services.sales_collector import collect_sales
+            db = SessionLocal()
+            try:
+                logger.info("Background sync: collecting latest sales...")
+                stats = await collect_sales(db)
+                logger.info(f"Background sales collection complete: {stats}")
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Background sales collection failed: {e}")
+        await asyncio.sleep(SYNC_INTERVAL)
 
 
 app = FastAPI(
@@ -79,6 +119,7 @@ app.include_router(analysis.router)
 app.include_router(backtest.router)
 app.include_router(trader.router)
 app.include_router(signals.router)
+app.include_router(sales.router)
 
 
 @app.get("/health")
@@ -167,7 +208,7 @@ async def trigger_poketrace_sync(
 
 @app.post("/api/sync/tcgplayer")
 async def trigger_tcgplayer_sync(
-    limit: int = 100,
+    limit: int = 500,
     db: Session = Depends(get_db),
 ):
     """Sync current prices from TCGPlayer marketplace API (no API key needed)."""
@@ -178,6 +219,61 @@ async def trigger_tcgplayer_sync(
     except Exception as e:
         logger.error(f"TCGPlayer sync failed: {e}")
         return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/sync/tcgplayer/history")
+async def trigger_tcgplayer_history(
+    limit: int = 500,
+    db: Session = Depends(get_db),
+):
+    """Backfill 12 months of weekly price history from TCGPlayer (no API key needed)."""
+    from server.services.tcgplayer_sync import backfill_tcgplayer_history
+    try:
+        stats = await backfill_tcgplayer_history(db, limit=limit)
+        return {"status": "complete", "source": "tcgplayer_history", **stats}
+    except Exception as e:
+        logger.error(f"TCGPlayer history backfill failed: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/fix/bad-prices")
+async def fix_bad_prices(db: Session = Depends(get_db)):
+    """Remove price records that differ >3x from previous entry (likely variant mismatch)."""
+    from sqlalchemy import text
+    # Delete today's price records that differ >3x from previous price
+    result = db.execute(text("""
+        DELETE FROM price_history
+        WHERE id IN (
+            SELECT ph.id FROM price_history ph
+            INNER JOIN (
+                SELECT card_id, MAX(date) as max_date
+                FROM price_history
+                WHERE date < date('now')
+                GROUP BY card_id
+            ) prev ON ph.card_id = prev.card_id
+            INNER JOIN price_history prev_ph
+                ON prev_ph.card_id = prev.card_id AND prev_ph.date = prev.max_date
+            WHERE ph.date = date('now')
+                AND prev_ph.market_price > 0
+                AND (
+                    ph.market_price < prev_ph.market_price * 0.33
+                    OR ph.market_price > prev_ph.market_price * 3.0
+                )
+        )
+    """))
+    deleted = result.rowcount
+    # Also reset current_price for affected cards from their last good price
+    if deleted > 0:
+        db.execute(text("""
+            UPDATE cards SET current_price = (
+                SELECT ph.market_price FROM price_history ph
+                WHERE ph.card_id = cards.id AND ph.market_price IS NOT NULL
+                ORDER BY ph.date DESC LIMIT 1
+            )
+            WHERE is_tracked = 1
+        """))
+    db.commit()
+    return {"status": "complete", "bad_prices_removed": deleted}
 
 
 @app.post("/api/import/pricecharting")
@@ -240,6 +336,12 @@ async def trigger_rebuild(db: Session = Depends(get_db)):
             )
             _rebuild_status["stats"]["prices"] = price_stats
 
+            # Step 4: Refresh current_price from latest history
+            _rebuild_status["step"] = "refreshing_prices"
+            logger.info("Rebuild step 4: Refreshing current prices...")
+            refresh_count = refresh_current_prices(db_local)
+            _rebuild_status["stats"]["prices_refreshed"] = refresh_count
+
             _rebuild_status["step"] = "complete"
             logger.info(f"Rebuild complete: {_rebuild_status['stats']}")
             loop.close()
@@ -261,9 +363,38 @@ def rebuild_status():
     return _rebuild_status
 
 
+@app.post("/api/tracked/enforce-quality")
+def enforce_quality(db: Session = Depends(get_db)):
+    """Remove cards without complete market data from tracked universe."""
+    stats = enforce_data_quality(db)
+    return {"status": "complete", **stats}
+
+
+@app.post("/api/tracked/refresh-prices")
+def refresh_prices(db: Session = Depends(get_db)):
+    """Update Card.current_price from latest PriceHistory for all tracked cards."""
+    count = refresh_current_prices(db)
+    return {"status": "complete", "cards_updated": count}
+
+
 @app.get("/api/tracked/stats")
 def tracked_stats(db: Session = Depends(get_db)):
     return get_tracked_stats(db)
+
+
+@app.post("/api/sync/sales")
+async def trigger_sales_collection(
+    limit: int = 500,
+    db: Session = Depends(get_db),
+):
+    """Collect latest completed sales from TCGPlayer for all tracked cards."""
+    from server.services.sales_collector import collect_sales
+    try:
+        stats = await collect_sales(db, limit=limit)
+        return {"status": "complete", "source": "tcgplayer_sales", **stats}
+    except Exception as e:
+        logger.error(f"Sales collection failed: {e}")
+        return {"status": "error", "message": str(e)}
 
 
 # Serve React frontend — must be AFTER all API routes

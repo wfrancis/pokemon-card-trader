@@ -27,13 +27,22 @@ HEADERS = {
 }
 
 
-async def _search_tcgplayer(client: httpx.AsyncClient, card_name: str, set_name: str) -> dict | None:
-    """Search TCGPlayer for a card, return best matching product."""
+async def _search_tcgplayer(
+    client: httpx.AsyncClient, card_name: str, set_name: str, card_number: str = ""
+) -> dict | None:
+    """Search TCGPlayer for a card, return best matching product.
+
+    Uses card number to disambiguate variants (e.g. Umbreon VMAX #203 vs #215).
+    """
+    # Include card number in search for precision
     query = f"{card_name} {set_name}".strip()
+    if card_number:
+        query = f"{card_name} {card_number} {set_name}".strip()
+
     payload = {
         "algorithm": "sales_synonym_v2",
         "from": 0,
-        "size": 10,
+        "size": 24,
         "filters": {
             "term": {
                 "productLineName": ["pokemon"],
@@ -70,23 +79,43 @@ async def _search_tcgplayer(client: httpx.AsyncClient, card_name: str, set_name:
         if not products:
             return None
 
-        # Find best match: exact card name + set name match
         name_lower = card_name.lower().strip()
         set_lower = set_name.lower().strip()
 
+        # Best match: exact name + set + number in product name
+        if card_number:
+            for p in products:
+                pname = (p.get("productName") or "").lower().strip()
+                pset = (p.get("setName") or "").lower().strip()
+                pnum = (p.get("customAttributes", {}).get("number") or
+                        p.get("number") or "")
+                if pset == set_lower and (
+                    f"#{card_number}" in pname or
+                    f"- {card_number}" in pname or
+                    str(pnum) == str(card_number)
+                ):
+                    return p
+
+        # Exact name + set match
         for p in products:
             pname = (p.get("productName") or "").lower().strip()
             pset = (p.get("setName") or "").lower().strip()
             if pname == name_lower and pset == set_lower:
                 return p
 
-        # Fallback: first result with matching card name
+        # Name match with set
+        for p in products:
+            pname = (p.get("productName") or "").lower().strip()
+            pset = (p.get("setName") or "").lower().strip()
+            if name_lower in pname and pset == set_lower:
+                return p
+
+        # Name match only
         for p in products:
             pname = (p.get("productName") or "").lower().strip()
             if pname == name_lower:
                 return p
 
-        # Last resort: first result
         return products[0] if products else None
 
     except Exception as e:
@@ -127,8 +156,8 @@ async def _get_price(client: httpx.AsyncClient, product_id: int) -> dict | None:
         return None
 
 
-async def sync_tcgplayer_prices(db: Session, limit: int = 100) -> dict:
-    """Sync current prices from TCGPlayer for cards in our database.
+async def sync_tcgplayer_prices(db: Session, limit: int = 500) -> dict:
+    """Sync current prices from TCGPlayer for ALL tracked cards.
 
     Searches for each card, gets the TCGPlayer product ID, then fetches
     the current market price. Updates both Card.current_price and creates
@@ -136,7 +165,7 @@ async def sync_tcgplayer_prices(db: Session, limit: int = 100) -> dict:
 
     Args:
         db: SQLAlchemy session.
-        limit: Max cards to sync (ordered by most price history).
+        limit: Max cards to sync (default 500 = all tracked cards).
 
     Returns:
         Stats dict.
@@ -152,12 +181,12 @@ async def sync_tcgplayer_prices(db: Session, limit: int = 100) -> dict:
 
     today = date.today()
 
-    # Get cards ordered by price history count (most data first = most valuable to update)
+    # Get ALL tracked cards, ordered by most price history (most valuable to update first)
     from sqlalchemy import func, desc
     card_rows = (
         db.query(Card, func.count(PriceHistory.id).label("cnt"))
         .outerjoin(PriceHistory, PriceHistory.card_id == Card.id)
-        .filter(Card.current_price.isnot(None), Card.is_tracked == True)
+        .filter(Card.is_tracked == True)
         .group_by(Card.id)
         .order_by(desc("cnt"))
         .limit(limit)
@@ -179,8 +208,10 @@ async def sync_tcgplayer_prices(db: Session, limit: int = 100) -> dict:
             stats["cards_processed"] += 1
 
             try:
-                # Search for the card
-                product = await _search_tcgplayer(client, card.name, card.set_name or "")
+                # Search for the card (include card number for variant precision)
+                product = await _search_tcgplayer(
+                    client, card.name, card.set_name or "", card.number or ""
+                )
                 if not product:
                     stats["search_misses"] += 1
                     continue
@@ -202,6 +233,18 @@ async def sync_tcgplayer_prices(db: Session, limit: int = 100) -> dict:
                 if not market_price or market_price <= 0:
                     stats["no_price"] += 1
                     continue
+
+                # Sanity check: reject prices that differ >3x from last known
+                # (likely a wrong variant match — tighter than the original 10x)
+                if card.current_price and card.current_price > 0:
+                    ratio = market_price / card.current_price
+                    if ratio < 0.33 or ratio > 3.0:
+                        logger.warning(
+                            f"Price sanity check FAILED for {card.name} ({card.set_name} #{card.number}): "
+                            f"${card.current_price} -> ${market_price} (ratio {ratio:.2f}). Skipping."
+                        )
+                        stats["no_price"] += 1
+                        continue
 
                 # Update card current price
                 card.current_price = round(market_price, 2)
@@ -250,5 +293,175 @@ async def sync_tcgplayer_prices(db: Session, limit: int = 100) -> dict:
             logger.error(f"Final commit error: {e}")
             db.rollback()
 
+    # Refresh current_price from latest history for all tracked cards
+    try:
+        from server.services.tracking import refresh_current_prices
+        refresh_current_prices(db)
+    except Exception as e:
+        logger.error(f"Failed to refresh current prices: {e}")
+
     logger.info(f"TCGPlayer sync complete: {stats}")
+    return stats
+
+
+HISTORY_API = "https://infinite-api.tcgplayer.com/price/history"
+
+
+async def _get_price_history(
+    client: httpx.AsyncClient, product_id: int, range_name: str = "annual"
+) -> list[dict] | None:
+    """Get historical price buckets from TCGPlayer infinite-api.
+
+    Returns list of {date, market_price, low_price, high_price, quantity_sold}
+    for the Near Mint variant, or None on failure.
+    """
+    try:
+        resp = await client.get(
+            f"{HISTORY_API}/{product_id}/detailed?range={range_name}",
+            headers=HEADERS,
+        )
+        if resp.status_code != 200:
+            return None
+
+        data = resp.json()
+        if "error" in data or "result" not in data:
+            return None
+
+        # Find Near Mint variant (most representative)
+        for variant in data["result"]:
+            condition = (variant.get("condition") or "").lower()
+            if "near mint" in condition:
+                buckets = variant.get("buckets", [])
+                result = []
+                for b in buckets:
+                    mp = float(b.get("marketPrice") or 0)
+                    if mp <= 0:
+                        continue
+                    result.append({
+                        "date": b["bucketStartDate"],
+                        "market_price": mp,
+                        "low_price": float(b.get("lowSalePrice") or 0) or None,
+                        "high_price": float(b.get("highSalePrice") or 0) or None,
+                        "quantity_sold": int(b.get("quantitySold") or 0),
+                    })
+                return result
+
+        return None
+
+    except Exception as e:
+        logger.error(f"TCGPlayer history error for product {product_id}: {e}")
+        return None
+
+
+async def backfill_tcgplayer_history(db: Session, limit: int = 500) -> dict:
+    """Backfill up to 12 months of weekly price history from TCGPlayer.
+
+    Uses the infinite-api price history endpoint (no auth required).
+    Fetches annual range (52 weekly buckets) for each tracked card.
+    """
+    stats = {
+        "cards_processed": 0,
+        "records_added": 0,
+        "records_skipped": 0,
+        "search_misses": 0,
+        "no_history": 0,
+        "errors": 0,
+    }
+
+    from sqlalchemy import func, desc
+    cards = db.query(Card).filter(Card.is_tracked == True).limit(limit).all()
+
+    if not cards:
+        logger.info("No tracked cards for history backfill")
+        return stats
+
+    logger.info(f"TCGPlayer history backfill: processing {len(cards)} cards")
+
+    async with httpx.AsyncClient(
+        timeout=30.0,
+        follow_redirects=True,
+    ) as client:
+        for card in cards:
+            stats["cards_processed"] += 1
+
+            try:
+                # Search for the card's product ID
+                product = await _search_tcgplayer(
+                    client, card.name, card.set_name or "", card.number or ""
+                )
+                if not product:
+                    stats["search_misses"] += 1
+                    continue
+
+                product_id = product.get("productId")
+                if not product_id:
+                    stats["search_misses"] += 1
+                    continue
+
+                # Get annual history (52 weekly buckets)
+                history = await _get_price_history(client, int(product_id), "annual")
+                if not history:
+                    stats["no_history"] += 1
+                    continue
+
+                variant = card.price_variant or "normal"
+
+                for entry in history:
+                    entry_date = date.fromisoformat(entry["date"])
+
+                    # Skip if record already exists for this card+date
+                    existing = db.query(PriceHistory.id).filter(
+                        PriceHistory.card_id == card.id,
+                        PriceHistory.date == entry_date,
+                    ).first()
+
+                    if existing:
+                        stats["records_skipped"] += 1
+                        continue
+
+                    db.add(PriceHistory(
+                        card_id=card.id,
+                        date=entry_date,
+                        variant=variant,
+                        market_price=round(entry["market_price"], 2),
+                        low_price=round(entry["low_price"], 2) if entry["low_price"] else None,
+                        mid_price=None,
+                        high_price=round(entry["high_price"], 2) if entry["high_price"] else None,
+                    ))
+                    stats["records_added"] += 1
+
+            except Exception as e:
+                logger.error(f"Error backfilling {card.name}: {e}")
+                stats["errors"] += 1
+
+            # Rate limit: 1s between cards (2 requests per card: search + history)
+            await asyncio.sleep(1.0)
+
+            # Commit every 10 cards
+            if stats["cards_processed"] % 10 == 0:
+                try:
+                    db.commit()
+                    logger.info(
+                        f"History backfill progress: {stats['cards_processed']}/{len(cards)} cards, "
+                        f"{stats['records_added']} records added"
+                    )
+                except Exception as e:
+                    logger.error(f"Commit error: {e}")
+                    db.rollback()
+
+        # Final commit
+        try:
+            db.commit()
+        except Exception as e:
+            logger.error(f"Final commit error: {e}")
+            db.rollback()
+
+    # Refresh current_price from latest history for all tracked cards
+    try:
+        from server.services.tracking import refresh_current_prices
+        refresh_current_prices(db)
+    except Exception as e:
+        logger.error(f"Failed to refresh current prices: {e}")
+
+    logger.info(f"TCGPlayer history backfill complete: {stats}")
     return stats
