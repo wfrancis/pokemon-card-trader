@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Link, Navigate, useLocation } from 'react-router-dom';
 import { Box, AppBar, Toolbar, Typography, Button, CircularProgress } from '@mui/material';
 import ShowChartIcon from '@mui/icons-material/ShowChart';
 import DashboardIcon from '@mui/icons-material/Dashboard';
@@ -127,6 +127,7 @@ export default function App() {
             <Route path="/backtest" element={<Backtest />} />
             <Route path="/signals" element={<Signals />} />
             <Route path="/trader" element={<Trader />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>
       </Box>

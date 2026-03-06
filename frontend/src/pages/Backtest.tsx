@@ -32,10 +32,11 @@ function PerformanceChart({ data }: { data: BacktestDailyValue[] }) {
   // Normalize to percentage returns
   const firstValue = data[0].portfolio_value;
   const firstPrice = data[0].price;
+  const MAX_CHART_PCT = 10000;
   const chartData = data.map(d => ({
     date: d.date,
-    strategy: ((d.portfolio_value - firstValue) / firstValue) * 100,
-    buyHold: ((d.price - firstPrice) / firstPrice) * 100,
+    strategy: Math.min(MAX_CHART_PCT, Math.max(-100, ((d.portfolio_value - firstValue) / firstValue) * 100)),
+    buyHold: Math.min(MAX_CHART_PCT, Math.max(-100, ((d.price - firstPrice) / firstPrice) * 100)),
     inPosition: d.in_position,
   }));
 
