@@ -166,6 +166,10 @@ export const api = {
 
   quickBacktest: (cardId: number) =>
     fetchApi<QuickBacktestResult>(`/api/signals/${cardId}/quick-backtest`),
+
+  // Sales
+  getCardSales: (cardId: number, limit = 200) =>
+    fetchApi<CardSalesResponse>(`/api/cards/${cardId}/sales?limit=${limit}`),
 };
 
 export interface BacktestTrade {
@@ -361,4 +365,26 @@ export interface QuickBacktestResult {
   best_strategy: string;
   best_return_pct: number;
   error?: string;
+}
+
+export interface SaleRecord {
+  id: number;
+  order_date: string;
+  purchase_price: number;
+  shipping_price: number;
+  condition: string;
+  variant: string;
+  source: string;
+  source_product_id: string;
+  listing_title: string;
+  quantity: number;
+}
+
+export interface CardSalesResponse {
+  card_id: number;
+  card_name: string;
+  total_sales: number;
+  median_price: number | null;
+  current_price: number | null;
+  sales: SaleRecord[];
 }

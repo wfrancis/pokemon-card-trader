@@ -119,22 +119,44 @@ def _parse_price_file(content: str, set_id: str, card_number: str) -> list[dict]
 
 
 def _dedupe_prices(records: list[dict]) -> list[dict]:
-    """For each date, keep only the best variant (prefer nearmint over good, holofoil over normal)."""
-    by_date = {}
+    """Pick one consistent variant across ALL dates to avoid mixed-variant contamination.
+
+    Strategy: count data points per variant+condition combo, pick the one with the
+    most data points (ties broken by priority). Then return only records for that combo.
+    """
+    if not records:
+        return records
+
+    # Count records per variant+condition combo
+    combo_counts: dict[tuple[str, str], int] = {}
+    for r in records:
+        key = (r["variant"], r.get("condition", ""))
+        combo_counts[key] = combo_counts.get(key, 0) + 1
+
+    # Sort combos by count (descending), then by priority for ties
     variant_priority = {"holofoil": 3, "reverseHolofoil": 2, "normal": 1}
     condition_priority = {"nearmint": 2, "good": 1, "": 0}
 
-    for r in records:
+    best_combo = max(
+        combo_counts.keys(),
+        key=lambda k: (
+            combo_counts[k],
+            condition_priority.get(k[1], 0) * 10 + variant_priority.get(k[0], 0),
+        ),
+    )
+
+    # Filter to only the best combo
+    filtered = [
+        r for r in records
+        if (r["variant"], r.get("condition", "")) == best_combo
+    ]
+
+    # Deduplicate by date (keep one record per date)
+    by_date = {}
+    for r in filtered:
         d = r["date"]
         if d not in by_date:
             by_date[d] = r
-        else:
-            existing = by_date[d]
-            # Prefer nearmint over good, then holofoil over normal
-            r_score = condition_priority.get(r["condition"], 0) * 10 + variant_priority.get(r["variant"], 0)
-            e_score = condition_priority.get(existing["condition"], 0) * 10 + variant_priority.get(existing["variant"], 0)
-            if r_score > e_score:
-                by_date[d] = r
 
     return list(by_date.values())
 

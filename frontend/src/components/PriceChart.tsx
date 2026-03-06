@@ -263,7 +263,13 @@ export default function PriceChart({ priceData, analysis, showIndicators = true 
             tickLine={false}
             axisLine={{ stroke: '#222' }}
             interval={xTickInterval}
-            tickFormatter={(d) => formatDate(d, true)}
+            tickFormatter={(d) => {
+              const dt = new Date(d + 'T00:00:00');
+              if (range === '1M' || range === '3M') {
+                return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+              }
+              return dt.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+            }}
           />
           <YAxis
             tick={{ fill: '#555', fontSize: 10, fontFamily: 'monospace' }}

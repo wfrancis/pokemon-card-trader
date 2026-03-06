@@ -1,16 +1,22 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Box, Paper, Typography, Grid, Chip, Stack } from '@mui/material';
-import { api, Card, PricePoint, Analysis } from '../services/api';
+import { Box, Paper, Typography, Grid, Chip, Stack, ToggleButton, ToggleButtonGroup } from '@mui/material';
+import { api, Card, PricePoint, Analysis, SaleRecord } from '../services/api';
 import PriceChart from '../components/PriceChart';
+import SalesChart from '../components/SalesChart';
 import IndicatorPanel from '../components/IndicatorPanel';
 import PredictionBadge from '../components/PredictionBadge';
+
+type ChartView = 'sales' | 'history';
 
 export default function CardDetail() {
   const { id } = useParams<{ id: string }>();
   const [card, setCard] = useState<Card | null>(null);
   const [prices, setPrices] = useState<PricePoint[]>([]);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  const [sales, setSales] = useState<SaleRecord[]>([]);
+  const [medianPrice, setMedianPrice] = useState<number | null>(null);
+  const [chartView, setChartView] = useState<ChartView>('sales');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -30,6 +36,10 @@ export default function CardDetail() {
       .finally(() => setLoading(false));
     api.getCardPrices(cardId).then(data => setPrices(data.data)).catch(() => {});
     api.getCardAnalysis(cardId).then(data => setAnalysis(data.analysis)).catch(() => {});
+    api.getCardSales(cardId).then(data => {
+      setSales(data.sales);
+      setMedianPrice(data.median_price);
+    }).catch(() => {});
   }, [id]);
 
   if (loading) {
@@ -138,10 +148,41 @@ export default function CardDetail() {
         {/* Right: Charts + Analysis */}
         <Grid size={{ xs: 12, md: 9 }}>
           <Paper sx={{ p: 2, mb: 2 }}>
-            <Typography variant="h3" sx={{ mb: 1, color: '#00bcd4' }}>
-              PRICE HISTORY
-            </Typography>
-            <PriceChart priceData={prices} analysis={analysis || undefined} />
+            {/* Chart view toggle */}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
+              <ToggleButtonGroup
+                value={chartView}
+                exclusive
+                onChange={(_, v) => v && setChartView(v)}
+                size="small"
+                sx={{
+                  '& .MuiToggleButton-root': {
+                    color: '#888', border: '1px solid #333', px: 2, py: 0.3,
+                    fontSize: '0.75rem', fontWeight: 700, fontFamily: 'monospace',
+                    '&.Mui-selected': { color: '#00bcd4', bgcolor: 'rgba(0,188,212,0.1)', borderColor: '#00bcd4' },
+                  },
+                }}
+              >
+                <ToggleButton value="sales">SALES</ToggleButton>
+                <ToggleButton value="history">PRICE HISTORY</ToggleButton>
+              </ToggleButtonGroup>
+              {chartView === 'sales' && sales.length === 0 && (
+                <Typography variant="body2" sx={{ color: '#ff9800', fontFamily: 'monospace', fontSize: '0.7rem' }}>
+                  No sales collected yet — run /api/sync/sales
+                </Typography>
+              )}
+            </Box>
+
+            {chartView === 'sales' ? (
+              <SalesChart sales={sales} medianPrice={medianPrice} cardName={card.name} />
+            ) : (
+              <>
+                <Typography variant="h3" sx={{ mb: 1, color: '#00bcd4' }}>
+                  PRICE HISTORY
+                </Typography>
+                <PriceChart priceData={prices} analysis={analysis || undefined} />
+              </>
+            )}
           </Paper>
 
           {analysis && (

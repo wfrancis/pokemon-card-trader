@@ -5,6 +5,7 @@ bull/bear/hold signals.
 """
 import math
 from dataclasses import dataclass
+from datetime import timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import asc
 from server.models.price_history import PriceHistory
@@ -48,6 +49,7 @@ class AnalysisResult:
     adx: float | None = None  # Average Directional Index (trend strength 0-100)
     regime: str | None = None  # accumulation, markup, distribution, markdown
     half_life: float | None = None  # Mean-reversion half-life in days
+    last_analyzed_price: float | None = None  # prices[-1] from analysis
     data_confidence: float = 0.0  # 0-1 confidence based on data depth
     signal: str = "hold"  # "bullish", "bearish", "hold"
     signal_strength: float = 0.0  # -1.0 (strong bear) to 1.0 (strong bull)
@@ -337,26 +339,30 @@ def _activity_score(
     weight = 0.0
 
     # Volatility component (0-30 pts) — higher vol = hotter
+    # Scale: 60%+ vol = max (weekly data can have high apparent vol)
     if volatility is not None:
-        vol_pts = min(30, volatility * 5)  # 6% vol = max 30 pts
+        vol_pts = min(30, volatility * 0.5)
         score += vol_pts
         weight += 30
 
     # Spread component (0-20 pts) — wider spread = more bidding activity
+    # Scale: 40%+ spread = max
     if spread_ratio is not None:
-        spread_pts = min(20, spread_ratio * 4)  # 5% spread = max 20 pts
+        spread_pts = min(20, spread_ratio * 0.5)
         score += spread_pts
         weight += 20
 
     # Momentum acceleration (0-25 pts) — accelerating = hot
+    # Scale: 125%+ accel = max
     if momentum_accel is not None:
-        accel_pts = min(25, abs(momentum_accel) * 2.5)
+        accel_pts = min(25, abs(momentum_accel) * 0.2)
         score += accel_pts
         weight += 25
 
     # Recent price change magnitude (0-25 pts) — big moves = hot
+    # Scale: 125%+ change = max
     if price_change_7d is not None:
-        change_pts = min(25, abs(price_change_7d) * 2)
+        change_pts = min(25, abs(price_change_7d) * 0.2)
         score += change_pts
         weight += 25
 
@@ -364,6 +370,37 @@ def _activity_score(
         return None
 
     return round((score / weight) * 100, 1)
+
+
+def _filter_dominant_variant(records: list) -> list:
+    """Filter price records to only the dominant (most common) variant.
+
+    Mixed-variant data (e.g., normal + holofoil prices for the same card)
+    creates fake volatility that corrupts technical indicators and backtests.
+    This picks the variant with the most data points and discards the rest.
+    """
+    if not records:
+        return records
+
+    # Count records per variant
+    variant_counts: dict[str, int] = {}
+    for r in records:
+        v = r.variant or ""
+        variant_counts[v] = variant_counts.get(v, 0) + 1
+
+    if len(variant_counts) <= 1:
+        return records  # Only one variant, no filtering needed
+
+    # Pick the variant with the most data points
+    dominant = max(variant_counts, key=variant_counts.get)
+    filtered = [r for r in records if (r.variant or "") == dominant]
+
+    if len(filtered) < len(records) * 0.3:
+        # Dominant variant has less than 30% of records — data is too fragmented
+        # Fall back to all records (outlier cleaning will handle it)
+        return records
+
+    return filtered
 
 
 def analyze_card(db: Session, card_id: int) -> AnalysisResult:
@@ -377,6 +414,9 @@ def analyze_card(db: Session, card_id: int) -> AnalysisResult:
 
     if not records:
         return AnalysisResult()
+
+    # Filter to dominant variant to avoid mixed-variant noise
+    records = _filter_dominant_variant(records)
 
     prices = [r.market_price for r in records]
     result = AnalysisResult()
@@ -403,20 +443,39 @@ def analyze_card(db: Session, card_id: int) -> AnalysisResult:
     if len(prices) >= 10 and prices[-10] != 0:
         result.momentum = ((prices[-1] - prices[-10]) / prices[-10]) * 100
 
-    # Price change percentages — short, medium, and long-term
+    # Price change percentages — use calendar dates, not array indices
     def _pct_change(cur, prev):
         return ((cur - prev) / prev) * 100 if prev and prev > 0 else None
 
-    if len(prices) >= 7:
-        result.price_change_pct_7d = _pct_change(prices[-1], prices[-7])
-    if len(prices) >= 30:
-        result.price_change_pct_30d = _pct_change(prices[-1], prices[-30])
-    if len(prices) >= 90:
-        result.price_change_pct_90d = _pct_change(prices[-1], prices[-90])
-    if len(prices) >= 180:
-        result.price_change_pct_180d = _pct_change(prices[-1], prices[-180])
-    if len(prices) >= 365:
-        result.price_change_pct_365d = _pct_change(prices[-1], prices[-365])
+    reference_date = records[-1].date
+    current_price = prices[-1]
+
+    def _price_at_days_ago(days_ago, max_gap=10):
+        """Find price closest to days_ago calendar days before reference_date."""
+        target = reference_date - timedelta(days=days_ago)
+        best_price, best_diff = None, max_gap + 1
+        for r in records:
+            if r.market_price is None:
+                continue
+            diff = abs((r.date - target).days)
+            if diff < best_diff:
+                best_diff = diff
+                best_price = r.market_price
+            if r.date > target and diff > best_diff:
+                break
+        return best_price
+
+    for days, attr, max_gap in [
+        (7, 'price_change_pct_7d', 7),
+        (30, 'price_change_pct_30d', 10),
+        (90, 'price_change_pct_90d', 15),
+        (180, 'price_change_pct_180d', 21),
+        (365, 'price_change_pct_365d', 30),
+    ]:
+        old_price = _price_at_days_ago(days, max_gap)
+        if old_price and old_price > 0:
+            setattr(result, attr, _pct_change(current_price, old_price))
+
     if len(prices) >= 2:
         result.price_change_pct_all = _pct_change(prices[-1], prices[0])
 
@@ -430,6 +489,7 @@ def analyze_card(db: Session, card_id: int) -> AnalysisResult:
         result.price_percentile = ((prices[-1] - result.all_time_low) / price_range) * 100
 
     # History metadata
+    result.last_analyzed_price = prices[-1]
     result.total_history_days = len(prices)
     result.first_price_date = str(records[0].date) if records else None
 
@@ -794,4 +854,16 @@ def get_hot_cards(db: Session, limit: int = 12) -> list[dict]:
         })
 
     hot.sort(key=lambda x: x["activity_score"], reverse=True)
-    return hot[:limit]
+    hot = hot[:limit]
+
+    # Normalize activity scores to 0-100 within the result set for differentiation
+    if len(hot) >= 2:
+        scores = [h["activity_score"] for h in hot]
+        min_s, max_s = min(scores), max(scores)
+        if max_s > min_s:
+            for h in hot:
+                h["activity_score"] = round(
+                    (h["activity_score"] - min_s) / (max_s - min_s) * 100, 1
+                )
+
+    return hot
