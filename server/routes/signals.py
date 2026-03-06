@@ -63,6 +63,9 @@ def _build_card_indicators(db: Session, max_cards: int = 100) -> list[dict]:
         card = db.query(Card).filter(Card.id == row.card_id).first()
         if not card or not card.current_price:
             continue
+        # Skip cheap cards — not meaningful for trading signals
+        if card.current_price < 5.0:
+            continue
 
         analysis = analyze_card(db, row.card_id)
         if analysis.rsi_14 is None and analysis.sma_7 is None:
@@ -212,11 +215,14 @@ def _run_signal_pipeline():
         set_rs = get_set_relative_strength(db, days=30)
 
         card_data = []
+        ensemble_count = 0
         for c in indicators:
             ensemble = {}
-            if c.get("can_backtest") and len(card_data) < 30:
+            # Limit ensemble to top 10 cards (heavy compute on small VM)
+            if c.get("can_backtest") and ensemble_count < 10:
                 try:
                     ensemble = get_ensemble_signal(db, c["card_id"])
+                    ensemble_count += 1
                 except Exception:
                     ensemble = {}
 

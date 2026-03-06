@@ -11,19 +11,44 @@ export default function CardDetail() {
   const [card, setCard] = useState<Card | null>(null);
   const [prices, setPrices] = useState<PricePoint[]>([]);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!id) return;
     const cardId = parseInt(id);
-    api.getCard(cardId).then(setCard).catch(console.error);
-    api.getCardPrices(cardId).then(data => setPrices(data.data)).catch(console.error);
-    api.getCardAnalysis(cardId).then(data => setAnalysis(data.analysis)).catch(console.error);
+    if (isNaN(cardId)) {
+      setError('Invalid card ID');
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    api.getCard(cardId)
+      .then(setCard)
+      .catch(() => setError('Card not found'))
+      .finally(() => setLoading(false));
+    api.getCardPrices(cardId).then(data => setPrices(data.data)).catch(() => {});
+    api.getCardAnalysis(cardId).then(data => setAnalysis(data.analysis)).catch(() => {});
   }, [id]);
 
-  if (!card) {
+  if (loading) {
     return (
       <Box sx={{ p: 4, textAlign: 'center', color: '#666' }}>
         <Typography>Loading...</Typography>
+      </Box>
+    );
+  }
+
+  if (error || !card) {
+    return (
+      <Box sx={{ p: 4, textAlign: 'center' }}>
+        <Typography variant="h4" sx={{ color: '#ff1744', mb: 1 }}>
+          {error || 'Card not found'}
+        </Typography>
+        <Typography sx={{ color: '#666' }}>
+          The card you're looking for doesn't exist or has been removed.
+        </Typography>
       </Box>
     );
   }
@@ -43,7 +68,7 @@ export default function CardDetail() {
             <Typography variant="body2" sx={{ color: '#666' }}>{card.set_name} #{card.number}</Typography>
 
             <Stack direction="row" spacing={0.5} sx={{ mt: 1, justifyContent: 'center', flexWrap: 'wrap' }}>
-              {card.rarity && <Chip label={card.rarity} size="small" variant="outlined" />}
+              {card.rarity && card.rarity !== 'None' && <Chip label={card.rarity} size="small" variant="outlined" />}
               {card.supertype && <Chip label={card.supertype} size="small" variant="outlined" />}
               {card.types?.map(t => (
                 <Chip key={t} label={t} size="small" sx={{ bgcolor: '#1a1a2e' }} />

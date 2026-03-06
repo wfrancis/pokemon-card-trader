@@ -547,7 +547,9 @@ function CardDrillDown({
             <Box sx={{ mb: 2, p: 1.5, bgcolor: '#0a0a0a', borderRadius: 1, border: '1px solid #222' }}>
               <Typography sx={{ color: '#00ff41', fontWeight: 700, ...mono }}>
                 BEST STRATEGY: {backtest.best_strategy} ({backtest.best_return_pct > 0 ? '+' : ''}
-                {backtest.best_return_pct.toFixed(1)}% return)
+                {Math.abs(backtest.best_return_pct) >= 10000
+                  ? `${(backtest.best_return_pct / 1000).toFixed(0)}K`
+                  : backtest.best_return_pct.toFixed(1)}% return)
               </Typography>
             </Box>
             <TableContainer>
@@ -583,7 +585,7 @@ function CardDrillDown({
                           )}
                         </TableCell>
                         <TableCell align="right" sx={{ color: s.return_pct >= 0 ? '#00ff41' : '#ff1744', ...mono, fontSize: '0.75rem', fontWeight: 700, borderColor: '#222' }}>
-                          {s.return_pct >= 0 ? '+' : ''}{s.return_pct.toFixed(1)}%
+                          {s.return_pct >= 0 ? '+' : ''}{Math.abs(s.return_pct) >= 10000 ? `${(s.return_pct / 1000).toFixed(0)}K` : s.return_pct.toFixed(1)}%
                         </TableCell>
                         <TableCell align="right" sx={{ color: s.buy_hold_return_pct >= 0 ? '#4caf50' : '#f44336', ...mono, fontSize: '0.75rem', borderColor: '#222' }}>
                           {s.buy_hold_return_pct >= 0 ? '+' : ''}{s.buy_hold_return_pct.toFixed(1)}%

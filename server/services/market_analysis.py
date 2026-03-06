@@ -139,14 +139,15 @@ def _macd(prices: list[float]) -> tuple[float | None, float | None, float | None
 
 
 def _bollinger_bands(prices: list[float], period: int = 20, std_dev: float = 2.0) -> tuple[float | None, float | None, float | None]:
-    """Returns (upper, middle, lower)."""
+    """Returns (upper, middle, lower). Lower band is clamped to 0 (prices can't be negative)."""
     if len(prices) < period:
         return None, None, None
     window = prices[-period:]
     middle = sum(window) / period
     variance = sum((p - middle) ** 2 for p in window) / period
     std = math.sqrt(variance)
-    return middle + std_dev * std, middle, middle - std_dev * std
+    lower = max(0, middle - std_dev * std)  # Clamp to 0 — prices can't be negative
+    return middle + std_dev * std, middle, lower
 
 
 def _adx(prices: list[float], period: int = 14) -> float | None:
@@ -615,9 +616,15 @@ def get_top_movers(db: Session, limit: int = 10) -> dict:
 
     movers.sort(key=lambda x: x["change_pct"], reverse=True)
 
+    # Only include cards with positive changes as gainers, negative as losers
+    gainers = [m for m in movers if m["change_pct"] > 0][:limit]
+    losers = [m for m in movers if m["change_pct"] < 0]
+    losers.sort(key=lambda x: x["change_pct"])  # Most negative first
+    losers = losers[:limit]
+
     return {
-        "gainers": movers[:limit],
-        "losers": list(reversed(movers[-limit:])) if len(movers) > limit else [],
+        "gainers": gainers,
+        "losers": losers,
     }
 
 
