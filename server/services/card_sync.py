@@ -34,7 +34,7 @@ async def _fetch_with_retry(client: httpx.AsyncClient, url: str, params: dict, r
         try:
             resp = await client.get(url, params=params)
             # Retry on server errors (502, 503, 504)
-            if resp.status_code in (404, 502, 503, 504) and attempt < retries - 1:
+            if resp.status_code in (502, 503, 504) and attempt < retries - 1:
                 delay = min(30, 3 * (2 ** attempt))  # 3s, 6s, 12s, 24s, 30s
                 logger.warning(f"Got {resp.status_code} from API (attempt {attempt + 1}/{retries}), retrying in {delay}s...")
                 await asyncio.sleep(delay)

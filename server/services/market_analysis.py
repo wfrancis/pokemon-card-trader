@@ -15,8 +15,10 @@ class AnalysisResult:
     sma_7: float | None = None
     sma_30: float | None = None
     sma_90: float | None = None
+    sma_200: float | None = None
     ema_12: float | None = None
     ema_26: float | None = None
+    ema_50: float | None = None
     rsi_14: float | None = None
     macd_line: float | None = None
     macd_signal: float | None = None
@@ -27,8 +29,18 @@ class AnalysisResult:
     momentum: float | None = None
     price_change_pct_7d: float | None = None
     price_change_pct_30d: float | None = None
+    price_change_pct_90d: float | None = None
+    price_change_pct_180d: float | None = None
+    price_change_pct_365d: float | None = None
+    price_change_pct_all: float | None = None
     support: float | None = None
     resistance: float | None = None
+    all_time_high: float | None = None
+    all_time_low: float | None = None
+    pct_from_ath: float | None = None  # How far below ATH (negative %)
+    price_percentile: float | None = None  # 0-100 where current price sits in history
+    total_history_days: int = 0
+    first_price_date: str | None = None
     volatility: float | None = None  # Std dev of daily returns (proxy for volume)
     spread_ratio: float | None = None  # Avg (high-low)/market ratio
     momentum_accel: float | None = None  # Change in momentum (2nd derivative)
@@ -230,12 +242,14 @@ def analyze_card(db: Session, card_id: int) -> AnalysisResult:
     prices = [r.market_price for r in records]
     result = AnalysisResult()
 
-    # Moving averages
+    # Moving averages — short, medium, and long-term
     result.sma_7 = _sma(prices, 7)
     result.sma_30 = _sma(prices, 30)
     result.sma_90 = _sma(prices, 90)
+    result.sma_200 = _sma(prices, 200)
     result.ema_12 = _ema(prices, 12)
     result.ema_26 = _ema(prices, 26)
+    result.ema_50 = _ema(prices, 50)
 
     # RSI
     result.rsi_14 = _rsi(prices, 14)
@@ -250,14 +264,38 @@ def analyze_card(db: Session, card_id: int) -> AnalysisResult:
     if len(prices) >= 10 and prices[-10] != 0:
         result.momentum = ((prices[-1] - prices[-10]) / prices[-10]) * 100
 
-    # Price change percentages
-    if len(prices) >= 7 and prices[-7] != 0:
-        result.price_change_pct_7d = ((prices[-1] - prices[-7]) / prices[-7]) * 100
-    if len(prices) >= 30 and prices[-30] != 0:
-        result.price_change_pct_30d = ((prices[-1] - prices[-30]) / prices[-30]) * 100
+    # Price change percentages — short, medium, and long-term
+    def _pct_change(cur, prev):
+        return ((cur - prev) / prev) * 100 if prev and prev > 0 else None
 
-    # Support / Resistance (simple: recent 20-period low/high)
-    window = prices[-20:] if len(prices) >= 20 else prices
+    if len(prices) >= 7:
+        result.price_change_pct_7d = _pct_change(prices[-1], prices[-7])
+    if len(prices) >= 30:
+        result.price_change_pct_30d = _pct_change(prices[-1], prices[-30])
+    if len(prices) >= 90:
+        result.price_change_pct_90d = _pct_change(prices[-1], prices[-90])
+    if len(prices) >= 180:
+        result.price_change_pct_180d = _pct_change(prices[-1], prices[-180])
+    if len(prices) >= 365:
+        result.price_change_pct_365d = _pct_change(prices[-1], prices[-365])
+    if len(prices) >= 2:
+        result.price_change_pct_all = _pct_change(prices[-1], prices[0])
+
+    # All-time high/low and percentile
+    result.all_time_high = max(prices)
+    result.all_time_low = min(prices)
+    if result.all_time_high and result.all_time_high > 0:
+        result.pct_from_ath = ((prices[-1] - result.all_time_high) / result.all_time_high) * 100
+    price_range = result.all_time_high - result.all_time_low
+    if price_range > 0:
+        result.price_percentile = ((prices[-1] - result.all_time_low) / price_range) * 100
+
+    # History metadata
+    result.total_history_days = len(prices)
+    result.first_price_date = str(records[0].date) if records else None
+
+    # Support / Resistance (recent 60-period low/high for more meaningful levels)
+    window = prices[-60:] if len(prices) >= 60 else prices
     result.support = min(window)
     result.resistance = max(window)
 
@@ -355,52 +393,81 @@ def _generate_signal(analysis: AnalysisResult, prices: list[float]) -> tuple[str
 
 
 def get_top_movers(db: Session, limit: int = 10) -> dict:
-    """Get top gainers and losers based on available price history."""
-    from sqlalchemy import func, desc
+    """Get top gainers and losers based on recent price changes.
 
-    # Get cards that have at least 2 price records
-    subq = (
+    Uses a lightweight approach: compares recent prices (last 7 days vs
+    7 days before that) using SQL aggregation. Scales to 14K+ cards.
+    """
+    from sqlalchemy import func, desc, text
+    from server.models.card import Card
+    from datetime import date, timedelta
+
+    today = date.today()
+    recent_start = today - timedelta(days=7)
+    prev_start = today - timedelta(days=14)
+
+    # Get average price in last 7 days per card
+    recent = (
         db.query(
             PriceHistory.card_id,
-            func.count(PriceHistory.id).label("record_count")
+            func.avg(PriceHistory.market_price).label("recent_avg"),
         )
-        .filter(PriceHistory.market_price.isnot(None))
+        .filter(
+            PriceHistory.market_price.isnot(None),
+            PriceHistory.date >= recent_start,
+        )
         .group_by(PriceHistory.card_id)
-        .having(func.count(PriceHistory.id) >= 2)
         .subquery()
     )
 
-    card_ids = [row[0] for row in db.query(subq.c.card_id).all()]
+    # Get average price in previous 7 days per card
+    prev = (
+        db.query(
+            PriceHistory.card_id,
+            func.avg(PriceHistory.market_price).label("prev_avg"),
+        )
+        .filter(
+            PriceHistory.market_price.isnot(None),
+            PriceHistory.date >= prev_start,
+            PriceHistory.date < recent_start,
+        )
+        .group_by(PriceHistory.card_id)
+        .subquery()
+    )
+
+    # Join and compute change_pct
+    rows = (
+        db.query(
+            Card.id,
+            Card.tcg_id,
+            Card.name,
+            Card.set_name,
+            Card.image_small,
+            Card.current_price,
+            Card.price_variant,
+            recent.c.recent_avg,
+            prev.c.prev_avg,
+        )
+        .join(recent, Card.id == recent.c.card_id)
+        .join(prev, Card.id == prev.c.card_id)
+        .filter(prev.c.prev_avg > 0, Card.current_price.isnot(None), Card.current_price >= 2.0)
+        .all()
+    )
 
     movers = []
-    for card_id in card_ids:
-        prices = (
-            db.query(PriceHistory)
-            .filter(PriceHistory.card_id == card_id, PriceHistory.market_price.isnot(None))
-            .order_by(asc(PriceHistory.date))
-            .all()
-        )
-        if len(prices) < 2:
-            continue
-
-        first_price = prices[0].market_price
-        last_price = prices[-1].market_price
-        if first_price and first_price > 0:
-            change_pct = ((last_price - first_price) / first_price) * 100
-            from server.models.card import Card
-            card = db.query(Card).filter(Card.id == card_id).first()
-            if card:
-                movers.append({
-                    "card_id": card.id,
-                    "tcg_id": card.tcg_id,
-                    "name": card.name,
-                    "set_name": card.set_name,
-                    "image_small": card.image_small,
-                    "current_price": last_price,
-                    "previous_price": first_price,
-                    "change_pct": round(change_pct, 2),
-                    "variant": card.price_variant,
-                })
+    for row in rows:
+        change_pct = ((row.recent_avg - row.prev_avg) / row.prev_avg) * 100
+        movers.append({
+            "card_id": row.id,
+            "tcg_id": row.tcg_id,
+            "name": row.name,
+            "set_name": row.set_name,
+            "image_small": row.image_small,
+            "current_price": row.current_price,
+            "previous_price": round(row.prev_avg, 2),
+            "change_pct": round(change_pct, 2),
+            "variant": row.price_variant,
+        })
 
     movers.sort(key=lambda x: x["change_pct"], reverse=True)
 
@@ -411,31 +478,56 @@ def get_top_movers(db: Session, limit: int = 10) -> dict:
 
 
 def get_hot_cards(db: Session, limit: int = 12) -> list[dict]:
-    """Get cards ranked by activity score (volume proxy hotness)."""
-    from server.models.card import Card
-    from sqlalchemy import func
+    """Get cards ranked by activity score (volume proxy hotness).
 
-    # Cards with at least 5 price records
-    subq = (
+    Uses SQL to pre-rank candidates by price variance, then runs full
+    analysis only on the top candidates. Scales to 14K+ cards.
+    """
+    from server.models.card import Card
+    from sqlalchemy import func, desc
+
+    # SQL: compute price stddev and range per card (proxy for volatility/activity)
+    # Only cards with 10+ records and a current_price
+    candidate_limit = limit * 5  # Analyze top 60 candidates to find the best 12
+
+    stats = (
         db.query(
             PriceHistory.card_id,
-            func.count(PriceHistory.id).label("record_count")
+            func.count(PriceHistory.id).label("record_count"),
+            func.avg(PriceHistory.market_price).label("avg_price"),
+            func.min(PriceHistory.market_price).label("min_price"),
+            func.max(PriceHistory.market_price).label("max_price"),
         )
         .filter(PriceHistory.market_price.isnot(None))
         .group_by(PriceHistory.card_id)
-        .having(func.count(PriceHistory.id) >= 5)
+        .having(func.count(PriceHistory.id) >= 10)
         .subquery()
     )
 
-    card_ids = [row[0] for row in db.query(subq.c.card_id).all()]
+    # Rank by price range relative to avg (coefficient of variation proxy)
+    # Higher range/avg = more volatile = more "hot"
+    candidates = (
+        db.query(
+            stats.c.card_id,
+            stats.c.record_count,
+            stats.c.avg_price,
+            ((stats.c.max_price - stats.c.min_price) / stats.c.avg_price).label("range_ratio"),
+        )
+        .join(Card, Card.id == stats.c.card_id)
+        .filter(Card.current_price.isnot(None), Card.current_price >= 2.0)
+        .filter(stats.c.avg_price >= 2.0)
+        .order_by(desc("range_ratio"))
+        .limit(candidate_limit)
+        .all()
+    )
 
     hot = []
-    for card_id in card_ids:
-        analysis = analyze_card(db, card_id)
+    for row in candidates:
+        analysis = analyze_card(db, row.card_id)
         if analysis.activity_score is None:
             continue
 
-        card = db.query(Card).filter(Card.id == card_id).first()
+        card = db.query(Card).filter(Card.id == row.card_id).first()
         if not card or not card.current_price:
             continue
 
