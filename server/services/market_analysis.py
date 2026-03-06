@@ -45,6 +45,10 @@ class AnalysisResult:
     spread_ratio: float | None = None  # Avg (high-low)/market ratio
     momentum_accel: float | None = None  # Change in momentum (2nd derivative)
     activity_score: float | None = None  # Composite hotness 0-100
+    adx: float | None = None  # Average Directional Index (trend strength 0-100)
+    regime: str | None = None  # accumulation, markup, distribution, markdown
+    half_life: float | None = None  # Mean-reversion half-life in days
+    data_confidence: float = 0.0  # 0-1 confidence based on data depth
     signal: str = "hold"  # "bullish", "bearish", "hold"
     signal_strength: float = 0.0  # -1.0 (strong bear) to 1.0 (strong bull)
 
@@ -143,6 +147,140 @@ def _bollinger_bands(prices: list[float], period: int = 20, std_dev: float = 2.0
     variance = sum((p - middle) ** 2 for p in window) / period
     std = math.sqrt(variance)
     return middle + std_dev * std, middle, middle - std_dev * std
+
+
+def _adx(prices: list[float], period: int = 14) -> float | None:
+    """Average Directional Index — measures trend strength (0-100).
+    ADX > 25 = trending market, ADX < 20 = ranging/mean-reverting.
+    """
+    if len(prices) < period * 2 + 1:
+        return None
+
+    # True Range and Directional Movement
+    plus_dm = []
+    minus_dm = []
+    tr = []
+
+    for i in range(1, len(prices)):
+        high_diff = prices[i] - prices[i - 1]  # Approximation (no separate H/L)
+        low_diff = prices[i - 1] - prices[i]
+
+        plus_dm.append(max(0, high_diff) if high_diff > low_diff else 0)
+        minus_dm.append(max(0, low_diff) if low_diff > high_diff else 0)
+        tr.append(abs(prices[i] - prices[i - 1]))
+
+    if len(tr) < period:
+        return None
+
+    # Smoothed averages using Wilder's method
+    atr = sum(tr[:period]) / period
+    plus_di_smooth = sum(plus_dm[:period]) / period
+    minus_di_smooth = sum(minus_dm[:period]) / period
+
+    dx_vals = []
+    for i in range(period, len(tr)):
+        atr = (atr * (period - 1) + tr[i]) / period
+        plus_di_smooth = (plus_di_smooth * (period - 1) + plus_dm[i]) / period
+        minus_di_smooth = (minus_di_smooth * (period - 1) + minus_dm[i]) / period
+
+        if atr > 0:
+            plus_di = (plus_di_smooth / atr) * 100
+            minus_di = (minus_di_smooth / atr) * 100
+            di_sum = plus_di + minus_di
+            if di_sum > 0:
+                dx_vals.append(abs(plus_di - minus_di) / di_sum * 100)
+
+    if len(dx_vals) < period:
+        return None
+
+    adx = sum(dx_vals[:period]) / period
+    for dx in dx_vals[period:]:
+        adx = (adx * (period - 1) + dx) / period
+
+    return adx
+
+
+def _detect_regime(prices: list[float], adx: float | None) -> str:
+    """Detect market regime: accumulation, markup, distribution, or markdown.
+
+    Uses ADX for trend strength and price position relative to SMA200.
+    """
+    if len(prices) < 200:
+        # Not enough data — use simpler heuristic
+        if len(prices) < 30:
+            return "unknown"
+        sma = sum(prices[-30:]) / 30
+        if prices[-1] > sma * 1.05:
+            return "markup"
+        elif prices[-1] < sma * 0.95:
+            return "markdown"
+        return "accumulation"
+
+    sma200 = sum(prices[-200:]) / 200
+    sma200_prev = sum(prices[-210:-10]) / 200 if len(prices) >= 210 else sma200
+    sma_slope = (sma200 - sma200_prev) / sma200_prev if sma200_prev > 0 else 0
+
+    trending = adx is not None and adx > 25
+    price_above_sma = prices[-1] > sma200
+
+    if trending:
+        if price_above_sma:
+            return "markup"       # Strong uptrend
+        else:
+            return "markdown"     # Strong downtrend
+    else:
+        if sma_slope > 0.01:
+            return "accumulation"  # Low trend strength, slight upward drift
+        elif sma_slope < -0.01:
+            return "distribution"  # Low trend strength, slight downward drift
+        else:
+            return "accumulation"  # Range-bound
+
+
+def _half_life(prices: list[float]) -> float | None:
+    """Ornstein-Uhlenbeck mean-reversion half-life in days.
+
+    < 15 days = strong mean-reversion candidate
+    15-60 days = moderate mean-reversion
+    > 60 days = trending, use trend-following strategies
+    """
+    if len(prices) < 30:
+        return None
+
+    # Regress delta_price on lagged_price
+    n = len(prices)
+    delta = [prices[i] - prices[i - 1] for i in range(1, n)]
+    lagged = prices[:-1]
+
+    # Simple OLS: slope = cov(x,y) / var(x)
+    mean_x = sum(lagged) / len(lagged)
+    mean_y = sum(delta) / len(delta)
+
+    cov_xy = sum((lagged[i] - mean_x) * (delta[i] - mean_y) for i in range(len(delta))) / len(delta)
+    var_x = sum((x - mean_x) ** 2 for x in lagged) / len(lagged)
+
+    if var_x == 0:
+        return None
+
+    lam = cov_xy / var_x
+
+    if lam >= 0:
+        return None  # Not mean-reverting (trending)
+
+    half_life = -math.log(2) / lam
+    return min(half_life, 999)  # Cap at 999 days
+
+
+def _data_confidence(total_days: int) -> float:
+    """Scale signal confidence by data depth. 0.0 to 1.0.
+
+    < 90 days = low confidence (0.4-0.65)
+    90-365 days = medium confidence (0.65-0.85)
+    365+ days = high confidence (0.85-1.0)
+    """
+    if total_days <= 0:
+        return 0.0
+    return min(1.0, math.log(max(1, total_days)) / math.log(1000))
 
 
 def _volatility(prices: list[float], period: int = 14) -> float | None:
@@ -307,6 +445,12 @@ def analyze_card(db: Session, card_id: int) -> AnalysisResult:
         result.volatility, result.spread_ratio, result.momentum_accel,
         result.price_change_pct_7d, len(records),
     )
+
+    # Regime detection — what phase is this card in?
+    result.adx = _adx(prices)
+    result.regime = _detect_regime(prices, result.adx)
+    result.half_life = _half_life(prices)
+    result.data_confidence = _data_confidence(len(prices))
 
     # Generate signal (now includes volume proxy)
     result.signal, result.signal_strength = _generate_signal(result, prices)
@@ -474,6 +618,98 @@ def get_top_movers(db: Session, limit: int = 10) -> dict:
     return {
         "gainers": movers[:limit],
         "losers": list(reversed(movers[-limit:])) if len(movers) > limit else [],
+    }
+
+
+def get_set_relative_strength(db: Session, days: int = 30) -> dict[str, float]:
+    """Compute relative strength per set — which sets are outperforming?
+
+    Returns dict of {set_id: relative_strength_score} where > 1.0 means
+    outperforming the market average, < 1.0 means underperforming.
+    """
+    from sqlalchemy import func
+    from server.models.card import Card
+    from datetime import date, timedelta
+
+    cutoff = date.today() - timedelta(days=days)
+
+    # Average recent return per set
+    rows = (
+        db.query(
+            Card.set_id,
+            func.avg(
+                (PriceHistory.market_price - Card.current_price) / Card.current_price
+            ).label("avg_return"),
+        )
+        .join(PriceHistory, Card.id == PriceHistory.card_id)
+        .filter(
+            PriceHistory.date >= cutoff,
+            PriceHistory.market_price.isnot(None),
+            Card.current_price.isnot(None),
+            Card.current_price >= 2.0,
+        )
+        .group_by(Card.set_id)
+        .all()
+    )
+
+    if not rows:
+        return {}
+
+    returns = {row.set_id: row.avg_return or 0 for row in rows if row.set_id}
+    if not returns:
+        return {}
+
+    market_avg = sum(returns.values()) / len(returns)
+    if market_avg == 0:
+        return {k: 1.0 for k in returns}
+
+    return {k: round(v / market_avg, 2) if market_avg != 0 else 1.0
+            for k, v in returns.items()}
+
+
+def get_ensemble_signal(db: Session, card_id: int) -> dict:
+    """Run all backtest strategies and vote on the signal.
+
+    Each strategy votes BUY or SELL, weighted by its Sharpe ratio.
+    Returns the consensus signal and confidence.
+    """
+    from server.services.backtesting import run_backtest, STRATEGIES
+
+    votes = {}
+    for key in STRATEGIES:
+        try:
+            result = run_backtest(db, card_id, strategy=key, initial_capital=1000)
+            if result and result.total_trades > 0:
+                weight = max(0.1, result.sharpe_ratio) if result.sharpe_ratio else 0.1
+                votes[key] = {
+                    "signal": "BUY" if result.strategy_return_pct > 0 else "SELL",
+                    "weight": weight,
+                    "return_pct": result.strategy_return_pct,
+                    "sharpe": result.sharpe_ratio,
+                    "win_rate": result.win_rate,
+                }
+        except Exception:
+            continue
+
+    if not votes:
+        return {"signal": "HOLD", "confidence": 0, "strategies": {}}
+
+    buy_weight = sum(v["weight"] for v in votes.values() if v["signal"] == "BUY")
+    sell_weight = sum(v["weight"] for v in votes.values() if v["signal"] == "SELL")
+    total = buy_weight + sell_weight
+
+    if total == 0:
+        return {"signal": "HOLD", "confidence": 0, "strategies": votes}
+
+    confidence = round(abs(buy_weight - sell_weight) / total, 2)
+    consensus = "BUY" if buy_weight > sell_weight else "SELL"
+
+    return {
+        "signal": consensus,
+        "confidence": confidence,
+        "buy_weight": round(buy_weight, 2),
+        "sell_weight": round(sell_weight, 2),
+        "strategies": votes,
     }
 
 
