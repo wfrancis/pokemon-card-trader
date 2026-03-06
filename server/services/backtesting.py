@@ -342,15 +342,23 @@ def run_backtest(
     records = (
         db.query(PriceHistory)
         .filter(PriceHistory.card_id == card_id, PriceHistory.market_price.isnot(None))
-        .order_by(asc(PriceHistory.date))
+        .order_by(asc(PriceHistory.date), asc(PriceHistory.id))
         .all()
     )
 
     if len(records) < 35:  # Need enough data for indicators
         return None
 
-    prices = [r.market_price for r in records]
-    dates = [r.date for r in records]
+    # Deduplicate: one price per date (last record wins)
+    date_prices: dict[date, float] = {}
+    for r in records:
+        date_prices[r.date] = r.market_price
+    sorted_dates = sorted(date_prices.keys())
+    dates = sorted_dates
+    prices = [date_prices[d] for d in sorted_dates]
+
+    if len(prices) < 35:
+        return None
 
     result = BacktestResult(
         strategy=STRATEGIES.get(strategy, strategy),

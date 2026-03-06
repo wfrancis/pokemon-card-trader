@@ -1,14 +1,29 @@
 import { API_URL } from '../config';
 
-async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  });
-  if (!res.ok) {
-    throw new Error(`API error: ${res.status} ${res.statusText}`);
+async function fetchApi<T>(path: string, options?: RequestInit & { timeoutMs?: number }): Promise<T> {
+  const { timeoutMs, ...fetchOptions } = options || {};
+  const controller = new AbortController();
+  const timeout = timeoutMs ?? 120_000; // default 2 min
+  const timer = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    const res = await fetch(`${API_URL}${path}`, {
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+      ...fetchOptions,
+    });
+    if (!res.ok) {
+      throw new Error(`API error: ${res.status} ${res.statusText}`);
+    }
+    return res.json();
+  } catch (e: any) {
+    if (e.name === 'AbortError') {
+      throw new Error(`Request timed out after ${Math.round(timeout / 1000)}s`);
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
   }
-  return res.json();
 }
 
 export interface Card {
@@ -144,7 +159,10 @@ export const api = {
     fetchApi<{ cards: CardIndicator[]; total: number }>('/api/signals'),
 
   generateAISignals: () =>
-    fetchApi<AISignalsResponse>('/api/signals/generate', { method: 'POST' }),
+    fetchApi<SignalJobStatus>('/api/signals/generate', { method: 'POST' }),
+
+  getSignalStatus: () =>
+    fetchApi<SignalJobStatus>('/api/signals/status'),
 
   quickBacktest: (cardId: number) =>
     fetchApi<QuickBacktestResult>(`/api/signals/${cardId}/quick-backtest`),
@@ -277,9 +295,19 @@ export interface CardIndicator {
   signal?: string;
   conviction?: number;
   reasoning?: string;
+  risk_note?: string;
+  bull_case?: string;
+  bear_case?: string;
+  ta_pattern?: string;
+  ta_summary?: string;
+  catalyst?: string;
+  catalyst_summary?: string;
+  demand_type?: string;
+  reprint_risk?: string;
   entry_price?: number | null;
   target_price?: number | null;
   stop_loss?: number | null;
+  time_horizon?: string;
   best_strategy?: string;
 }
 
@@ -291,8 +319,27 @@ export interface AISignalsResponse {
     sell: number;
     hold: number;
   };
+  pipeline?: string;
   tokens_used: { input: number; output: number };
   error?: string;
+}
+
+export interface SignalJobStatus {
+  status: 'idle' | 'processing' | 'done' | 'error';
+  step?: string;
+  elapsed_seconds?: number;
+  message?: string;
+  error?: string;
+  // Present when status === 'done':
+  signals?: CardIndicator[];
+  summary?: {
+    total: number;
+    buy: number;
+    sell: number;
+    hold: number;
+  };
+  pipeline?: string;
+  tokens_used?: { input: number; output: number };
 }
 
 export interface QuickBacktestStrategy {

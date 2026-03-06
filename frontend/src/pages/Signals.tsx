@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Box,
   Typography,
@@ -23,7 +23,7 @@ import RemoveIcon from '@mui/icons-material/Remove';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ScienceIcon from '@mui/icons-material/Science';
 import { api } from '../services/api';
-import type { CardIndicator, AISignalsResponse, QuickBacktestResult } from '../services/api';
+import type { CardIndicator, AISignalsResponse, QuickBacktestResult, SignalJobStatus } from '../services/api';
 
 const mono = { fontFamily: '"JetBrains Mono", "Fira Code", monospace' };
 
@@ -133,6 +133,26 @@ function SignalCard({
           >
             {card.reasoning}
           </Typography>
+        )}
+
+        {/* TA pattern + reprint risk chips */}
+        {(card.ta_pattern || card.reprint_risk) && (
+          <Box sx={{ display: 'flex', gap: 0.5, mt: 0.5, flexWrap: 'wrap' }}>
+            {card.ta_pattern && (
+              <Chip label={card.ta_pattern} size="small" sx={{ bgcolor: '#1a1a3a', color: '#7c8aff', height: 18, fontSize: '0.55rem', ...mono }} />
+            )}
+            {card.reprint_risk && (
+              <Chip
+                label={`REPRINT: ${card.reprint_risk.toUpperCase()}`}
+                size="small"
+                sx={{
+                  height: 18, fontSize: '0.55rem', ...mono,
+                  bgcolor: card.reprint_risk === 'high' ? '#2a0a0a' : card.reprint_risk === 'medium' ? '#2a1a0a' : '#0a2a0a',
+                  color: card.reprint_risk === 'high' ? '#ff4444' : card.reprint_risk === 'medium' ? '#ff9800' : '#4caf50',
+                }}
+              />
+            )}
+          </Box>
         )}
 
         {/* Price targets row */}
@@ -317,23 +337,136 @@ function CardDrillDown({
         </Box>
       </Paper>
 
-      {/* AI Reasoning */}
+      {/* Portfolio Manager Decision + Risk Note */}
       <Paper sx={{ p: 3, mb: 2, bgcolor: '#111', border: '1px solid #1e1e1e' }}>
         <Typography sx={{ color: '#ffd700', fontWeight: 700, ...mono, mb: 1.5, fontSize: '0.9rem' }}>
-          AI REASONING
+          PORTFOLIO MANAGER DECISION
         </Typography>
         <Typography sx={{ color: '#ccc', ...mono, fontSize: '0.85rem', lineHeight: 1.7 }}>
           {card.reasoning || 'No reasoning available — generate AI signals first.'}
         </Typography>
-        {card.best_strategy && (
-          <Box sx={{ mt: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
-            <ScienceIcon sx={{ color: '#00bcd4', fontSize: 18 }} />
-            <Typography sx={{ color: '#00bcd4', ...mono, fontSize: '0.8rem' }}>
-              RECOMMENDED STRATEGY: <span style={{ color: '#fff', fontWeight: 700 }}>{card.best_strategy}</span>
+        {card.risk_note && (
+          <Box sx={{ mt: 1.5, p: 1.5, bgcolor: '#1a1a0a', borderRadius: 1, border: '1px solid #333300' }}>
+            <Typography sx={{ color: '#ff9800', fontWeight: 700, ...mono, fontSize: '0.7rem', mb: 0.5 }}>
+              RISK MANAGER
+            </Typography>
+            <Typography sx={{ color: '#cc9', ...mono, fontSize: '0.8rem', lineHeight: 1.6 }}>
+              {card.risk_note}
             </Typography>
           </Box>
         )}
+        <Box sx={{ display: 'flex', gap: 2, mt: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+          {card.best_strategy && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <ScienceIcon sx={{ color: '#00bcd4', fontSize: 18 }} />
+              <Typography sx={{ color: '#00bcd4', ...mono, fontSize: '0.8rem' }}>
+                STRATEGY: <span style={{ color: '#fff', fontWeight: 700 }}>{card.best_strategy}</span>
+              </Typography>
+            </Box>
+          )}
+          {card.time_horizon && (
+            <Chip
+              label={`${card.time_horizon.toUpperCase()} TERM`}
+              size="small"
+              sx={{ bgcolor: '#1a1a2e', color: '#ffd700', ...mono, fontSize: '0.7rem', fontWeight: 700 }}
+            />
+          )}
+          {card.reprint_risk && (
+            <Chip
+              label={`REPRINT: ${card.reprint_risk.toUpperCase()}`}
+              size="small"
+              sx={{
+                bgcolor: card.reprint_risk === 'high' ? '#2a0a0a' : card.reprint_risk === 'medium' ? '#2a1a0a' : '#0a2a0a',
+                color: card.reprint_risk === 'high' ? '#ff4444' : card.reprint_risk === 'medium' ? '#ff9800' : '#4caf50',
+                ...mono, fontSize: '0.7rem', fontWeight: 700,
+              }}
+            />
+          )}
+          {card.demand_type && (
+            <Chip
+              label={card.demand_type.toUpperCase()}
+              size="small"
+              sx={{ bgcolor: '#0a0a2a', color: '#7c8aff', ...mono, fontSize: '0.7rem', fontWeight: 700 }}
+            />
+          )}
+        </Box>
       </Paper>
+
+      {/* Technical Analysis + Catalyst side by side */}
+      {(card.ta_summary || card.catalyst_summary) && (
+        <Box sx={{ display: 'flex', gap: 2, mb: 2, flexDirection: { xs: 'column', md: 'row' } }}>
+          {card.ta_summary && (
+            <Paper sx={{ flex: 1, p: 3, bgcolor: '#0a0a14', border: '1px solid #1a1a3a' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+                <Typography sx={{ color: '#7c8aff', fontWeight: 700, ...mono, fontSize: '0.9rem' }}>
+                  TECHNICAL ANALYSIS
+                </Typography>
+                {card.ta_pattern && (
+                  <Chip
+                    label={card.ta_pattern}
+                    size="small"
+                    sx={{ bgcolor: '#1a1a3a', color: '#aab', ...mono, fontSize: '0.65rem', fontWeight: 700 }}
+                  />
+                )}
+              </Box>
+              <Typography sx={{ color: '#aab8cc', ...mono, fontSize: '0.8rem', lineHeight: 1.7 }}>
+                {card.ta_summary}
+              </Typography>
+            </Paper>
+          )}
+          {card.catalyst_summary && (
+            <Paper sx={{ flex: 1, p: 3, bgcolor: '#14100a', border: '1px solid #3a2a1a' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+                <Typography sx={{ color: '#ffab40', fontWeight: 700, ...mono, fontSize: '0.9rem' }}>
+                  CATALYST ANALYSIS
+                </Typography>
+                {card.catalyst && (
+                  <Chip
+                    label={card.catalyst}
+                    size="small"
+                    sx={{ bgcolor: '#3a2a1a', color: '#cc9', ...mono, fontSize: '0.65rem', fontWeight: 700 }}
+                  />
+                )}
+              </Box>
+              <Typography sx={{ color: '#ccb8aa', ...mono, fontSize: '0.8rem', lineHeight: 1.7 }}>
+                {card.catalyst_summary}
+              </Typography>
+            </Paper>
+          )}
+        </Box>
+      )}
+
+      {/* Bull vs Bear Debate */}
+      {(card.bull_case || card.bear_case) && (
+        <Box sx={{ display: 'flex', gap: 2, mb: 2, flexDirection: { xs: 'column', md: 'row' } }}>
+          {card.bull_case && (
+            <Paper sx={{ flex: 1, p: 3, bgcolor: '#040e04', border: '1px solid #0a3a0a' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+                <TrendingUpIcon sx={{ color: '#00ff41', fontSize: 20 }} />
+                <Typography sx={{ color: '#00ff41', fontWeight: 700, ...mono, fontSize: '0.9rem' }}>
+                  BULL CASE
+                </Typography>
+              </Box>
+              <Typography sx={{ color: '#aac9aa', ...mono, fontSize: '0.8rem', lineHeight: 1.7 }}>
+                {card.bull_case}
+              </Typography>
+            </Paper>
+          )}
+          {card.bear_case && (
+            <Paper sx={{ flex: 1, p: 3, bgcolor: '#0e0404', border: '1px solid #3a0a0a' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+                <TrendingDownIcon sx={{ color: '#ff1744', fontSize: 20 }} />
+                <Typography sx={{ color: '#ff1744', fontWeight: 700, ...mono, fontSize: '0.9rem' }}>
+                  BEAR CASE
+                </Typography>
+              </Box>
+              <Typography sx={{ color: '#c9aaaa', ...mono, fontSize: '0.8rem', lineHeight: 1.7 }}>
+                {card.bear_case}
+              </Typography>
+            </Paper>
+          )}
+        </Box>
+      )}
 
       {/* Technical Indicators */}
       <Paper sx={{ p: 3, mb: 2, bgcolor: '#111', border: '1px solid #1e1e1e' }}>
@@ -459,7 +592,7 @@ function CardDrillDown({
                           {s.alpha >= 0 ? '+' : ''}{s.alpha.toFixed(1)}%
                         </TableCell>
                         <TableCell align="right" sx={{ color: '#ccc', ...mono, fontSize: '0.75rem', borderColor: '#222' }}>
-                          {(s.win_rate * 100).toFixed(0)}%
+                          {s.win_rate.toFixed(0)}%
                         </TableCell>
                         <TableCell align="right" sx={{ color: '#ccc', ...mono, fontSize: '0.75rem', borderColor: '#222' }}>
                           {s.total_trades}
@@ -578,31 +711,96 @@ export default function Signals() {
   const [aiSignals, setAiSignals] = useState<AISignalsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [aiLoading, setAiLoading] = useState(false);
+  const [pipelineStep, setPipelineStep] = useState('');
+  const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [selectedCard, setSelectedCard] = useState<CardIndicator | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, []);
+
+  // Check if there's already a running job on page load
   useEffect(() => {
     api
       .getIndicators()
       .then((r) => setIndicators(r.cards))
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
+
+    // Check for in-progress job
+    api.getSignalStatus().then((status) => {
+      if (status.status === 'processing') {
+        setAiLoading(true);
+        setPipelineStep(status.step || 'Processing...');
+        setElapsed(status.elapsed_seconds || 0);
+        startPolling();
+      } else if (status.status === 'done' && status.signals) {
+        setAiSignals({
+          signals: status.signals,
+          summary: status.summary!,
+          pipeline: status.pipeline,
+          tokens_used: status.tokens_used!,
+        });
+      }
+    }).catch(() => { /* ignore — status endpoint may not exist yet */ });
+  }, []);
+
+  const startPolling = useCallback(() => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = setInterval(async () => {
+      try {
+        const status = await api.getSignalStatus();
+        if (status.status === 'processing') {
+          setPipelineStep(status.step || 'Processing...');
+          setElapsed(status.elapsed_seconds || 0);
+        } else if (status.status === 'done' && status.signals) {
+          // Pipeline complete!
+          if (pollRef.current) clearInterval(pollRef.current);
+          pollRef.current = null;
+          setAiLoading(false);
+          setPipelineStep('');
+          setAiSignals({
+            signals: status.signals,
+            summary: status.summary!,
+            pipeline: status.pipeline,
+            tokens_used: status.tokens_used!,
+          });
+        } else if (status.status === 'error') {
+          if (pollRef.current) clearInterval(pollRef.current);
+          pollRef.current = null;
+          setAiLoading(false);
+          setPipelineStep('');
+          setError(status.error || 'Pipeline failed');
+        } else if (status.status === 'idle') {
+          // Job finished or was never started — stop polling
+          if (pollRef.current) clearInterval(pollRef.current);
+          pollRef.current = null;
+          setAiLoading(false);
+          setPipelineStep('');
+        }
+      } catch {
+        // Network blip — keep polling
+      }
+    }, 3000);
   }, []);
 
   const generateSignals = async () => {
     setAiLoading(true);
     setError(null);
+    setPipelineStep('Starting pipeline...');
+    setElapsed(0);
     try {
-      const result = await api.generateAISignals();
-      if (result.error) {
-        setError(result.error);
-      } else {
-        setAiSignals(result);
-      }
+      await api.generateAISignals(); // Returns immediately
+      startPolling();
     } catch (e: any) {
-      setError(e.message || 'Failed to generate AI signals');
-    } finally {
+      setError(e.message || 'Failed to start signal generation');
       setAiLoading(false);
+      setPipelineStep('');
     }
   };
 
@@ -665,8 +863,16 @@ export default function Signals() {
         {aiLoading && (
           <Box sx={{ mt: 2 }}>
             <LinearProgress sx={{ bgcolor: '#222', '& .MuiLinearProgress-bar': { bgcolor: '#ffd700' } }} />
-            <Typography sx={{ color: '#666', mt: 1, fontSize: '0.75rem', ...mono }}>
-              Marcus is analyzing all cards with GPT... This may take 15-30 seconds.
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 1 }}>
+              <Typography sx={{ color: '#ffd700', fontSize: '0.75rem', ...mono, fontWeight: 600 }}>
+                {pipelineStep || 'Starting pipeline...'}
+              </Typography>
+              <Typography sx={{ color: '#555', fontSize: '0.7rem', ...mono }}>
+                {elapsed > 0 ? `${Math.floor(elapsed / 60)}m ${elapsed % 60}s` : ''}
+              </Typography>
+            </Box>
+            <Typography sx={{ color: '#444', mt: 0.5, fontSize: '0.65rem', ...mono }}>
+              7-step pipeline: Quant → TA → Catalyst → Bull → Bear → PM → Risk Manager
             </Typography>
           </Box>
         )}
@@ -727,13 +933,18 @@ export default function Signals() {
                   {aiSignals.summary.hold}
                 </Typography>
               </Box>
-              {aiSignals.tokens_used && (
-                <Box sx={{ ml: 'auto' }}>
-                  <Typography sx={{ color: '#444', fontSize: '0.65rem', ...mono }}>
+              <Box sx={{ ml: 'auto', textAlign: 'right' }}>
+                {aiSignals.pipeline && (
+                  <Typography sx={{ color: '#555', fontSize: '0.6rem', ...mono }}>
+                    {aiSignals.pipeline}
+                  </Typography>
+                )}
+                {aiSignals.tokens_used && (
+                  <Typography sx={{ color: '#444', fontSize: '0.6rem', ...mono }}>
                     TOKENS: {aiSignals.tokens_used.input.toLocaleString()} in / {aiSignals.tokens_used.output.toLocaleString()} out
                   </Typography>
-                </Box>
-              )}
+                )}
+              </Box>
             </Box>
           </Paper>
 
