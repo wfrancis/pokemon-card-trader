@@ -300,11 +300,13 @@ export default function PriceChart({ priceData, analysis, showIndicators = true 
                 type="monotone" dataKey="bollUpper" stroke="none"
                 fill="url(#bollGradient)" fillOpacity={1}
                 connectNulls={false} isAnimationActive={false}
+                tooltipType="none" name="bollUpperFill"
               />
               <Area
                 type="monotone" dataKey="bollLower" stroke="none"
                 fill="#0a0a0a" fillOpacity={1}
                 connectNulls={false} isAnimationActive={false}
+                tooltipType="none" name="bollLowerFill"
               />
               <Line
                 type="monotone" dataKey="bollUpper" stroke="#9c27b0" strokeWidth={1}
@@ -329,6 +331,8 @@ export default function PriceChart({ priceData, analysis, showIndicators = true 
             fill="url(#priceGradient)"
             fillOpacity={1}
             isAnimationActive={false}
+            tooltipType="none"
+            name="priceFill"
           />
 
           {/* Main price line */}

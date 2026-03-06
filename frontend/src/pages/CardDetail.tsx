@@ -59,11 +59,22 @@ export default function CardDetail() {
         {/* Left: Card Image + Info */}
         <Grid size={{ xs: 12, md: 3 }}>
           <Paper sx={{ p: 2, textAlign: 'center' }}>
-            <img
-              src={card.image_large || card.image_small}
-              alt={card.name}
-              style={{ width: '100%', maxWidth: 300, borderRadius: 8 }}
-            />
+            {(card.image_large || card.image_small) ? (
+              <img
+                src={card.image_large || card.image_small}
+                alt={card.name}
+                style={{ width: '100%', maxWidth: 300, borderRadius: 8 }}
+              />
+            ) : (
+              <Box sx={{
+                width: '100%', maxWidth: 300, height: 400, mx: 'auto',
+                bgcolor: '#1a1a2e', borderRadius: 2,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                border: '1px solid #333',
+              }}>
+                <Typography sx={{ color: '#555', fontSize: '0.9rem' }}>No Image Available</Typography>
+              </Box>
+            )}
             <Typography variant="h2" sx={{ mt: 2 }}>{card.name}</Typography>
             <Typography variant="body2" sx={{ color: '#666' }}>{card.set_name} #{card.number}</Typography>
 
