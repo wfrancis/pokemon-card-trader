@@ -24,6 +24,26 @@ from server.services.market_analysis import _sma, _ema, _rsi, _macd, _bollinger_
 
 logger = logging.getLogger(__name__)
 
+MAX_STRATEGY_RETURN_PCT = 10000.0  # Cap returns at 10,000% to prevent overflow display
+
+
+def _clean_outliers(prices: list[float], window_size: int = 7) -> list[float]:
+    """Replace price outliers with local median to prevent false backtest signals.
+
+    A price > 3x or < 0.33x the local median is replaced with the median.
+    This handles bad data points (e.g., cents stored as dollars) that cause
+    astronomical fake returns.
+    """
+    cleaned = list(prices)
+    for i in range(len(cleaned)):
+        start = max(0, i - window_size)
+        end = min(len(cleaned), i + window_size + 1)
+        window = sorted(cleaned[start:end])
+        median = window[len(window) // 2]
+        if median > 0 and (cleaned[i] > median * 3 or cleaned[i] < median * 0.33):
+            cleaned[i] = median
+    return cleaned
+
 
 @dataclass
 class Trade:
@@ -360,6 +380,9 @@ def run_backtest(
     if len(prices) < 35:
         return None
 
+    # Clean outliers: replace prices > 3x or < 0.33x the local median
+    prices = _clean_outliers(prices, window_size=7)
+
     result = BacktestResult(
         strategy=STRATEGIES.get(strategy, strategy),
         card_id=card_id,
@@ -465,10 +488,11 @@ def run_backtest(
     # If still holding at the end, mark final value
     final_value = cash + (holdings * prices[-1])
 
-    # Calculate strategy return
+    # Calculate strategy return (capped to prevent overflow display)
     if initial_capital > 0:
+        raw_return = ((final_value - initial_capital) / initial_capital) * 100
         result.strategy_return_pct = round(
-            ((final_value - initial_capital) / initial_capital) * 100, 2
+            min(MAX_STRATEGY_RETURN_PCT, max(-100.0, raw_return)), 2
         )
 
     # Trade analysis

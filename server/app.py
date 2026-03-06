@@ -153,6 +153,21 @@ async def trigger_poketrace_sync(
         return {"status": "error", "message": str(e)}
 
 
+@app.post("/api/sync/tcgplayer")
+async def trigger_tcgplayer_sync(
+    limit: int = 100,
+    db: Session = Depends(get_db),
+):
+    """Sync current prices from TCGPlayer marketplace API (no API key needed)."""
+    from server.services.tcgplayer_sync import sync_tcgplayer_prices
+    try:
+        stats = await sync_tcgplayer_prices(db, limit=limit)
+        return {"status": "complete", "source": "tcgplayer", **stats}
+    except Exception as e:
+        logger.error(f"TCGPlayer sync failed: {e}")
+        return {"status": "error", "message": str(e)}
+
+
 @app.post("/api/import/pricecharting")
 async def trigger_pricecharting_import(
     db: Session = Depends(get_db),

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   Box, Paper, Typography, Table, TableBody, TableCell,
-  TableContainer, TableHead, TableRow, Avatar,
+  TableContainer, TableHead, TableRow, Avatar, CircularProgress,
 } from '@mui/material';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
@@ -11,13 +11,15 @@ import { api, Mover } from '../services/api';
 export default function TopMovers() {
   const [gainers, setGainers] = useState<Mover[]>([]);
   const [losers, setLosers] = useState<Mover[]>([]);
+  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
+    setLoading(true);
     api.getMovers(10).then(data => {
       setGainers(data.gainers);
       setLosers(data.losers);
-    }).catch(console.error);
+    }).catch(console.error).finally(() => setLoading(false));
   }, []);
 
   const renderTable = (title: string, movers: Mover[], isGainer: boolean) => (
@@ -95,6 +97,21 @@ export default function TopMovers() {
       </TableContainer>
     </Paper>
   );
+
+  if (loading) {
+    return (
+      <Box sx={{ display: 'flex', gap: 2 }}>
+        <Paper sx={{ flex: 1, p: 4, textAlign: 'center' }}>
+          <CircularProgress size={24} sx={{ color: '#00ff41' }} />
+          <Typography sx={{ color: '#666', mt: 1, fontSize: '0.8rem' }}>Loading gainers...</Typography>
+        </Paper>
+        <Paper sx={{ flex: 1, p: 4, textAlign: 'center' }}>
+          <CircularProgress size={24} sx={{ color: '#ff1744' }} />
+          <Typography sx={{ color: '#666', mt: 1, fontSize: '0.8rem' }}>Loading losers...</Typography>
+        </Paper>
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ display: 'flex', gap: 2 }}>
