@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Date
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Date, Index
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 from server.database import Base
@@ -18,3 +18,7 @@ class PriceHistory(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     card = relationship("Card", back_populates="price_history")
+
+    __table_args__ = (
+        Index("ix_price_history_card_date", "card_id", "date"),
+    )

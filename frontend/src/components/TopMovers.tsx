@@ -36,7 +36,7 @@ export default function TopMovers() {
             <TableRow>
               <TableCell>Card</TableCell>
               <TableCell align="right">Price</TableCell>
-              <TableCell align="right">Change</TableCell>
+              <TableCell align="right">7d Change</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -98,8 +98,8 @@ export default function TopMovers() {
 
   return (
     <Box sx={{ display: 'flex', gap: 2 }}>
-      {renderTable('Top Gainers', gainers, true)}
-      {renderTable('Top Losers', losers, false)}
+      {renderTable('Top Gainers (7d)', gainers, true)}
+      {renderTable('Top Losers (7d)', losers, false)}
     </Box>
   );
 }

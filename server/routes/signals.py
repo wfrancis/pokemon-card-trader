@@ -19,21 +19,43 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/signals", tags=["signals"])
 
 
-def _build_card_indicators(db: Session) -> list[dict]:
-    """Compute daily technical indicators for all cards."""
-    cards = db.query(Card).filter(Card.current_price.isnot(None)).all()
+def _build_card_indicators(db: Session, max_cards: int = 100) -> list[dict]:
+    """Compute daily technical indicators for top cards by activity.
+
+    Limits analysis to cards with sufficient price history to avoid
+    scanning all 14K+ cards (which would timeout).
+    """
+    from sqlalchemy import func, desc
+
+    # Pre-filter: only cards with 10+ price records, ranked by record count
+    card_ids_with_counts = (
+        db.query(
+            PriceHistory.card_id,
+            func.count(PriceHistory.id).label("cnt"),
+        )
+        .filter(PriceHistory.market_price.isnot(None))
+        .group_by(PriceHistory.card_id)
+        .having(func.count(PriceHistory.id) >= 10)
+        .order_by(desc("cnt"))
+        .limit(max_cards)
+        .all()
+    )
+
     results = []
 
-    for card in cards:
-        analysis = analyze_card(db, card.id)
+    for row in card_ids_with_counts:
+        card = db.query(Card).filter(Card.id == row.card_id).first()
+        if not card or not card.current_price:
+            continue
+
+        analysis = analyze_card(db, row.card_id)
         if analysis.rsi_14 is None and analysis.sma_7 is None:
             continue
 
-        price_count = (
-            db.query(PriceHistory)
-            .filter(PriceHistory.card_id == card.id, PriceHistory.market_price.isnot(None))
-            .count()
-        )
+        price_count = row.cnt
+
+        def _r(val, d=2):
+            return round(val, d) if val is not None else None
 
         entry = {
             "card_id": card.id,
@@ -42,20 +64,41 @@ def _build_card_indicators(db: Session) -> list[dict]:
             "rarity": card.rarity,
             "image_small": card.image_small,
             "current_price": card.current_price,
-            "rsi_14": round(analysis.rsi_14, 1) if analysis.rsi_14 else None,
-            "sma_7": round(analysis.sma_7, 2) if analysis.sma_7 else None,
-            "sma_30": round(analysis.sma_30, 2) if analysis.sma_30 else None,
-            "macd_histogram": round(analysis.macd_histogram, 4) if analysis.macd_histogram else None,
-            "momentum": round(analysis.momentum, 2) if analysis.momentum else None,
-            "price_change_7d": round(analysis.price_change_pct_7d, 2) if analysis.price_change_pct_7d else None,
-            "price_change_30d": round(analysis.price_change_pct_30d, 2) if analysis.price_change_pct_30d else None,
-            "support": round(analysis.support, 2) if analysis.support else None,
-            "resistance": round(analysis.resistance, 2) if analysis.resistance else None,
+            # Moving averages
+            "sma_7": _r(analysis.sma_7),
+            "sma_30": _r(analysis.sma_30),
+            "sma_90": _r(analysis.sma_90),
+            "sma_200": _r(analysis.sma_200),
+            "ema_12": _r(analysis.ema_12),
+            "ema_26": _r(analysis.ema_26),
+            "ema_50": _r(analysis.ema_50),
+            # Oscillators
+            "rsi_14": _r(analysis.rsi_14, 1),
+            "macd_histogram": _r(analysis.macd_histogram, 4),
+            "momentum": _r(analysis.momentum),
+            # Price changes — multi-timeframe
+            "price_change_7d": _r(analysis.price_change_pct_7d),
+            "price_change_30d": _r(analysis.price_change_pct_30d),
+            "price_change_90d": _r(analysis.price_change_pct_90d),
+            "price_change_180d": _r(analysis.price_change_pct_180d),
+            "price_change_1y": _r(analysis.price_change_pct_365d),
+            "price_change_all_time": _r(analysis.price_change_pct_all),
+            # Key levels
+            "support": _r(analysis.support),
+            "resistance": _r(analysis.resistance),
+            "all_time_high": _r(analysis.all_time_high),
+            "all_time_low": _r(analysis.all_time_low),
+            "pct_from_ath": _r(analysis.pct_from_ath),
+            "price_percentile": _r(analysis.price_percentile),
+            # Bollinger
             "bollinger_position": None,
-            "volatility": round(analysis.volatility, 2) if analysis.volatility else None,
-            "spread_ratio": round(analysis.spread_ratio, 2) if analysis.spread_ratio else None,
+            # Volume proxies
+            "volatility": _r(analysis.volatility),
+            "spread_ratio": _r(analysis.spread_ratio),
             "activity_score": analysis.activity_score,
-            "price_history_days": price_count,
+            # History depth
+            "price_history_days": analysis.total_history_days,
+            "first_price_date": analysis.first_price_date,
             "can_backtest": price_count >= 35,
         }
 
@@ -96,11 +139,11 @@ async def generate_ai_signals(db: Session = Depends(get_db)):
     if not api_key:
         return {"error": "OPENAI_API_KEY not configured."}
 
-    indicators = _build_card_indicators(db)
+    indicators = _build_card_indicators(db, max_cards=50)
     if not indicators:
         return {"error": "No cards with sufficient daily price data."}
 
-    # Build concise data for AI
+    # Build concise data for AI — full multi-timeframe picture
     card_summaries = []
     for c in indicators:
         card_summaries.append({
@@ -109,46 +152,69 @@ async def generate_ai_signals(db: Session = Depends(get_db)):
             "set": c["set_name"],
             "rarity": c["rarity"],
             "price": c["current_price"],
-            "rsi": c["rsi_14"],
+            # Moving averages (short → long)
             "sma7": c["sma_7"],
             "sma30": c["sma_30"],
+            "sma90": c.get("sma_90"),
+            "sma200": c.get("sma_200"),
+            "ema50": c.get("ema_50"),
+            # Oscillators
+            "rsi": c["rsi_14"],
             "macd_hist": c["macd_histogram"],
             "momentum": c["momentum"],
+            # Multi-timeframe price changes
             "chg_7d": c["price_change_7d"],
             "chg_30d": c["price_change_30d"],
+            "chg_90d": c.get("price_change_90d"),
+            "chg_180d": c.get("price_change_180d"),
+            "chg_1y": c.get("price_change_1y"),
+            "chg_all": c.get("price_change_all_time"),
+            # Key levels
             "support": c["support"],
             "resistance": c["resistance"],
+            "ath": c.get("all_time_high"),
+            "atl": c.get("all_time_low"),
+            "pct_from_ath": c.get("pct_from_ath"),
+            "price_pctl": c.get("price_percentile"),
+            # Bollinger & vol
             "boll_pos": c["bollinger_position"],
             "volatility": c.get("volatility"),
             "spread": c.get("spread_ratio"),
             "activity": c.get("activity_score"),
+            # History depth
             "days": c["price_history_days"],
+            "since": c.get("first_price_date"),
         })
 
-    system_prompt = """You are Marcus "The Collector" Vega — a veteran Wall Street trader specializing in Pokemon cards and alternative assets. You use technical analysis on DAILY price data to generate trading signals.
+    system_prompt = """You are Marcus "The Collector" Vega — a veteran Wall Street quant who left Goldman to trade Pokemon cards full-time. You have 3+ years of daily TCGPlayer price data for each card. You think in multi-year cycles, not weekly noise.
 
 You MUST respond with valid JSON only. No markdown, no explanation outside JSON.
 
-For each card, analyze the daily indicators and decide: BUY, SELL, or HOLD.
-Consider:
-- RSI: oversold/overbought levels, but don't use rigid thresholds — context matters
-- SMA alignment: is the short-term trend above/below long-term?
-- MACD histogram: momentum direction and strength
-- Bollinger position: where is price relative to the bands?
-- Momentum: rate of change
-- Support/resistance: is price near key levels?
-- Price change trends: 7-day and 30-day performance
-- Volatility: higher vol = more market interest/activity (proxy for volume)
-- Spread ratio: wider bid-ask spread = more active bidding
-- Activity score (0-100): composite hotness metric — high scores mean the card is "hot"
+For each card, analyze the FULL history and decide: BUY, SELL, or HOLD.
 
-Think like a trader, not a textbook. Collectibles have unique dynamics:
-- Hype cycles cause sharp spikes — don't chase late
-- Mean reversion is strong after panic sells
-- Low activity cards can be manipulated — be cautious
-- High activity + bullish technicals = strong BUY signal
-- High activity + bearish technicals = smart to SELL before the dump
-- Rarity drives long-term value
+DATA YOU HAVE (per card):
+- Moving averages: SMA 7/30/90/200, EMA 50 — use SMA200 as the long-term trend anchor
+- RSI 14, MACD histogram, momentum
+- Multi-timeframe price changes: 7d, 30d, 90d, 180d, 1-year, and ALL-TIME
+- All-time high (ATH), all-time low (ATL), % from ATH, price percentile (0-100 in historical range)
+- Support/resistance (60-day window), Bollinger position
+- Volatility, spread ratio, activity score (0-100)
+- History depth: total days of data and first price date
+
+ANALYSIS FRAMEWORK — think like a real quant:
+1. LONG-TERM TREND: Is the card in a multi-year uptrend or downtrend? SMA200 vs price tells you.
+2. CYCLE POSITION: Where is price relative to ATH/ATL? Cards near ATL with strong fundamentals (rare, iconic) = opportunity. Cards near ATH = risky.
+3. MEAN REVERSION: Cards that dropped 50%+ from ATH often bounce. But distinguish "on sale" from "dead money."
+4. MOMENTUM CONFLUENCE: Do short-term (7d/30d) and long-term (90d/1y) momentum agree? Divergence = caution.
+5. RARITY PREMIUM: Gold Stars, ex/EX, VMAX, vintage Base Set = structural demand. Commons rarely appreciate.
+6. REGIME DETECTION: Is the card in accumulation (low vol, flat), markup (rising), distribution (high vol, topping), or markdown (falling)?
+
+COLLECTIBLE-SPECIFIC ALPHA:
+- Set rotation matters — cards from recently rotated sets often dump then recover
+- Nostalgia drives Base Set, Fossil, Jungle, Neo — these have floor prices
+- Modern chase cards (Alt Arts, Special Art Rares) have hype cycles — buy the dip after hype fades
+- Price percentile < 20 + high rarity = deep value
+- Price percentile > 80 + declining momentum = distribution phase, SELL
 
 Return JSON array with this exact structure:
 [
@@ -156,10 +222,11 @@ Return JSON array with this exact structure:
     "card_id": <int>,
     "signal": "BUY" | "SELL" | "HOLD",
     "conviction": <1-10>,
-    "reasoning": "<1-2 sentence explanation>",
+    "reasoning": "<2-3 sentences using specific data points: ATH/ATL, timeframe changes, SMA alignment>",
     "entry_price": <suggested entry or null>,
     "target_price": <take profit target or null>,
     "stop_loss": <stop loss price or null>,
+    "time_horizon": "<short (1-4 weeks) | medium (1-6 months) | long (6-12+ months)>",
     "best_strategy": "<which backtest strategy key fits this card>"
   }
 ]
@@ -176,16 +243,18 @@ Return ONLY a JSON array with your signal for each card. No other text."""
         import openai
 
         client = openai.OpenAI(api_key=api_key)
-        response = client.chat.completions.create(
+
+        # GPT-5.4 uses the Responses API
+        response = client.responses.create(
             model="gpt-5.4",
-            max_tokens=4096,
-            messages=[
-                {"role": "system", "content": system_prompt},
+            max_output_tokens=16384,
+            input=[
+                {"role": "developer", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
         )
 
-        raw = response.choices[0].message.content.strip()
+        raw = response.output_text.strip()
 
         # Parse JSON — handle markdown code blocks if GPT wraps it
         if raw.startswith("```"):
@@ -210,6 +279,7 @@ Return ONLY a JSON array with your signal for each card. No other text."""
                 "entry_price": sig.get("entry_price"),
                 "target_price": sig.get("target_price"),
                 "stop_loss": sig.get("stop_loss"),
+                "time_horizon": sig.get("time_horizon", "medium"),
                 "best_strategy": sig.get("best_strategy", "combined"),
             })
 
@@ -230,8 +300,8 @@ Return ONLY a JSON array with your signal for each card. No other text."""
                 "hold": hold_count,
             },
             "tokens_used": {
-                "input": response.usage.prompt_tokens,
-                "output": response.usage.completion_tokens,
+                "input": response.usage.input_tokens,
+                "output": response.usage.output_tokens,
             },
         }
 

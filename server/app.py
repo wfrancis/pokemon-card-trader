@@ -29,6 +29,17 @@ FRONTEND_BUILD = os.path.join(os.path.dirname(__file__), "..", "frontend", "buil
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
+    # Create composite index if missing (create_all won't add to existing tables)
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        try:
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_price_history_card_date "
+                "ON price_history (card_id, date)"
+            ))
+            conn.commit()
+        except Exception:
+            pass
     logger.info("Database tables created")
     yield
 
@@ -103,10 +114,10 @@ def seed_data(
 
 @app.post("/api/sync/tcgdex/cards")
 async def trigger_tcgdex_card_sync(
-    max_cards: int = 500,
+    max_cards: int = 25000,
     db: Session = Depends(get_db),
 ):
-    """Sync cards from the TCGdex API (free, open source)."""
+    """Sync cards from the TCGdex API (free, open source). Gets all 22K+ cards."""
     try:
         stats = await sync_tcgdex_cards(db, max_cards=max_cards)
         return {"status": "complete", "source": "tcgdex", **stats}
