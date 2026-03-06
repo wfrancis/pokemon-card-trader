@@ -149,7 +149,7 @@ export const api = {
 
   // AI Trader
   getTraderAnalysis: () =>
-    fetchApi<TraderAnalysis>('/api/trader/analysis'),
+    fetchApi<TraderAnalysis>('/api/trader/analysis', { timeoutMs: 300_000 }),
 
   getTraderCardAnalysis: (cardId: number) =>
     fetchApi<TraderCardAnalysis>(`/api/trader/card/${cardId}`),
