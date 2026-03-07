@@ -151,6 +151,9 @@ export const api = {
   getTraderAnalysis: () =>
     fetchApi<TraderAnalysis>('/api/trader/analysis', { timeoutMs: 300_000 }),
 
+  getMultiPersonaAnalysis: () =>
+    fetchApi<MultiPersonaAnalysis>('/api/trader/personas', { timeoutMs: 600_000 }),
+
   getTraderCardAnalysis: (cardId: number) =>
     fetchApi<TraderCardAnalysis>(`/api/trader/card/${cardId}`),
 
@@ -387,4 +390,29 @@ export interface CardSalesResponse {
   median_price: number | null;
   current_price: number | null;
   sales: SaleRecord[];
+}
+
+export interface PersonaResult {
+  id: string;
+  name: string;
+  title: string;
+  subtitle: string;
+  color: string;
+  badges: string[];
+  analysis: string | null;
+  error: string | null;
+}
+
+export interface MultiPersonaAnalysis {
+  personas?: Record<string, PersonaResult>;
+  consensus?: string;
+  market_data_summary?: {
+    total_cards: number;
+    avg_price: number;
+    market_cap: number;
+    top_gainer: string | null;
+    top_loser: string | null;
+  };
+  tokens_used?: { input: number; output: number };
+  error?: string;
 }
