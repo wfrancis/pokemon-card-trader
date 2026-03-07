@@ -184,13 +184,17 @@ def _combined_signal(indicators: dict, prev_indicators: dict | None, current_pri
     score = 0.0
     factors = 0
 
-    # RSI
+    # RSI — tighter thresholds for collectibles (high-vol, fat tails)
     rsi = indicators.get("rsi_14")
     if rsi is not None:
-        if rsi < 30:
-            score += 1.0
-        elif rsi > 70:
-            score -= 1.0
+        if rsi < 25:
+            score += 1.0  # Strong oversold
+        elif rsi < 35:
+            score += 0.5  # Moderately oversold
+        elif rsi > 80:
+            score -= 1.0  # Strong overbought
+        elif rsi > 65:
+            score -= 0.5  # Moderately overbought
         else:
             score += (50 - rsi) / 50
         factors += 1
@@ -223,9 +227,11 @@ def _combined_signal(indicators: dict, prev_indicators: dict | None, current_pri
         return None
 
     strength = score / factors
-    if strength > 0.3:
+    # Lowered from 0.3 to 0.15 — old threshold required near-unanimous
+    # agreement across all 4 indicators, producing zero trades for most cards
+    if strength > 0.15:
         return "buy"
-    elif strength < -0.3:
+    elif strength < -0.15:
         return "sell"
     return None
 
@@ -520,16 +526,20 @@ def run_backtest(
         (result.winning_trades / completed * 100) if completed > 0 else 0, 1
     )
 
-    # Sharpe ratio (annualized, assuming 365 trading days for crypto/collectibles)
-    if len(daily_returns) > 1:
-        avg_return = sum(daily_returns) / len(daily_returns)
+    # Sharpe ratio (annualized, using only in-position returns to avoid
+    # dilution from flat cash days that create misleading ratios)
+    in_position_returns = [r for r in daily_returns if r != 0.0]
+    if len(in_position_returns) > 1:
+        avg_return = sum(in_position_returns) / len(in_position_returns)
         std_return = math.sqrt(
-            sum((r - avg_return) ** 2 for r in daily_returns) / (len(daily_returns) - 1)
+            sum((r - avg_return) ** 2 for r in in_position_returns) / (len(in_position_returns) - 1)
         )
         if std_return > 0:
-            result.sharpe_ratio = round(
-                (avg_return / std_return) * math.sqrt(365), 2
-            )
+            raw_sharpe = (avg_return / std_return) * math.sqrt(365)
+            # Clamp: negative overall return must yield negative Sharpe
+            if result.strategy_return_pct < 0:
+                raw_sharpe = min(raw_sharpe, -0.01)
+            result.sharpe_ratio = round(raw_sharpe, 2)
 
     return result
 

@@ -493,10 +493,20 @@ def analyze_card(db: Session, card_id: int) -> AnalysisResult:
     result.total_history_days = len(prices)
     result.first_price_date = str(records[0].date) if records else None
 
-    # Support / Resistance (recent 60-period low/high for more meaningful levels)
+    # Support / Resistance — use 10th/90th percentile of recent 60 prices
+    # to avoid support=current_price when price is at the absolute low
     window = prices[-60:] if len(prices) >= 60 else prices
-    result.support = min(window)
-    result.resistance = max(window)
+    sorted_window = sorted(window)
+    n = len(sorted_window)
+    # 10th percentile for support, 90th percentile for resistance
+    support_idx = max(0, int(n * 0.10))
+    resistance_idx = min(n - 1, int(n * 0.90))
+    result.support = sorted_window[support_idx]
+    result.resistance = sorted_window[resistance_idx]
+    # If support >= current price (card is at/below historical lows),
+    # extend support 10% below the percentile floor
+    if result.support >= prices[-1]:
+        result.support = round(sorted_window[0] * 0.90, 2)
 
     # Volume proxy metrics
     result.volatility = _volatility(prices)
@@ -701,12 +711,12 @@ def get_set_relative_strength(db: Session, days: int = 30) -> dict[str, float]:
 
     cutoff = date.today() - timedelta(days=days)
 
-    # Average recent return per set
+    # Average recent return per set (current_price - historical = appreciation)
     rows = (
         db.query(
             Card.set_id,
             func.avg(
-                (PriceHistory.market_price - Card.current_price) / Card.current_price
+                (Card.current_price - PriceHistory.market_price) / PriceHistory.market_price
             ).label("avg_return"),
         )
         .join(PriceHistory, Card.id == PriceHistory.card_id)
@@ -749,9 +759,16 @@ def get_ensemble_signal(db: Session, card_id: int) -> dict:
         try:
             result = run_backtest(db, card_id, strategy=key, initial_capital=1000)
             if result and result.total_trades > 0:
-                weight = max(0.1, result.sharpe_ratio) if result.sharpe_ratio else 0.1
+                sharpe = result.sharpe_ratio or 0
+                # Strategies with negative Sharpe get inverted signal and positive weight
+                if sharpe < 0:
+                    signal = "SELL" if result.strategy_return_pct > 0 else "BUY"
+                    weight = min(abs(sharpe), 2.0)  # Cap inverted weight
+                else:
+                    signal = "BUY" if result.strategy_return_pct > 0 else "SELL"
+                    weight = max(0.1, sharpe)
                 votes[key] = {
-                    "signal": "BUY" if result.strategy_return_pct > 0 else "SELL",
+                    "signal": signal,
                     "weight": weight,
                     "return_pct": result.strategy_return_pct,
                     "sharpe": result.sharpe_ratio,
