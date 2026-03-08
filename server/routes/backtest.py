@@ -57,3 +57,37 @@ def backtest_portfolio(
     return run_portfolio_backtest(
         db, strategy=strategy, top_n=top_n, initial_capital=capital,
     )
+
+
+@router.get("/card/{card_id}/realistic")
+def backtest_card_realistic(
+    card_id: int,
+    strategy: str = Query("combined"),
+    capital: float = Query(1000.0),
+    platform: str = Query("tcgplayer"),
+    db: Session = Depends(get_db),
+):
+    """Run fee-aware backtest comparing gross vs net returns."""
+    gross = run_backtest(db, card_id, strategy=strategy, initial_capital=capital)
+    net = run_backtest(db, card_id, strategy=strategy, initial_capital=capital,
+                       fees_enabled=True, platform=platform)
+    if gross is None:
+        return {"error": "Insufficient price history for backtesting (need 35+ days)"}
+
+    result = {
+        "gross": gross.to_dict(),
+        "fee_adjusted": net.to_dict() if net else None,
+        "platform": platform,
+    }
+    if gross and net:
+        result["fee_impact"] = {
+            "gross_return_pct": gross.strategy_return_pct,
+            "net_return_pct": net.strategy_return_pct,
+            "return_destroyed_by_fees_pct": round(
+                gross.strategy_return_pct - net.strategy_return_pct, 2
+            ),
+            "total_fees_paid": net.total_fees_paid,
+            "breakeven_appreciation_pct": net.breakeven_appreciation_pct,
+            "profitable_after_fees": net.strategy_return_pct > 0,
+        }
+    return result

@@ -74,6 +74,11 @@ class BacktestResult:
     sharpe_ratio: float | None = None
     trades: list[Trade] = field(default_factory=list)
     daily_values: list[dict] = field(default_factory=list)
+    # Fee-aware fields
+    fees_enabled: bool = False
+    fee_adjusted_return_pct: float | None = None
+    total_fees_paid: float = 0.0
+    breakeven_appreciation_pct: float | None = None
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -346,6 +351,8 @@ def run_backtest(
     card_id: int,
     strategy: str = "combined",
     initial_capital: float = 1000.0,
+    fees_enabled: bool = False,
+    platform: str = "tcgplayer",
 ) -> BacktestResult | None:
     """Run a backtest for a single card with the specified strategy.
 
@@ -357,6 +364,8 @@ def run_backtest(
         card_id: Card to backtest.
         strategy: One of STRATEGIES keys.
         initial_capital: Starting capital in USD.
+        fees_enabled: If True, apply platform fees/shipping on buys and sells.
+        platform: Fee schedule to use ("tcgplayer" or "ebay").
 
     Returns:
         BacktestResult with performance metrics, or None if insufficient data.
@@ -404,9 +413,14 @@ def run_backtest(
 
     # Buy-and-hold benchmark
     if prices[0] > 0:
-        result.buy_hold_return_pct = round(
-            ((prices[-1] - prices[0]) / prices[0]) * 100, 2
-        )
+        if fees_enabled:
+            from server.services.trading_economics import calc_roundtrip_pnl
+            bh_rt = calc_roundtrip_pnl(prices[0], prices[-1], platform)
+            result.buy_hold_return_pct = round(bh_rt["net_return_pct"], 2)
+        else:
+            result.buy_hold_return_pct = round(
+                ((prices[-1] - prices[0]) / prices[0]) * 100, 2
+            )
 
     # Run strategy simulation
     cash = initial_capital
@@ -415,6 +429,7 @@ def run_backtest(
     daily_values: list[dict] = []
     prev_indicators = None
     peak_value = initial_capital
+    total_fees_paid = 0.0
 
     # Track returns for Sharpe ratio
     daily_returns: list[float] = []
@@ -448,9 +463,12 @@ def run_backtest(
 
         # Execute trades
         if signal == "buy" and cash > 0 and holdings == 0:
-            # Buy: spend all cash
-            holdings = cash / current_price
-            cash = 0
+            if fees_enabled:
+                from server.services.trading_economics import apply_buy_fees
+                holdings, cash = apply_buy_fees(cash, current_price, platform)
+            else:
+                holdings = cash / current_price
+                cash = 0
             trades.append(Trade(
                 date=current_date,
                 action="buy",
@@ -458,8 +476,12 @@ def run_backtest(
                 signal_reason=strategy,
             ))
         elif signal == "sell" and holdings > 0:
-            # Sell: liquidate all holdings
-            cash = holdings * current_price
+            if fees_enabled:
+                from server.services.trading_economics import apply_sell_fees
+                cash = apply_sell_fees(holdings, current_price, platform)
+                total_fees_paid += (holdings * current_price) - cash
+            else:
+                cash = holdings * current_price
             holdings = 0
             trades.append(Trade(
                 date=current_date,
@@ -540,6 +562,14 @@ def run_backtest(
             if result.strategy_return_pct < 0:
                 raw_sharpe = min(raw_sharpe, -0.01)
             result.sharpe_ratio = round(raw_sharpe, 2)
+
+    # Fee-aware fields
+    if fees_enabled:
+        result.fees_enabled = True
+        result.total_fees_paid = round(total_fees_paid, 2)
+        result.fee_adjusted_return_pct = result.strategy_return_pct  # already includes fees
+        from server.services.trading_economics import calc_breakeven_appreciation
+        result.breakeven_appreciation_pct = calc_breakeven_appreciation(prices[0], platform)
 
     return result
 

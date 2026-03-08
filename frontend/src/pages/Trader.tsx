@@ -269,6 +269,50 @@ export default function Trader() {
         </Paper>
       )}
 
+      {/* Trading Economics Bar */}
+      {analysis?.trading_economics && (
+        <Paper sx={{ p: 1.5, mb: 2, bgcolor: '#1a0a0a', border: '1px solid #ff9800', borderStyle: 'dashed' }}>
+          <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap', alignItems: 'center' }}>
+            <Box>
+              <Typography sx={{ color: '#ff9800', fontSize: '0.6rem', fontWeight: 700, ...mono }}>FEE MODEL</Typography>
+              <Typography sx={{ color: '#fff', fontWeight: 700, ...mono, fontSize: '0.8rem' }}>
+                TCGPlayer
+              </Typography>
+            </Box>
+            <Box>
+              <Typography sx={{ color: '#ff9800', fontSize: '0.6rem', fontWeight: 700, ...mono }}>ROUNDTRIP FEE</Typography>
+              <Typography sx={{ color: '#ff1744', fontWeight: 700, ...mono, fontSize: '0.8rem' }}>
+                ~30-35%
+              </Typography>
+            </Box>
+            <Box>
+              <Typography sx={{ color: '#ff9800', fontSize: '0.6rem', fontWeight: 700, ...mono }}>BREAKEVEN HURDLE</Typography>
+              <Typography sx={{ color: '#ff1744', fontWeight: 700, ...mono, fontSize: '0.8rem' }}>
+                {analysis.trading_economics.fee_schedule?.examples?.['$50_card']?.breakeven_appreciation_pct ?? '~35'}%
+              </Typography>
+            </Box>
+            <Box>
+              <Typography sx={{ color: '#ff9800', fontSize: '0.6rem', fontWeight: 700, ...mono }}>MIN TRADE</Typography>
+              <Typography sx={{ color: '#fff', fontWeight: 700, ...mono, fontSize: '0.8rem' }}>
+                ${analysis.trading_economics.minimum_viable_trade_price}
+              </Typography>
+            </Box>
+            <Box>
+              <Typography sx={{ color: '#ff9800', fontSize: '0.6rem', fontWeight: 700, ...mono }}>TRADEABLE</Typography>
+              <Typography sx={{ color: '#00ff41', fontWeight: 700, ...mono, fontSize: '0.8rem' }}>
+                {analysis.trading_economics.cards_above_minimum_trade_size}
+              </Typography>
+            </Box>
+            <Box>
+              <Typography sx={{ color: '#ff9800', fontSize: '0.6rem', fontWeight: 700, ...mono }}>FEE-IMPAIRED</Typography>
+              <Typography sx={{ color: '#ff1744', fontWeight: 700, ...mono, fontSize: '0.8rem' }}>
+                {analysis.trading_economics.cards_below_minimum_trade_size}
+              </Typography>
+            </Box>
+          </Box>
+        </Paper>
+      )}
+
       {/* Error */}
       {error && (
         <Alert severity="error" sx={{ mb: 2, bgcolor: '#1a0000', color: '#ff4444' }}>

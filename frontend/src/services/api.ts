@@ -403,6 +403,19 @@ export interface PersonaResult {
   error: string | null;
 }
 
+export interface TradingEconomics {
+  cards_above_minimum_trade_size: number;
+  cards_below_minimum_trade_size: number;
+  minimum_viable_trade_price: number;
+  fee_schedule?: {
+    platform: string;
+    commission: string;
+    payment_processing: string;
+    shipping_cost: string;
+    examples: Record<string, { sell_fee_pct: number; net_proceeds: number; breakeven_appreciation_pct: number }>;
+  };
+}
+
 export interface MultiPersonaAnalysis {
   personas?: Record<string, PersonaResult>;
   consensus?: string;
@@ -413,6 +426,7 @@ export interface MultiPersonaAnalysis {
     top_gainer: string | null;
     top_loser: string | null;
   };
+  trading_economics?: TradingEconomics;
   tokens_used?: { input: number; output: number };
   error?: string;
 }

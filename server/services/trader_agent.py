@@ -58,12 +58,14 @@ CRITICAL CONTEXT — this is a COLLECTIBLES market, not equities:
 - Data quality flags are provided — always check them. Cards with LOW_DATA, LOW_CONFIDENCE, or EXTREME_MA_DIVERGENCE should be treated skeptically.
 
 Your quantitative framework:
+- TRANSACTION COSTS ARE THE #1 FACTOR: TCGPlayer fees (~13-16% on sells) + shipping ($4.50/card) create 30-40% roundtrip friction. Every model must subtract this.
+- Breakeven hurdle: a $50 card needs ~35% appreciation ($67.50) just to break even. Factor this into EVERY expected return calculation.
 - Sales velocity (transactions/month) is the primary liquidity signal — not price chart patterns
 - Market price vs median sale price spread reveals stale/inflated pricing vs actual executable levels
 - Cross-sectional value analysis: compare cards within the same set, rarity tier, or character franchise
 - Scarcity modeling: vintage cards have fixed supply (no reprints), modern cards have elastic supply — this fundamentally changes valuation
 - Regime detection from FLOW data: rising sales velocity = risk-on, declining velocity = risk-off
-- Position sizing based on exit liquidity (can you sell 3 copies in 30 days?)
+- Position sizing based on exit liquidity (can you sell 3 copies in 30 days?) AND fee-adjusted Kelly criterion
 
 Communication:
 - Lead with sales data, flow metrics, and supply analysis — NOT RSI/MACD
@@ -82,11 +84,12 @@ CRITICAL CONTEXT — this is a COLLECTIBLES market, not equities:
 - Vintage (WOTC era) cards are like fine art — fixed supply, driven by nostalgia and collector prestige. Modern cards are like consumer goods — elastic supply, driven by playability and hype cycles.
 
 Your portfolio management philosophy:
+- THE FEE HURDLE IS REAL: With ~30-35% roundtrip friction, every position needs an expected move of >35% to be worth deploying capital. This eliminates most short-term trades.
 - Top-down thesis: WHERE in the Pokemon timeline should capital be deployed? Vintage WOTC? Modern competitive? Mid-era nostalgia?
-- Every position needs a CATALYST — not a technical indicator. What event changes the price in the next 30-90 days?
+- Every position needs a CATALYST that can drive >35% appreciation (the fee hurdle) — not just any catalyst, one big enough to overcome friction
 - Reprint risk is the #1 risk for modern cards — vintage cards can NEVER be reprinted
 - Think in terms of CHARACTER FRANCHISES: "Charizard exposure" across sets, "Eeveelution basket," "Gen 1 nostalgia" as themes
-- Portfolio construction: diversify across eras, character IPs, and rarity tiers — not just different card names
+- Portfolio construction: diversify across eras, character IPs, and rarity tiers — hold period should be 3-12 months minimum to justify fees
 - Use the set-level market cap data to identify which sets are overvalued vs undervalued as a group
 
 Communication:
@@ -105,10 +108,12 @@ CRITICAL CONTEXT — this is a COLLECTIBLES market, not equities:
 - Condition matters enormously: Near Mint trades at a premium with better liquidity. Lightly Played / Moderately Played may sit for weeks.
 
 Your liquidity trading framework:
+- THE FEE WALL: TCGPlayer takes ~13-16% on every sell (commission + processing + shipping). Cards under $20 are UNTRADEABLE for profit. You now have per-card breakeven_pct, liquidity_score, and est_time_to_sell_days data.
 - Sales velocity (sales_90d, sales_30d) is the #1 metric — more important than any price indicator
 - Market vs median sale spread reveals execution reality: tight spread = liquid, wide spread = paper gains
-- Exit quality assessment: for every card you'd buy, ask "can I sell 3 copies within 30 days at a reasonable price?"
+- Exit quality assessment: for every card you'd buy, ask "can I sell 3 copies within 30 days at a price ABOVE the breakeven threshold?"
 - Cards with 0 sales in 90 days are UNTRADEABLE regardless of what the price chart says
+- Time-to-sell is a hidden cost: every day you hold is opportunity cost + market risk. Use est_time_to_sell_days.
 - Seasonal patterns: holiday gift-buying (Nov-Dec), tax refund season (Feb-Mar), summer convention spikes
 - Condition mix in sales data tells you WHO is buying: NM-only buyers are collectors (premium), LP/MP buyers are players (volume)
 
@@ -119,18 +124,22 @@ Communication:
 - Use flow trading terminology applied to collectibles: "paper market," "real prints," "marked-to-myth"
 - Call out cards that look good on paper but have no real volume"""
 
-CONSENSUS_SYSTEM_PROMPT = """You are the Chief Investment Officer synthesizing input from three specialized traders on your Pokemon card trading desk. Your job is to cut through the noise and deliver actionable intelligence.
+CONSENSUS_SYSTEM_PROMPT = """You are the Chief Investment Officer synthesizing input from three specialized traders on your Pokemon card trading desk. Your job is to cut through the noise and deliver actionable intelligence — with REAL economics.
+
+CRITICAL CONTEXT — FEES DESTROY MOST TRADING PROFITS:
+TCGPlayer charges ~13-16% on sells (commission + processing + shipping). Roundtrip friction is 30-40% for $20-100 cards. A card needs ~30-35% appreciation JUST TO BREAK EVEN. Cards under $20 are untradeable for profit. This is the single most important factor in your analysis.
 
 Focus on:
-1. Where all three agree — these are HIGH CONVICTION calls. Especially powerful when the quant's data, the PM's thesis, and the liquidity trader's flow all align.
-2. Where they disagree — flag the debate and pick a side. The liquidity trader's objections should carry extra weight (no point buying what you can't sell).
-3. DATA QUALITY — flag any recommendations based on thin data, stale prices, or cards with zero actual sales.
-4. The final TOP 3 actionable trades with entry price range, target, stop-loss, AND expected time to fill (based on sales velocity).
-5. Overall market regime: bull/bear/neutral based on FLOW (sales data), not chart patterns.
+1. **FEE-ADJUSTED VERDICT** — Are any of the traders' picks actually profitable after fees? Use the breakeven_pct data. If a card needs 35% appreciation to break even and the expected move is 15%, it's a LOSS regardless of how good the thesis is.
+2. Where all three agree — these are HIGH CONVICTION calls. But only if they clear the fee hurdle.
+3. Where they disagree — flag the debate. The liquidity trader's fee objections should be VETO-level weight.
+4. **HOLD PERIOD RECOMMENDATION** — Given the fee drag, should capital be deployed as: (a) long-term holds (6-12 months, waiting for large moves), (b) medium-term catalyst plays (1-3 months, >40% upside expected), or (c) not deployed at all?
+5. The final TOP 3 actionable trades with: entry price, breakeven sell price, target, stop-loss, expected time to sell, and NET return after fees.
+6. **THE HONEST ANSWER** — Is active trading in Pokemon cards viable after fees, or is this a buy-and-hold market where you pick 5-10 cards and sit on them for a year?
 
-IMPORTANT: If the data shows most cards have zero or very few actual sales, say so directly. Don't pretend there's a liquid market when the sales data says otherwise. Intellectual honesty is more valuable than confident-sounding bullshit.
+IMPORTANT: If the fee math shows most trading is unprofitable, say so directly. Your traders may be excited about a 20% move, but if fees eat 35%, that's a net loss. Be the adult in the room.
 
-Be concise. Executive summary — 400 words max. Bullet points. Clear action list at the end."""
+Be concise. Executive summary — 500 words max. Bullet points. Clear action list at the end."""
 
 # Persona metadata for frontend rendering
 PERSONAS = {
@@ -377,7 +386,98 @@ def _gather_market_data(db: Session) -> dict:
         logger.warning(f"Sales data collection failed: {e}")
         data["sales_liquidity"] = {"error": str(e)}
 
-    # 8. NEW: Set-level analysis (aggregated by set)
+    # 8. NEW: Trading Economics — fees, breakeven, liquidity scores
+    try:
+        from server.services.trading_economics import (
+            get_fee_schedule_summary, calc_breakeven_appreciation,
+            calc_liquidity_score, estimate_time_to_sell, is_viable_trade,
+        )
+
+        fee_summary = get_fee_schedule_summary("tcgplayer")
+
+        # Per-card economics for analyzed cards
+        cards_above_min = 0
+        cards_below_min = 0
+        for entry in data["card_analyses"]:
+            price = entry.get("current_price", 0)
+            if price and price > 0:
+                entry["breakeven_pct"] = calc_breakeven_appreciation(price, "tcgplayer")
+                entry["viable_trade"] = is_viable_trade(price)
+                if entry["viable_trade"]:
+                    cards_above_min += 1
+                else:
+                    cards_below_min += 1
+            else:
+                entry["breakeven_pct"] = None
+                entry["viable_trade"] = False
+                cards_below_min += 1
+
+        # Add liquidity scores from sales data (if sales were already collected)
+        sales_lookup = {}
+        if "sales_liquidity" in data and "top_card_sales" in data.get("sales_liquidity", {}):
+            for s in data["sales_liquidity"]["top_card_sales"]:
+                sales_lookup[s["card_id"]] = s
+
+        for entry in data["card_analyses"]:
+            cid = entry["card_id"]
+            sale_info = sales_lookup.get(cid, {})
+            s90 = sale_info.get("sales_90d", 0)
+            s30 = sale_info.get("sales_30d", 0)
+            spread = sale_info.get("market_vs_median_spread", None)
+            price = entry.get("current_price", 0) or 0
+
+            entry["liquidity_score"] = calc_liquidity_score(s90, s30, price, spread)
+            tts = estimate_time_to_sell(price, s90, s30)
+            entry["est_time_to_sell_days"] = tts["estimated_days"]
+            entry["tts_confidence"] = tts["confidence"]
+
+        # Fee-aware portfolio backtest comparison
+        fee_backtest_comparison = {}
+        try:
+            gross_portfolio = data.get("portfolio_backtest", {})
+            fee_portfolio = run_portfolio_backtest(db, strategy="combined", top_n=10,
+                                                   initial_capital=10000)
+            # Run fee-aware version on same top cards
+            from server.services.backtesting import run_backtest as _rb
+            fee_card_results = []
+            for cr in gross_portfolio.get("card_results", [])[:5]:
+                cid = cr.get("card_id")
+                if cid:
+                    fee_result = _rb(db, cid, strategy="combined", initial_capital=1000,
+                                     fees_enabled=True, platform="tcgplayer")
+                    if fee_result:
+                        fee_card_results.append({
+                            "card_id": cid,
+                            "card_name": cr.get("card_name", ""),
+                            "gross_return_pct": cr.get("strategy_return_pct", 0),
+                            "fee_adjusted_return_pct": fee_result.strategy_return_pct,
+                            "fees_destroyed_pct": round(
+                                cr.get("strategy_return_pct", 0) - fee_result.strategy_return_pct, 2
+                            ),
+                            "total_fees": fee_result.total_fees_paid,
+                            "profitable_after_fees": fee_result.strategy_return_pct > 0,
+                        })
+            fee_backtest_comparison = {
+                "note": "Same combined strategy, same cards — gross vs fee-adjusted returns",
+                "card_results": fee_card_results,
+            }
+        except Exception as e:
+            logger.warning(f"Fee backtest comparison failed: {e}")
+            fee_backtest_comparison = {"error": str(e)}
+
+        data["trading_economics"] = {
+            "fee_schedule": fee_summary,
+            "cards_above_minimum_trade_size": cards_above_min,
+            "cards_below_minimum_trade_size": cards_below_min,
+            "minimum_viable_trade_price": 20.0,
+            "fee_backtest_comparison": fee_backtest_comparison,
+            "note": "All returns should be evaluated AFTER fees. A 15% gross return with 13% roundtrip fees = 2% net — barely worth the risk.",
+        }
+    except Exception as e:
+        logger.warning(f"Trading economics collection failed: {e}")
+        data["trading_economics"] = {"error": str(e)}
+
+    # 9. NEW: Set-level analysis (aggregated by set)
     try:
         set_stats = {}
         for card_id, info in latest_prices.items():
@@ -519,11 +619,15 @@ def _build_persona_prompt(persona_id: str, market_data: dict) -> str:
 {json.dumps(market_data['top_movers'], indent=2)}
 
 ## Technical Analysis (Top 15 Cards by Signal Strength)
-NOTE: Each card now includes regime detection, volatility, spread_ratio, activity_score, data_confidence, and data_flags (quality warnings like EXTREME_MA_DIVERGENCE, LOW_DATA, LOW_CONFIDENCE).
+NOTE: Each card now includes: regime, volatility, data_flags, breakeven_pct (minimum appreciation to profit after fees), liquidity_score (0-100), est_time_to_sell_days, viable_trade (bool — is the card above the $20 minimum for profitable trading?).
 {json.dumps(market_data['card_analyses'], indent=2)}
 
+## Trading Economics — CRITICAL: Real-World Fees & Friction
+This section contains TCGPlayer fee schedules, breakeven calculations at various price points, and gross-vs-fee-adjusted backtest comparisons. ALL recommendations must account for these costs.
+{json.dumps(market_data.get('trading_economics', {}), indent=2)}
+
 ## Portfolio Backtest Summary (Combined Strategy, $10K, Top 10 Cards)
-NOTE: Sharpe ratios now computed from in-position returns only (excluding flat cash days). Negative-return strategies always have negative Sharpe. Combined strategy threshold lowered from 0.3 to 0.15 to generate more trades.
+NOTE: Sharpe ratios computed from in-position returns only. See trading_economics.fee_backtest_comparison for fee-adjusted versions.
 {json.dumps(market_data['portfolio_backtest'], indent=2)}
 
 ## Strategy Comparison (Top 3 Cards x 3 Strategies)
@@ -544,42 +648,42 @@ NOTE: Sharpe ratios now computed from in-position returns only (excluding flat c
 
     if persona_id == "quant":
         return base + """
-Give me your quantitative analysis:
-1. **Regime Detection** — Use the per-card regime field and cross-sectional dispersion to classify the market. What does realized vol tell us?
-2. **Factor Exposure** — Which factors (momentum, value, quality, liquidity) are driving returns? Use the activity_score and volatility data.
-3. **Data Quality Audit** — Flag any cards with data_flags warnings. Are the price-to-MA divergences real or data artifacts? Which cards have LOW_DATA or LOW_CONFIDENCE?
-4. **Top Picks** — Your top 3-5 cards ranked by risk-adjusted expected return. Use the corrected Sharpe ratios.
-5. **Strategy Optimization** — The combined strategy threshold was lowered from 0.3 to 0.15. Does the new backtest output show improved trade counts? What further tuning is needed?
-6. **Position Sizing** — Vol-adjusted sizing using the per-card volatility field and Kelly criterion.
-7. **Red Flags** — Cards where signal-to-noise ratio is too low. Flag any Sharpe/return inconsistencies.
+Give me your quantitative analysis — ALL returns must be evaluated AFTER FEES:
+1. **Fee-Adjusted Reality Check** — Look at the trading_economics.fee_backtest_comparison. How many strategies are still profitable after TCGPlayer fees? What's the average fee drag? Which cards have a breakeven_pct that's actually achievable?
+2. **Regime Detection** — Use per-card regime, cross-sectional dispersion, and realized vol.
+3. **Hold Period Optimization** — Given the ~30-35% roundtrip friction, what's the MINIMUM hold period that makes economic sense? Short-term trading (<30d) vs medium-term (30-180d) vs long-term (>180d) — which actually works after fees?
+4. **Top Picks** — Your top 3-5 cards ranked by FEE-ADJUSTED expected return. Each pick MUST: (a) be above $20 (viable_trade=true), (b) have a liquidity_score > 20, (c) show expected appreciation > breakeven_pct. Include the breakeven hurdle for each.
+5. **Position Sizing** — Vol-adjusted sizing using Kelly criterion, but account for the ~15% roundtrip fee as a fixed cost that reduces optimal fraction.
+6. **Strategy Viability** — Given that fees destroy 10-40% of gross returns, which of the 8 strategies still generate positive ALPHA after fees? Is active trading even viable vs buy-and-hold?
+7. **Red Flags** — Cards where viable_trade=false (under $20), or where breakeven_pct > 50% (need massive move just to break even).
 
-Show your work. Reference the numbers."""
+Show your work. Reference the actual fee numbers. If the math says most active trading is unprofitable after fees, SAY THAT."""
 
     elif persona_id == "pm":
         return base + """
-Give me your portfolio manager's view:
-1. **Macro Thesis** — Where are we in the Pokemon card market cycle? Use the set-level analysis for sector rotation insights.
-2. **Set Rotation** — Which sets are the most/least valuable? Use the set market cap data and concentration risk assessment.
-3. **Catalyst Map** — What events (set releases, rotations, tournaments, nostalgia cycles) could move prices in the next 30-90 days?
-4. **Top Picks** — Your top 3-5 card recommendations as portfolio positions with conviction levels. Factor in the sales liquidity data — can you actually build the position?
-5. **Long/Short Pairs** — Use set-level analysis to find intra-set divergences. Long undervalued vintage, short overhyped modern?
-6. **Portfolio Construction** — Build a 10-card portfolio. Use concentration_risk data to avoid over-indexing any single set. Core vs trading positions?
-7. **Correlation Risk** — The concentration risk data shows set distribution in the top 15. Which sets are over-represented?
+Give me your portfolio manager's view — with REALISTIC economics:
+1. **The Hurdle Rate Problem** — Review the trading_economics section. With 30-35% roundtrip friction, what's the MINIMUM conviction level and expected appreciation for a position to make sense? How does this change your portfolio construction?
+2. **Hold Period Strategy** — Short-term trading (<30d) is almost certainly fee-impaired. Should the portfolio focus on medium-term (30-180d) catalyst plays or long-term (>180d) hold-for-appreciation? What's your thesis?
+3. **Catalyst Map** — What events could drive >35% appreciation (the hurdle rate) in the next 30-180 days? Only catalysts that clear the fee hurdle matter.
+4. **Top Picks** — Your top 3-5 card recommendations. Each MUST include: (a) expected appreciation %, (b) the card's breakeven_pct from trading_economics, (c) estimated time to realize, (d) liquidity_score and est_time_to_sell. NO picks below $20 (fee-impaired).
+5. **Portfolio Construction** — Build a 10-card portfolio with realistic exit assumptions. Use liquidity_score to avoid illiquid traps. Core (hold 6-12 months) vs opportunistic (hold 1-3 months for catalyst)?
+6. **Long/Short Reality** — Can you actually short Pokemon cards? (No.) So what's the alternative risk management? Rotation, diversification, cash allocation?
+7. **Net P&L Target** — Given fee drag, what annual NET return should LPs expect? Be honest.
 
-Think like you're presenting to your LPs."""
+Think like you're presenting to LPs who ask hard questions about fees."""
 
     else:  # liquidity
         return base + """
-Give me your liquidity read:
-1. **Flow Assessment** — Use the sales_liquidity data. How many actual completed transactions? Is money flowing in or out? What's the sales velocity?
-2. **Market vs Median Spread** — Compare market_price to median_sale_price for each card with sales data. Which cards have a wide spread (market price >> median sale = stale/inflated pricing)? Which are tight (liquid, efficient)?
-3. **Liquidity Map** — Which cards have real volume (sales_90d > 5) vs paper gains (zero sales)? Flag liquidity traps where price moves aren't backed by transactions.
-4. **Top Picks** — Your top 3-5 tradeable cards — must have actual sales volume to enter AND exit. Use the sales data to validate.
-5. **Execution Strategy** — Use the condition breakdown in sales data. Best variants to trade? Timing patterns?
-6. **Risk-On/Risk-Off** — Use the spread_ratio, activity_score, and sales velocity to classify the regime. Is flow bullish or bearish?
-7. **Exit Quality** — For each top pick, estimate how easy it is to sell 2-3 copies based on sales_90d data.
+Give me your liquidity read — grounded in REAL execution economics:
+1. **The Friction Tax** — Review the trading_economics fee schedule and examples. At what price point does trading become viable ($20+)? How many of the top 15 analyzed cards are above this threshold (cards_above_minimum_trade_size)?
+2. **Execution Cost Reality** — For each card with sales data, calculate the TRUE roundtrip cost. Use breakeven_pct — a card needs to appreciate by this % just to break even. Flag any picks where breakeven_pct > 40%.
+3. **Time-to-Sell Risk** — Use est_time_to_sell_days and tts_confidence. Cards that take >14 days to sell have hidden carrying costs. Every day you hold is a day the market can move against you.
+4. **Top Picks** — Your top 3-5 ACTUALLY TRADEABLE cards. Requirements: (a) viable_trade=true, (b) liquidity_score >= 30, (c) est_time_to_sell < 14 days, (d) expected appreciation > breakeven_pct. If fewer than 3 cards meet these criteria, say so.
+5. **Fee-Adjusted Backtest** — Look at fee_backtest_comparison. How many strategies DESTROY value after fees? Is the combined strategy profitable or is it just churning capital and paying fees?
+6. **Optimal Trading Frequency** — Given ~15% sell-side friction, how often can you trade and still profit? Monthly? Quarterly? Or is buy-and-hold-for-a-year the only viable strategy?
+7. **The Hard Truth** — Based on the fee schedule and sales velocity data, is active trading in Pokemon cards profitable at all, or should capital be deployed as long-term holds?
 
-Keep it practical. I need to actually trade these, not just look at them."""
+No sugar-coating. If the fees make most trading unprofitable, I need to know that before deploying capital."""
 
 
 async def get_multi_persona_analysis(db: Session) -> dict:
@@ -669,6 +773,15 @@ Synthesize their views into an executive summary. Where do they agree (high conv
             logger.error(f"Consensus generation failed: {e}")
             consensus_text = f"Consensus synthesis failed: {str(e)}"
 
+    # Extract trading economics summary for frontend
+    te = market_data.get("trading_economics", {})
+    trading_economics_summary = {
+        "cards_above_minimum_trade_size": te.get("cards_above_minimum_trade_size", 0),
+        "cards_below_minimum_trade_size": te.get("cards_below_minimum_trade_size", 0),
+        "minimum_viable_trade_price": te.get("minimum_viable_trade_price", 20),
+        "fee_schedule": te.get("fee_schedule"),
+    }
+
     return {
         "personas": persona_results,
         "consensus": consensus_text,
@@ -679,6 +792,7 @@ Synthesize their views into an executive summary. Where do they agree (high conv
             "top_gainer": market_data["top_movers"]["gainers"][0]["name"] if market_data["top_movers"].get("gainers") else None,
             "top_loser": market_data["top_movers"]["losers"][0]["name"] if market_data["top_movers"].get("losers") else None,
         },
+        "trading_economics": trading_economics_summary,
         "tokens_used": total_tokens,
     }
 
