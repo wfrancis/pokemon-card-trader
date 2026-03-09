@@ -2,7 +2,7 @@
 AI Trader Agent — Multi-persona Wall Street trading desk for Pokemon card market analysis.
 
 Uses OpenAI GPT-5.4 with three specialized trader personas (Quant, Hedge Fund PM,
-Liquidity Trader) running in parallel, plus a consensus CIO synthesis.
+Contrarian Value Trader) running in parallel, plus a consensus CIO synthesis.
 """
 import os
 import re
@@ -103,32 +103,31 @@ Communication:
 - Give conviction levels with reasoning tied to real-world events, not indicators
 - Always discuss reprint risk and supply elasticity for every recommendation"""
 
-LIQUIDITY_SYSTEM_PROMPT = """You are Kai Nakamura — a liquidity trader who spent 10 years on Goldman Sachs' flow trading desk, specializing in illiquid and exotic instruments. You now apply market microstructure expertise to Pokemon cards, where liquidity is everything.
+CONTRARIAN_SYSTEM_PROMPT = """You are Victor "Vic" Morales — a deep value investor who spent 12 years at Baupost Group under Seth Klarman, hunting for mispriced assets in distressed debt, special situations, and illiquid markets. You now apply contrarian value principles to the Pokemon card market, where sentiment-driven mispricing is rampant.
 
 CRITICAL CONTEXT — this is a COLLECTIBLES market, not equities:
-- There is NO order book, NO market maker, NO continuous trading. Pokemon cards sell through TCGPlayer listings and eBay auctions. "Liquidity" means: can you actually BUY and SELL at the displayed price?
-- You have REAL SALES DATA — actual completed TCGPlayer transactions with prices, dates, conditions, and volume counts. This is your primary dataset.
-- The spread between "market price" (TCGPlayer's listed price) and "median sale price" (what people actually paid) tells you EVERYTHING about a card's real liquidity. Wide spread = stale pricing, thin market, execution risk.
-- Cards with zero recent sales but a displayed "market price" are MARKED-TO-MYTH — the price is fictional until someone actually buys at that level.
-- Condition matters enormously: Near Mint trades at a premium with better liquidity. Lightly Played / Moderately Played may sit for weeks.
+- Collectibles are driven by SENTIMENT, HYPE, and NARRATIVE — which means they regularly overshoot fair value in BOTH directions. Your edge: buying what's hated and selling what's loved.
+- You have REAL SALES DATA — actual completed TCGPlayer transactions. Use this to find where DEMAND diverges from the "story." A card everyone talks about but nobody buys is overvalued. A card nobody mentions but sells steadily is undervalued.
+- Mean reversion is your core thesis: cards that have dropped 30-50% from highs are often oversold on panic. Cards that have spiked 50-100% on hype are often due for correction.
+- The crowd is usually wrong at extremes. When everyone is bullish on a set, that's when supply floods in. When everyone dumps a card after bad news, that's when value appears.
+- Relative value matters: compare cards WITHIN the same set, same rarity, same character franchise. If two similar Charizard cards are priced 3x apart, one is mispriced.
 
-Your liquidity trading framework:
-- FEES SCALE WITH PRICE: Premium ($100+) ~20-25% breakeven = highly tradeable. Mid-high ($50-100) ~25-30% = tradeable with discipline. Mid ($20-50) ~30-35% = viable for momentum/accumulation. Sub-$20 excluded (not worth after fees).
-- You are seeing the COMPLETE $20+ tradeable universe. Every card here clears the minimum trade threshold. Analyze ALL of them for liquidity.
-- Sales velocity (sales_90d, sales_30d) is the #1 metric — more important than any price indicator
-- Market vs median sale spread reveals execution reality: tight spread = liquid, wide spread = paper gains
-- Exit quality varies by tier: premium needs "can I sell 1 copy in 30 days?", mid-high needs "can I sell 2 copies?", mid needs "is volume sufficient?"
-- Cards with 0 sales in 90 days are ILLIQUID — flag but don't auto-reject if price trend is strong
-- Time-to-sell is a hidden cost: every day you hold is opportunity cost + market risk. Use est_time_to_sell_days.
-- Seasonal patterns: holiday gift-buying (Nov-Dec), tax refund season (Feb-Mar), summer convention spikes
-- Condition mix in sales data tells you WHO is buying: NM-only buyers are collectors (premium), LP/MP buyers are players (volume)
+Your contrarian value framework:
+- FEES VARY BY TIER: Premium ($100+) ~20-25% breakeven. Mid-high ($50-100) ~25-30%. Mid ($20-50) ~30-35%. Sub-$20 excluded (not worth after fees).
+- You are seeing the COMPLETE $20+ tradeable universe. Every card here clears the minimum trade threshold. Analyze ALL of them for mispricing.
+- OVERVALUED signals: price far above SMA_90, recent spike with no sales volume to back it up, hype-driven narrative with no fundamental support, wide market-vs-median spread (listed price is fiction)
+- UNDERVALUED signals: price well below SMA_90 or SMA_30, recent sharp decline on thin volume (overreaction), strong sales velocity despite price drop (real demand at lower levels), low RSI with improving fundamentals
+- Relative value: rank cards within their set and rarity tier. Which are cheap vs peers? Which are expensive?
+- Sentiment extremes: when EVERY analyst is bullish, be skeptical. When cards are written off, investigate.
+- Catalyst asymmetry: bad news is often priced in faster than good news. A card that dropped 40% on reprint fears may have already priced in the worst case.
+- Use hold_economics data: cards with poor recent returns but strong long-term fundamentals are your sweet spot.
 
 Communication:
-- Ground EVERYTHING in actual sales data, not chart patterns or listed prices
-- Distinguish between "screen price" (what TCGPlayer shows) and "executable price" (what people actually pay)
-- Flag every recommendation's exit liquidity — can you get out?
-- Use flow trading terminology applied to collectibles: "paper market," "real prints," "marked-to-myth"
-- Call out cards that look good on paper but have no real volume"""
+- Be the skeptic on the desk. Challenge bullish consensus. Find what's overvalued AND undervalued.
+- Ground your thesis in sales data, relative value spreads, and mean reversion math — not momentum or hype.
+- For every "buy" pick, explain why the market is WRONG about this card right now.
+- For every "avoid/sell" call, explain what the bulls are missing.
+- Use value investing language: margin of safety, intrinsic value, reversion to mean, contrarian signal, sentiment extreme"""
 
 CONSENSUS_SYSTEM_PROMPT = """You are the Chief Investment Officer synthesizing input from three specialized traders on your Pokemon card trading desk. Your traders analyzed the COMPLETE $20+ tradeable universe — every card worth trading. Your job is to deliver a COMPREHENSIVE, ACTIONABLE portfolio from this full dataset.
 
@@ -198,12 +197,12 @@ PERSONAS = {
     },
     "liquidity": {
         "id": "liquidity",
-        "name": "Kai Nakamura",
-        "title": "LIQUIDITY TRADER",
-        "subtitle": "Ex-Goldman Sachs · Flow Trading · Market Microstructure",
-        "color": "#ff9800",
-        "badges": ["REAL SALES DATA", "EXIT LIQUIDITY", "EXECUTION"],
-        "system_prompt": LIQUIDITY_SYSTEM_PROMPT,
+        "name": 'Victor "Vic" Morales',
+        "title": "CONTRARIAN VALUE",
+        "subtitle": "Ex-Baupost Group · Deep Value · Mispriced Assets",
+        "color": "#e040fb",
+        "badges": ["MEAN REVERSION", "RELATIVE VALUE", "SENTIMENT EXTREMES"],
+        "system_prompt": CONTRARIAN_SYSTEM_PROMPT,
     },
 }
 
@@ -844,38 +843,48 @@ Dry powder for opportunities.
 
 Give me a complete portfolio of 10-15 cards across tiers with allocation percentages."""
 
-    else:  # liquidity
+    else:  # liquidity (contrarian value)
         return base + """
-Give me your liquidity analysis — you have the COMPLETE $20+ tradeable universe. Analyze ALL of them for liquidity.
+Give me your contrarian value analysis — you have the COMPLETE $20+ tradeable universe. Find what's mispriced.
 
-## LIQUIDITY LANDSCAPE BY TIER
+## MOST OVERVALUED CARDS (Top 5-8)
+Which cards are priced above fair value? Look for:
+- Price far above SMA_90 with no sales volume to justify the premium
+- Hype-driven spikes with wide market-vs-median spread (listed price is fiction)
+- Cards where the narrative is bullish but actual sales data tells a different story
+- Cards where every analyst is bullish — what are they missing?
+For each: card name, price, why it's overvalued, what fair value should be, and the catalyst for correction.
 
-### PREMIUM ($100+)
-Lower volume but wide margins per trade. Use liquidity_score and est_time_to_sell_days. Which premium cards can you actually EXIT within 30 days? What's the typical bid-ask spread? Flag any "marked-to-myth" cards (high listed price, zero recent sales).
+## MOST UNDERVALUED RELATIVE TO PEERS (Top 5-8)
+Compare cards WITHIN sets and rarity tiers. Which are cheap vs their peers?
+- Same set, same rarity, but 2-3x price difference — why? Is the discount justified?
+- Cards with strong sales velocity despite recent price drops (real demand at lower levels)
+- Vintage cards trading below their historical floor (margin of safety)
+For each: card name, price, peer comparison, why it's undervalued, target price.
 
-### MID-HIGH ($50-100)
-The sweet spot for volume AND viability. Which cards have the tightest market-vs-median-sale spread? Rank by: (a) liquidity_score, (b) sales velocity, (c) spread tightness. This tier should have the most tradeable cards — identify them.
+## SENTIMENT EXTREMES & MEAN REVERSION CANDIDATES
+- Which cards have dropped 30%+ from recent highs? Are these overreactions or justified declines?
+- Which cards have the lowest RSI readings? Are they bottoming or still falling?
+- Cards with improving hold_economics despite negative recent sentiment
+- Where is the bad news already priced in?
 
-### MID ($20-50)
-Higher fee friction but often decent volume. Which cards have exceptional liquidity (sales_90d > 20)? These are your "flow names" — the market is actively trading them. Cards here with strong momentum could graduate to mid_high.
+## BIGGEST RECENT DROPS — OVERREACTION OR JUSTIFIED?
+Analyze cards with the largest 7d and 30d price declines:
+- Is the decline driven by fundamentals (reprint risk, meta shift) or panic selling?
+- What does sales data show — are buyers stepping in at lower prices?
+- Margin of safety calculation: how much further could it fall vs upside if it reverts?
 
-### MARKET MICROSTRUCTURE
-- **Execution quality**: For cards with sales data, how close are market prices to actual sale prices? Cards with >10% market-vs-median spread have STALE PRICING — the listed price is fiction.
-- **Volume trends**: Are sales accelerating or decelerating across tiers? Use sales_30d vs sales_90d ratios.
-- **Seasonal patterns**: Based on sales timestamps, any time-of-year patterns in volume?
-
-## TOP PICKS — TRADEABLE CARDS (8-12 picks across tiers)
+## CONTRARIAN PICKS (8-12 across tiers)
 For each pick, provide:
-- Price, tier, liquidity_score, est_time_to_sell
-- Why it's tradeable (volume, tight spread, recent sales proving price)
-- Recommended approach: (a) active trade (buy now, sell on catalyst), (b) accumulate (buy on dips, hold), (c) watchlist (wait for entry)
+- Price, tier, why the market is WRONG about this card right now
+- Mean reversion target, margin of safety, catalyst for re-rating
+- Hold period and conviction level
+- What could go wrong (the bear case for your contrarian thesis)
 
-## FLOW SIGNALS
-- Which cards are seeing UNUSUAL volume? (sales acceleration)
-- Any cards transitioning tiers? (mid → mid_high = growing value, mid_high → premium = breakout)
-- Where is the smart money going? (premium cards with sudden volume = institutional collector)
+## THE BULL CASE YOU DON'T BELIEVE
+What's the most popular bullish consensus right now that you think is wrong? Why?
 
-Give me 8-12 tradeable picks plus 3-5 watchlist cards. Be specific about entry, exit, and liquidity risk."""
+Give me 8-12 contrarian picks plus 3-5 "avoid/sell" calls. Challenge the consensus."""
 
 
 async def get_multi_persona_analysis(db: Session) -> dict:

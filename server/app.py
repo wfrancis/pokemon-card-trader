@@ -13,7 +13,6 @@ from server.models import Card, PriceHistory, Sale
 from server.routes import cards, prices, analysis
 from server.routes import backtest
 from server.routes import trader
-from server.routes import signals
 from server.routes import sales
 from server.services.card_sync import sync_all_cards
 from server.services.price_collector import collect_prices_for_cards
@@ -172,7 +171,6 @@ app.include_router(prices.router)
 app.include_router(analysis.router)
 app.include_router(backtest.router)
 app.include_router(trader.router)
-app.include_router(signals.router)
 app.include_router(sales.router)
 
 

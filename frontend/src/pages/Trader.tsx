@@ -18,7 +18,7 @@ import SmartToyIcon from '@mui/icons-material/SmartToy';
 import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
-import type { MultiPersonaAnalysis, PersonaResult, AnalyzedCard, SnapshotSummary } from '../services/api';
+import type { MultiPersonaAnalysis, PersonaResult, AnalyzedCard, SnapshotSummary, BacktestPickResult } from '../services/api';
 
 const mono = { fontFamily: '"JetBrains Mono", "Fira Code", monospace' };
 
@@ -114,12 +114,50 @@ function AnalyzedCardTile({ card, onClick }: { card: AnalyzedCard; onClick: () =
   );
 }
 
+/** Detect tier section headers for special rendering */
+const TIER_HEADERS: Record<string, { color: string; label: string }> = {
+  'core holdings': { color: '#ffd700', label: 'PREMIUM' },
+  'active trades': { color: '#00bcd4', label: 'MID-HIGH' },
+  'growth plays': { color: '#ff9800', label: 'MID' },
+  'watchlist': { color: '#888', label: 'WATCH' },
+};
+
+function isTierHeader(text: string): { color: string; label: string } | null {
+  const lower = text.toLowerCase().replace(/[#*]/g, '').trim();
+  for (const [key, val] of Object.entries(TIER_HEADERS)) {
+    if (lower.includes(key)) return val;
+  }
+  return null;
+}
+
 function MarkdownBlock({ text }: { text: string }) {
   const lines = text.split('\n');
   const elements: React.ReactElement[] = [];
 
   lines.forEach((line, i) => {
     const trimmed = line.trim();
+
+    // Check for tier section headers (e.g., "### CORE HOLDINGS (Premium $100+)")
+    const tierInfo = (trimmed.startsWith('#') || trimmed.startsWith('**')) ? isTierHeader(trimmed) : null;
+    if (tierInfo) {
+      const headerText = trimmed.replace(/^#+\s*/, '').replace(/\*\*/g, '').trim();
+      elements.push(
+        <Box key={i} sx={{
+          mt: 3, mb: 1.5, py: 1, px: 2,
+          borderLeft: `3px solid ${tierInfo.color}`,
+          bgcolor: `${tierInfo.color}08`,
+          borderRadius: '0 4px 4px 0',
+        }}>
+          <Typography sx={{
+            color: tierInfo.color, fontWeight: 700, ...mono,
+            fontSize: '0.95rem', letterSpacing: 1.5,
+          }}>
+            {headerText}
+          </Typography>
+        </Box>
+      );
+      return;
+    }
 
     if (trimmed.startsWith('### ')) {
       elements.push(
@@ -166,6 +204,225 @@ function MarkdownBlock({ text }: { text: string }) {
   });
 
   return <>{elements}</>;
+}
+
+/** Normalize unicode quotes/dashes for comparison */
+function normalize(s: string): string {
+  return s
+    .replace(/[\u2019\u2018]/g, "'")
+    .replace(/[\u201c\u201d]/g, '"')
+    .replace(/[\u2014\u2013]/g, '-')
+    .toLowerCase();
+}
+
+/** Find the matching pick for a recommendation line */
+function findPickForLine(line: string, picks: AnalyzedCard[], usedIds: Set<number>): AnalyzedCard | null {
+  const lineLower = normalize(line);
+  // Prefer longest name match first
+  const sorted = [...picks].sort((a, b) => b.name.length - a.name.length);
+  for (const pick of sorted) {
+    if (usedIds.has(pick.card_id)) continue;
+    if (lineLower.includes(normalize(pick.name))) {
+      usedIds.add(pick.card_id);
+      return pick;
+    }
+  }
+  return null;
+}
+
+interface ConsensusSection {
+  type: 'text' | 'rec';
+  content: string;
+  pick?: AnalyzedCard;
+}
+
+/** Tier header patterns to split on (so they don't get absorbed into the previous recommendation) */
+const TIER_HEADER_RE = /^#+\s*(CORE HOLDINGS|ACTIVE TRADES|GROWTH PLAYS|WATCHLIST)/im;
+
+/** Parse consensus text into sections, matching recommendation blocks to picks */
+function parseConsensusWithPicks(text: string, picks: AnalyzedCard[]): ConsensusSection[] {
+  const sections: ConsensusSection[] = [];
+  const usedIds = new Set<number>();
+
+  // Split at numbered recommendation boundaries AND tier section headers
+  // This regex splits at: numbered items (N) ...) OR markdown headers containing tier keywords
+  const parts = text.split(/\n(?=\s*\*{0,2}\d+\)\s|#+\s*(?:CORE HOLDINGS|ACTIVE TRADES|GROWTH PLAYS|WATCHLIST))/i);
+
+  for (let i = 0; i < parts.length; i++) {
+    let part = parts[i];
+    const match = part.match(/^\s*\*{0,2}(\d+)\)\s/);
+
+    if (match) {
+      // Check if this recommendation block contains a tier header mid-way
+      // If so, split it: keep the rec content before the header, push the rest as text
+      const tierIdx = part.search(/\n(?=#+\s*(?:CORE HOLDINGS|ACTIVE TRADES|GROWTH PLAYS|WATCHLIST))/i);
+      let trailingText: string | null = null;
+      if (tierIdx > 0) {
+        trailingText = part.slice(tierIdx + 1); // text from the tier header onward
+        part = part.slice(0, tierIdx);           // rec content before the header
+      }
+
+      const firstLine = part.split('\n')[0];
+      const pick = findPickForLine(firstLine, picks, usedIds);
+
+      if (pick) {
+        sections.push({ type: 'rec', content: part, pick });
+      } else {
+        sections.push({ type: 'text', content: part });
+      }
+
+      // Push the trailing tier header as its own text section
+      if (trailingText) {
+        sections.push({ type: 'text', content: trailingText });
+      }
+    } else {
+      sections.push({ type: 'text', content: part });
+    }
+  }
+
+  return sections;
+}
+
+/** Inline recommendation: card image + analysis text side by side */
+function InlineRecommendation({
+  content,
+  pick,
+  onClick,
+  backtestResult,
+}: {
+  content: string;
+  pick: AnalyzedCard;
+  onClick: () => void;
+  backtestResult?: BacktestPickResult;
+}) {
+  const tier = TIER_CONFIG[pick.price_tier] || TIER_CONFIG.mid;
+  const signal = SIGNAL_CONFIG[pick.signal] || { label: 'N/A', color: '#666', bg: '#1a1a1a' };
+
+  // Strip the first line header (e.g. "**1) Umbreon VMAX SR — ...") and render the detail lines
+  const lines = content.split('\n');
+  // First line is the card title — we render it as a styled header
+  const titleLine = lines[0].replace(/^\s*\*{0,2}\d+\)\s*/, '').replace(/\*\*/g, '').trim();
+  const detailText = lines.slice(1).join('\n');
+
+  return (
+    <Paper
+      sx={{
+        display: 'flex',
+        flexDirection: { xs: 'column', sm: 'row' },
+        gap: { xs: 1.5, sm: 2 },
+        p: { xs: 1.5, sm: 2 },
+        mb: 1.5,
+        bgcolor: '#0d0d0d',
+        border: `1px solid ${tier.border}`,
+        cursor: 'pointer',
+        transition: 'all 0.15s',
+        '&:hover': { borderColor: tier.color, bgcolor: '#111' },
+      }}
+      onClick={onClick}
+    >
+      {/* Left: Card image */}
+      <Box sx={{
+        flexShrink: 0,
+        width: { xs: '100%', sm: 140 },
+        display: 'flex',
+        flexDirection: { xs: 'row', sm: 'column' },
+        alignItems: { xs: 'center', sm: 'stretch' },
+        gap: 1,
+      }}>
+        <Avatar
+          src={pick.image_small || undefined}
+          variant="rounded"
+          sx={{
+            width: { xs: 100, sm: 140 },
+            height: 'auto',
+            aspectRatio: '2.5/3.5',
+            bgcolor: '#1a1a1a',
+          }}
+          imgProps={{ loading: 'lazy' }}
+        />
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, alignItems: { xs: 'flex-start', sm: 'center' } }}>
+          <Typography sx={{ color: '#00ff41', fontWeight: 700, ...mono, fontSize: '1.1rem' }}>
+            ${pick.current_price.toFixed(2)}
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 0.5 }}>
+            <Chip label={tier.label} size="small" sx={{
+              bgcolor: `${tier.color}15`, color: tier.color,
+              fontSize: '0.55rem', height: 18, fontWeight: 700, ...mono,
+            }} />
+            <Chip label={signal.label} size="small" sx={{
+              bgcolor: signal.bg, color: signal.color,
+              fontSize: '0.55rem', height: 18, fontWeight: 700, ...mono,
+            }} />
+          </Box>
+          {pick.breakeven_pct != null && (
+            <Typography sx={{ color: '#ff9800', fontSize: '0.65rem', ...mono }}>
+              {pick.breakeven_pct.toFixed(0)}% BE
+            </Typography>
+          )}
+          <Typography sx={{ color: '#00bcd4', fontSize: '0.6rem', ...mono }}>
+            View charts &rarr;
+          </Typography>
+        </Box>
+      </Box>
+
+      {/* Right: Analysis text */}
+      <Box sx={{ flex: 1, minWidth: 0 }}>
+        <Typography sx={{
+          color: '#fff', fontWeight: 700, ...mono, fontSize: '0.9rem', mb: 0.5,
+          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+        }}>
+          {titleLine}
+        </Typography>
+        <MarkdownBlock text={detailText} />
+
+        {/* Historical Backtest Results */}
+        {backtestResult && !backtestResult.error && (
+          <Box sx={{
+            mt: 1.5, pt: 1, borderTop: '1px solid #222',
+            display: 'flex', gap: { xs: 1, sm: 2 }, flexWrap: 'wrap', alignItems: 'center',
+          }}>
+            <Typography sx={{ color: '#666', fontSize: '0.6rem', fontWeight: 700, ...mono, letterSpacing: 1 }}>
+              BACKTEST
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', alignItems: 'center' }}>
+              <Typography sx={{
+                color: (backtestResult.fee_adjusted_return_pct ?? 0) >= 0 ? '#00ff41' : '#ff1744',
+                fontSize: '0.7rem', fontWeight: 700, ...mono,
+              }}>
+                {(backtestResult.fee_adjusted_return_pct ?? 0) >= 0 ? '+' : ''}
+                {backtestResult.fee_adjusted_return_pct?.toFixed(1)}% net
+              </Typography>
+              <Typography sx={{ color: '#888', fontSize: '0.65rem', ...mono }}>
+                B&H {(backtestResult.buy_hold_return_pct ?? 0) >= 0 ? '+' : ''}{backtestResult.buy_hold_return_pct?.toFixed(1)}%
+              </Typography>
+              <Typography sx={{ color: '#888', fontSize: '0.65rem', ...mono }}>
+                {backtestResult.win_rate?.toFixed(0)}% win
+              </Typography>
+              <Typography sx={{ color: '#888', fontSize: '0.65rem', ...mono }}>
+                {backtestResult.total_trades} trades
+              </Typography>
+              <Chip
+                label={backtestResult.profitable_after_fees ? 'PROFITABLE' : 'UNPROFITABLE'}
+                size="small"
+                sx={{
+                  bgcolor: backtestResult.profitable_after_fees ? '#00ff4115' : '#ff174415',
+                  color: backtestResult.profitable_after_fees ? '#00ff41' : '#ff1744',
+                  fontSize: '0.5rem', height: 16, fontWeight: 700, ...mono,
+                }}
+              />
+            </Box>
+          </Box>
+        )}
+        {backtestResult?.error && (
+          <Box sx={{ mt: 1, pt: 0.5, borderTop: '1px solid #222' }}>
+            <Typography sx={{ color: '#555', fontSize: '0.6rem', ...mono }}>
+              BACKTEST: {backtestResult.error}
+            </Typography>
+          </Box>
+        )}
+      </Box>
+    </Paper>
+  );
 }
 
 function renderBold(text: string): React.ReactNode[] {
@@ -264,6 +521,7 @@ export default function Trader() {
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<SnapshotSummary[]>([]);
   const [selectedSnapshotId, setSelectedSnapshotId] = useState<number | 'latest'>('latest');
+  const [backtestResults, setBacktestResults] = useState<Record<number, BacktestPickResult>>({});
 
   // Load latest saved analysis + history list on mount
   useEffect(() => {
@@ -274,6 +532,8 @@ export default function Trader() {
       if (!latest.error) {
         setAnalysis(latest);
         if (hist.length > 0) setSelectedSnapshotId(hist[0].id);
+        // Auto-fetch backtest results for consensus picks
+        api.backtestPicks().then(setBacktestResults).catch(() => {});
       }
       setHistory(hist);
     }).finally(() => setInitialLoading(false));
@@ -283,7 +543,10 @@ export default function Trader() {
     setSelectedSnapshotId(snapshotId);
     try {
       const result = await api.getPersonaSnapshot(snapshotId);
-      if (!result.error) setAnalysis(result);
+      if (!result.error) {
+        setAnalysis(result);
+        api.backtestPicks().then(setBacktestResults).catch(() => {});
+      }
     } catch {}
   };
 
@@ -301,6 +564,8 @@ export default function Trader() {
           setHistory(hist);
           if (hist.length > 0) setSelectedSnapshotId(hist[0].id);
         }).catch(() => {});
+        // Auto-fetch backtest results for new picks
+        api.backtestPicks().then(setBacktestResults).catch(() => {});
       }
     } catch (err: any) {
       setError(err.message || 'Failed to get trading desk analysis');
@@ -496,9 +761,9 @@ export default function Trader() {
         </Grid>
       )}
 
-      {/* Consensus Panel */}
+      {/* Consensus Panel — with inline card visuals for each recommendation */}
       {analysis?.consensus && (
-        <Paper sx={{ p: { xs: 2, md: 3 }, mb: 2, bgcolor: '#111', border: '1px solid #ffffff33' }}>
+        <Paper sx={{ p: { xs: 1.5, md: 3 }, mb: 2, bgcolor: '#111', border: '1px solid #ffffff33' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2 }}>
             <Box sx={{ width: 4, height: 28, bgcolor: '#fff', borderRadius: 1 }} />
             <Box>
@@ -507,48 +772,32 @@ export default function Trader() {
               </Typography>
               <Typography sx={{ color: '#888', fontSize: '0.7rem', ...mono }}>
                 CIO SYNTHESIS — HIGH CONVICTION CALLS
-              </Typography>
-            </Box>
-          </Box>
-          <MarkdownBlock text={analysis.consensus} />
-        </Paper>
-      )}
-
-      {/* Consensus Picks — Card Tiles */}
-      {analysis?.consensus_picks && analysis.consensus_picks.length > 0 && (
-        <Paper sx={{ p: { xs: 1.5, md: 2 }, mb: 2, bgcolor: '#0a0a0a', border: '1px solid #ffd70033' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2 }}>
-            <Box sx={{ width: 4, height: 24, bgcolor: '#ffd700', borderRadius: 1 }} />
-            <Box>
-              <Typography variant="h6" sx={{ color: '#ffd700', fontWeight: 700, ...mono, fontSize: '1rem' }}>
-                RECOMMENDED PICKS
-              </Typography>
-              <Typography sx={{ color: '#666', fontSize: '0.65rem', ...mono }}>
-                {analysis.consensus_picks.length} CONSENSUS CARDS · CLICK TO VIEW DETAIL &amp; CHARTS
+                {analysis.consensus_picks && analysis.consensus_picks.length > 0 && (
+                  <> · {analysis.consensus_picks.length} PICKS · CLICK ANY CARD TO VIEW CHARTS</>
+                )}
               </Typography>
             </Box>
           </Box>
 
-          {(['premium', 'mid_high', 'mid'] as const).map(tier => {
-            const tierCards = analysis.consensus_picks!.filter(c => c.price_tier === tier);
-            if (tierCards.length === 0) return null;
-            const tierLabel = { premium: 'CORE HOLDINGS ($100+)', mid_high: 'ACTIVE TRADES ($50-100)', mid: 'GROWTH PLAYS ($20-50)' }[tier];
-            const tierColor = { premium: '#ffd700', mid_high: '#00bcd4', mid: '#888' }[tier];
-            return (
-              <Box key={tier} sx={{ mb: 2 }}>
-                <Typography sx={{ color: tierColor, fontWeight: 700, fontSize: '0.75rem', ...mono, mb: 1 }}>
-                  {tierLabel} — {tierCards.length} picks
-                </Typography>
-                <Grid container spacing={1}>
-                  {tierCards.map(card => (
-                    <Grid key={card.card_id} size={{ xs: 6, sm: 4, md: 3, lg: 2 }}>
-                      <AnalyzedCardTile card={card} onClick={() => navigate(`/card/${card.card_id}`)} />
-                    </Grid>
-                  ))}
-                </Grid>
-              </Box>
-            );
-          })}
+          {(() => {
+            const picks = analysis.consensus_picks || [];
+            const sections = parseConsensusWithPicks(analysis.consensus, picks);
+
+            return sections.map((section, i) => {
+              if (section.type === 'rec' && section.pick) {
+                return (
+                  <InlineRecommendation
+                    key={i}
+                    content={section.content}
+                    pick={section.pick}
+                    onClick={() => navigate(`/card/${section.pick!.card_id}`)}
+                    backtestResult={backtestResults[section.pick!.card_id]}
+                  />
+                );
+              }
+              return <MarkdownBlock key={i} text={section.content} />;
+            });
+          })()}
         </Paper>
       )}
 
@@ -573,7 +822,7 @@ export default function Trader() {
             {Object.values({
               quant: { title: 'QUANT', color: '#00bcd4', name: 'Dr. Sarah Chen' },
               pm: { title: 'HEDGE FUND PM', color: '#ffd700', name: 'Jamie Blackwood' },
-              liquidity: { title: 'LIQUIDITY', color: '#ff9800', name: 'Kai Nakamura' },
+              liquidity: { title: 'CONTRARIAN VALUE', color: '#e040fb', name: 'Vic Morales' },
             }).map(p => (
               <Box key={p.title} sx={{ textAlign: 'center' }}>
                 <Typography sx={{ color: p.color, fontWeight: 700, ...mono, fontSize: '0.75rem' }}>

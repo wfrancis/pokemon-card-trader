@@ -166,18 +166,8 @@ export const api = {
   getTraderCardAnalysis: (cardId: number) =>
     fetchApi<TraderCardAnalysis>(`/api/trader/card/${cardId}`),
 
-  // Signals
-  getIndicators: () =>
-    fetchApi<{ cards: CardIndicator[]; total: number }>('/api/signals'),
-
-  generateAISignals: () =>
-    fetchApi<SignalJobStatus>('/api/signals/generate', { method: 'POST' }),
-
-  getSignalStatus: () =>
-    fetchApi<SignalJobStatus>('/api/signals/status'),
-
-  quickBacktest: (cardId: number) =>
-    fetchApi<QuickBacktestResult>(`/api/signals/${cardId}/quick-backtest`),
+  backtestPicks: () =>
+    fetchApi<Record<number, BacktestPickResult>>('/api/trader/backtest-picks'),
 
   // Sales
   getCardSales: (cardId: number, limit = 500) =>
@@ -218,6 +208,21 @@ export interface BacktestResult {
   sharpe_ratio: number | null;
   trades: BacktestTrade[];
   daily_values: BacktestDailyValue[];
+  error?: string;
+}
+
+export interface BacktestPickResult {
+  strategy?: string;
+  strategy_return_pct?: number;
+  buy_hold_return_pct?: number;
+  fee_adjusted_return_pct?: number | null;
+  win_rate?: number;
+  total_trades?: number;
+  max_drawdown_pct?: number;
+  total_fees_paid?: number;
+  profitable_after_fees?: boolean;
+  start_date?: string | null;
+  end_date?: string | null;
   error?: string;
 }
 
@@ -325,58 +330,6 @@ export interface CardIndicator {
   stop_loss?: number | null;
   time_horizon?: string;
   best_strategy?: string;
-}
-
-export interface AISignalsResponse {
-  signals: CardIndicator[];
-  summary: {
-    total: number;
-    buy: number;
-    sell: number;
-    hold: number;
-  };
-  pipeline?: string;
-  tokens_used: { input: number; output: number };
-  error?: string;
-}
-
-export interface SignalJobStatus {
-  status: 'idle' | 'processing' | 'done' | 'error';
-  step?: string;
-  elapsed_seconds?: number;
-  message?: string;
-  error?: string;
-  // Present when status === 'done':
-  signals?: CardIndicator[];
-  summary?: {
-    total: number;
-    buy: number;
-    sell: number;
-    hold: number;
-  };
-  pipeline?: string;
-  tokens_used?: { input: number; output: number };
-}
-
-export interface QuickBacktestStrategy {
-  strategy_key: string;
-  strategy_name: string;
-  return_pct: number;
-  buy_hold_return_pct: number;
-  alpha: number;
-  win_rate: number;
-  total_trades: number;
-  max_drawdown_pct: number;
-  sharpe_ratio: number | null;
-}
-
-export interface QuickBacktestResult {
-  card_id: number;
-  card_name: string;
-  strategies: QuickBacktestStrategy[];
-  best_strategy: string;
-  best_return_pct: number;
-  error?: string;
 }
 
 export interface SaleRecord {

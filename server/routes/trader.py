@@ -11,6 +11,7 @@ from server.services.trader_agent import (
     get_trader_analysis, get_card_trader_analysis, get_multi_persona_analysis,
 )
 from server.services.trading_economics import calc_breakeven_appreciation
+from server.services.backtesting import run_backtest
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/trader", tags=["trader"])
@@ -130,7 +131,7 @@ def _extract_picks_from_consensus(db: Session, consensus_text: str) -> list[dict
             "current_price": price,
             "price_tier": "mid",   # default — overridden from consensus
             "signal": "hold",      # default — overridden from consensus
-            "breakeven_pct": round(be_pct * 100, 1) if be_pct else None,
+            "breakeven_pct": round(be_pct, 1) if be_pct else None,
             "liquidity_score": None,
             "price_change_7d": None,
             "price_change_30d": None,
@@ -325,6 +326,57 @@ async def trader_personas_snapshot(snapshot_id: int, db: Session = Depends(get_d
     if not snapshot:
         return {"error": f"Snapshot #{snapshot_id} not found."}
     return _snapshot_to_response(snapshot, db)
+
+
+@router.get("/backtest-picks")
+async def backtest_consensus_picks(db: Session = Depends(get_db)):
+    """Run fee-aware backtests on the latest consensus picks.
+
+    For each pick, runs the 'combined' strategy with TCGPlayer fees
+    and returns a summary keyed by card_id.
+    """
+    snapshot = (
+        db.query(TraderAnalysisSnapshot)
+        .order_by(TraderAnalysisSnapshot.created_at.desc())
+        .first()
+    )
+    if not snapshot:
+        return {"error": "No saved analysis found. Run the trading desk first."}
+
+    picks = _extract_picks_from_consensus(db, snapshot.consensus or "")
+    if not picks:
+        return {"error": "No picks found in consensus text."}
+
+    results = {}
+    for pick in picks[:18]:  # Cap at 18 to match consensus limit
+        card_id = pick["card_id"]
+        try:
+            bt = run_backtest(
+                db, card_id, strategy="combined",
+                fees_enabled=True, platform="tcgplayer",
+            )
+            if bt is None:
+                results[card_id] = {"error": "Insufficient price history (need 35+ days)"}
+                continue
+            results[card_id] = {
+                "strategy": bt.strategy,
+                "strategy_return_pct": round(bt.strategy_return_pct, 2),
+                "buy_hold_return_pct": round(bt.buy_hold_return_pct, 2),
+                "fee_adjusted_return_pct": round(bt.fee_adjusted_return_pct, 2) if bt.fee_adjusted_return_pct is not None else None,
+                "win_rate": round(bt.win_rate, 1),
+                "total_trades": bt.total_trades,
+                "max_drawdown_pct": round(bt.max_drawdown_pct, 2),
+                "total_fees_paid": round(bt.total_fees_paid, 2),
+                "profitable_after_fees": (bt.fee_adjusted_return_pct or 0) > 0,
+                "start_date": str(bt.start_date) if bt.start_date else None,
+                "end_date": str(bt.end_date) if bt.end_date else None,
+            }
+        except Exception as e:
+            logger.error(f"Backtest failed for card {card_id}: {e}")
+            results[card_id] = {"error": str(e)}
+
+    logger.info(f"Backtested {len(results)} consensus picks")
+    return results
 
 
 @router.get("/card/{card_id}")

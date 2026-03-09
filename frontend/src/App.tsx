@@ -23,14 +23,12 @@ import DashboardIcon from '@mui/icons-material/Dashboard';
 import ViewModuleIcon from '@mui/icons-material/ViewModule';
 import ScienceIcon from '@mui/icons-material/Science';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
-import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const CardExplorer = lazy(() => import('./pages/CardExplorer'));
 const CardDetail = lazy(() => import('./pages/CardDetail'));
 const Backtest = lazy(() => import('./pages/Backtest'));
 const Trader = lazy(() => import('./pages/Trader'));
-const Signals = lazy(() => import('./pages/Signals'));
 
 function NavBar() {
   const location = useLocation();
@@ -43,7 +41,6 @@ function NavBar() {
     { label: 'Dashboard', path: '/', icon: <DashboardIcon /> },
     { label: 'Explorer', path: '/explore', icon: <ViewModuleIcon /> },
     { label: 'Backtest', path: '/backtest', icon: <ScienceIcon /> },
-    { label: 'Signals', path: '/signals', icon: <AutoAwesomeIcon /> },
     { label: 'AI Trader', path: '/trader', icon: <SmartToyIcon /> },
   ];
 
@@ -107,19 +104,6 @@ function NavBar() {
                 }}
               >
                 Backtest
-              </Button>
-              <Button
-                component={Link}
-                to="/signals"
-                startIcon={<AutoAwesomeIcon />}
-                size="small"
-                sx={{
-                  color: isActive('/signals') ? '#00bcd4' : '#666',
-                  textTransform: 'none',
-                  mr: 1,
-                }}
-              >
-                Signals
               </Button>
               <Button
                 component={Link}
@@ -204,7 +188,6 @@ export default function App() {
             <Route path="/explore" element={<CardExplorer />} />
             <Route path="/card/:id" element={<CardDetail />} />
             <Route path="/backtest" element={<Backtest />} />
-            <Route path="/signals" element={<Signals />} />
             <Route path="/trader" element={<Trader />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
