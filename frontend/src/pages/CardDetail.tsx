@@ -64,20 +64,21 @@ export default function CardDetail() {
   }
 
   return (
-    <Box sx={{ p: 2 }}>
+    <Box sx={{ p: { xs: 1, md: 2 } }}>
       <Grid container spacing={2}>
         {/* Left: Card Image + Info */}
         <Grid size={{ xs: 12, md: 3 }}>
           <Paper sx={{ p: 2, textAlign: 'center' }}>
             {(card.image_large || card.image_small) ? (
-              <img
+              <Box
+                component="img"
                 src={card.image_large || card.image_small}
                 alt={card.name}
-                style={{ width: '100%', maxWidth: 300, borderRadius: 8 }}
+                sx={{ width: '100%', maxWidth: { xs: 200, sm: 300 }, borderRadius: 2 }}
               />
             ) : (
               <Box sx={{
-                width: '100%', maxWidth: 300, height: 400, mx: 'auto',
+                width: '100%', maxWidth: { xs: 200, sm: 300 }, height: 400, mx: 'auto',
                 bgcolor: '#1a1a2e', borderRadius: 2,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 border: '1px solid #333',
@@ -149,7 +150,7 @@ export default function CardDetail() {
         <Grid size={{ xs: 12, md: 9 }}>
           <Paper sx={{ p: 2, mb: 2 }}>
             {/* Chart view toggle */}
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 1, md: 2 }, mb: 1 }}>
               <ToggleButtonGroup
                 value={chartView}
                 exclusive
@@ -157,7 +158,7 @@ export default function CardDetail() {
                 size="small"
                 sx={{
                   '& .MuiToggleButton-root': {
-                    color: '#888', border: '1px solid #333', px: 2, py: 0.3,
+                    color: '#888', border: '1px solid #333', px: { xs: 1.5, md: 2 }, py: { xs: 0.5, md: 0.3 },
                     fontSize: '0.75rem', fontWeight: 700, fontFamily: 'monospace',
                     '&.Mui-selected': { color: '#00bcd4', bgcolor: 'rgba(0,188,212,0.1)', borderColor: '#00bcd4' },
                   },

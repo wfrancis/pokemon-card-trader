@@ -73,12 +73,12 @@ def _extract_picks_from_consensus(db: Session, consensus_text: str) -> list[dict
     rec_text = rec_text[:cutoff]
 
     # Extract numbered recommendation BLOCKS (not just first lines)
-    # Split on newlines before numbered items: "N. ..."
-    parts = re.split(r'\n(?=\s*\d+\.\s)', rec_text)
+    # Split on newlines before numbered items: "N. ..." or "**N) ..." or "N) ..."
+    parts = re.split(r'\n(?=\s*\*{0,2}\d+[.)]\s)', rec_text)
     rec_blocks = []
     for part in parts:
         part = part.strip()
-        m = re.match(r'(\d+)\.\s*(.*?)(?:\n|$)', part)
+        m = re.match(r'\*{0,2}(\d+)[.)]\s*(.*?)(?:\n|$)', part)
         if not m:
             continue
         first_line = m.group(2).strip().strip('*').strip()

@@ -19,7 +19,7 @@ function MetricBox({ label, value, color }: { label: string; value: string; colo
       <Typography variant="body2" sx={{ color: '#666', fontSize: '0.7rem' }}>
         {label}
       </Typography>
-      <Typography variant="h3" sx={{ color: color || '#fff', fontWeight: 700 }}>
+      <Typography variant="h3" sx={{ color: color || '#fff', fontWeight: 700, fontSize: { xs: '1rem', md: '1.25rem' } }}>
         {value}
       </Typography>
     </Box>
@@ -41,7 +41,8 @@ function PerformanceChart({ data }: { data: BacktestDailyValue[] }) {
   }));
 
   return (
-    <ResponsiveContainer width="100%" height={350}>
+    <Box sx={{ height: { xs: 250, sm: 300, md: 350 } }}>
+    <ResponsiveContainer width="100%" height="100%">
       <ComposedChart data={chartData}>
         <CartesianGrid strokeDasharray="3 3" stroke="#1a1a2e" />
         <XAxis
@@ -79,13 +80,14 @@ function PerformanceChart({ data }: { data: BacktestDailyValue[] }) {
         />
       </ComposedChart>
     </ResponsiveContainer>
+    </Box>
   );
 }
 
 function TradeTable({ result }: { result: BacktestResult }) {
   if (!result.trades.length) return <Typography sx={{ color: '#666' }}>No trades executed</Typography>;
   return (
-    <TableContainer sx={{ maxHeight: 300 }}>
+    <TableContainer sx={{ maxHeight: 300, overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
       <Table size="small" stickyHeader>
         <TableHead>
           <TableRow>
@@ -194,7 +196,7 @@ export default function Backtest() {
   };
 
   return (
-    <Box sx={{ p: 2 }}>
+    <Box sx={{ p: { xs: 1, md: 2 } }}>
       <Typography variant="h2" sx={{ mb: 2, color: '#00bcd4' }}>
         STRATEGY BACKTESTER
       </Typography>
@@ -280,7 +282,7 @@ export default function Backtest() {
               <Typography variant="h3" sx={{ mb: 1, color: '#00bcd4' }}>
                 STRATEGY COMPARISON
               </Typography>
-              <TableContainer>
+              <TableContainer sx={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
                 <Table size="small">
                   <TableHead>
                     <TableRow>
@@ -480,7 +482,7 @@ export default function Backtest() {
                 <Typography variant="h3" sx={{ mb: 1, color: '#00bcd4' }}>
                   PER-CARD BREAKDOWN
                 </Typography>
-                <TableContainer>
+                <TableContainer sx={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
                   <Table size="small">
                     <TableHead>
                       <TableRow>

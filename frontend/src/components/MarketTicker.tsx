@@ -52,7 +52,7 @@ export default function MarketTicker() {
             sx={{
               display: 'inline-flex',
               alignItems: 'center',
-              mx: 2,
+              mx: { xs: 1.5, md: 2 },
               gap: 0.5,
             }}
           >

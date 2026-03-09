@@ -42,10 +42,12 @@ function HotCardsSection() {
 
   return (
     <Paper sx={{ p: 2, mb: 3, bgcolor: '#0a0a0a', border: '1px solid #2a1500' }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-        <WhatshotIcon sx={{ color: '#ff6d00' }} />
-        <Typography variant="h3" sx={{ color: '#ff6d00' }}>HOT CARDS</Typography>
-        <Typography variant="body2" sx={{ color: '#666', ml: 'auto' }}>
+      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: { xs: 'flex-start', sm: 'center' }, gap: 1, mb: 0.5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <WhatshotIcon sx={{ color: '#ff6d00' }} />
+          <Typography variant="h3" sx={{ color: '#ff6d00' }}>HOT CARDS</Typography>
+        </Box>
+        <Typography variant="body2" sx={{ color: '#666', ml: { xs: 0, sm: 'auto' } }}>
           Ranked by market activity
         </Typography>
       </Box>
@@ -215,7 +217,7 @@ export default function CardExplorer() {
   };
 
   return (
-    <Box sx={{ p: 2 }}>
+    <Box sx={{ p: { xs: 1, md: 2 } }}>
       <Typography variant="h2" sx={{ mb: 2, color: '#00bcd4' }}>
         CARD EXPLORER
       </Typography>
@@ -224,7 +226,7 @@ export default function CardExplorer() {
       <HotCardsSection />
 
       {/* Filters */}
-      <Box sx={{ display: 'flex', gap: 2, mb: 2, alignItems: 'center' }}>
+      <Box sx={{ display: 'flex', gap: 2, mb: 2, alignItems: 'center', flexWrap: 'wrap' }}>
         <TextField
           placeholder="Search cards..."
           size="small"
@@ -236,7 +238,7 @@ export default function CardExplorer() {
               </InputAdornment>
             ),
           }}
-          sx={{ flex: 1, maxWidth: 400 }}
+          sx={{ flex: 1, maxWidth: { xs: 'none', sm: 400 }, width: { xs: '100%', sm: 'auto' } }}
         />
         <FormControl size="small" sx={{ minWidth: 150 }}>
           <InputLabel>Sort By</InputLabel>

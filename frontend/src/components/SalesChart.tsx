@@ -20,6 +20,7 @@ const CONDITION_COLORS: Record<string, string> = {
   'Moderately Played': '#ff9800',
   'Heavily Played': '#ff5722',
   'Damaged': '#b71c1c',
+  'Daily Average': '#00bcd4',
 };
 
 const CONDITION_SHORT: Record<string, string> = {
@@ -28,6 +29,7 @@ const CONDITION_SHORT: Record<string, string> = {
   'Moderately Played': 'MP',
   'Heavily Played': 'HP',
   'Damaged': 'DMG',
+  'Daily Average': 'AVG',
 };
 
 function getConditionColor(condition: string): string {
@@ -56,31 +58,39 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
       .filter(s => {
         const d = new Date(s.order_date);
         if (d < cutoff) return false;
-        if (selectedConditions.size > 0 && !selectedConditions.has(s.condition)) return false;
+        const cond = s.source === 'tcgplayer_history' ? 'Daily Average' : s.condition;
+        if (selectedConditions.size > 0 && !selectedConditions.has(cond)) return false;
         return true;
       })
-      .map(s => ({
-        timestamp: new Date(s.order_date).getTime(),
-        price: s.purchase_price,
-        condition: s.condition,
-        variant: s.variant,
-        title: s.listing_title,
-        source: s.source,
-        sourceProductId: s.source_product_id,
-        date: new Date(s.order_date).toLocaleDateString('en-US', {
-          month: 'short', day: 'numeric', year: 'numeric',
-        }),
-        time: new Date(s.order_date).toLocaleTimeString('en-US', {
-          hour: '2-digit', minute: '2-digit',
-        }),
-        shipping: s.shipping_price,
-      }))
+      .map(s => {
+        const isAggregate = s.source === 'tcgplayer_history';
+        return {
+          timestamp: new Date(s.order_date).getTime(),
+          price: s.purchase_price,
+          condition: isAggregate ? 'Daily Average' : s.condition,
+          variant: s.variant,
+          title: s.listing_title,
+          source: s.source,
+          sourceProductId: s.source_product_id,
+          date: new Date(s.order_date).toLocaleDateString('en-US', {
+            month: 'short', day: 'numeric', year: 'numeric',
+          }),
+          time: new Date(s.order_date).toLocaleTimeString('en-US', {
+            hour: '2-digit', minute: '2-digit',
+          }),
+          shipping: s.shipping_price,
+          isAggregate,
+          quantity: s.quantity,
+        };
+      })
       .sort((a, b) => a.timestamp - b.timestamp);
   }, [sales, range, selectedConditions]);
 
-  // Get unique conditions present
+  // Get unique conditions present (remap aggregates)
   const conditions = useMemo(() => {
-    const set = new Set(sales.map(s => s.condition));
+    const set = new Set(sales.map(s =>
+      s.source === 'tcgplayer_history' ? 'Daily Average' : s.condition
+    ));
     return Array.from(set).sort();
   }, [sales]);
 
@@ -128,12 +138,18 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
   return (
     <Box>
       {/* Header */}
-      <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 2, mb: 0.5 }}>
+      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: { xs: 'flex-start', sm: 'baseline' }, gap: { xs: 0.5, md: 2 }, mb: 0.5 }}>
         <Typography variant="h4" sx={{ fontWeight: 700, fontFamily: 'monospace' }}>
           COMPLETED SALES
         </Typography>
         <Typography variant="body2" sx={{ color: '#888', fontFamily: 'monospace' }}>
-          {chartData.length} sale{chartData.length !== 1 ? 's' : ''} · Median ${median.toFixed(2)}
+          {(() => {
+            const indiv = chartData.filter(d => !d.isAggregate).length;
+            const agg = chartData.filter(d => d.isAggregate).length;
+            if (agg > 0 && indiv > 0) return `${indiv} individual + ${agg} daily avg`;
+            if (agg > 0) return `${agg} daily avg`;
+            return `${indiv} sale${indiv !== 1 ? 's' : ''}`;
+          })()} · Median ${median.toFixed(2)}
         </Typography>
       </Box>
 
@@ -146,7 +162,7 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
           size="small"
           sx={{
             '& .MuiToggleButton-root': {
-              color: '#888', border: '1px solid #333', px: 1.5, py: 0.3,
+              color: '#888', border: '1px solid #333', px: { xs: 1, md: 1.5 }, py: { xs: 0.5, md: 0.3 },
               fontSize: '0.7rem', fontWeight: 600, fontFamily: 'monospace',
               '&.Mui-selected': { color: '#00bcd4', bgcolor: 'rgba(0,188,212,0.1)', borderColor: '#00bcd4' },
             },
@@ -182,7 +198,8 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
       </Box>
 
       {/* Line chart with condition-colored dots */}
-      <ResponsiveContainer width="100%" height={420}>
+      <Box sx={{ height: { xs: 280, sm: 350, md: 420 } }}>
+      <ResponsiveContainer width="100%" height="100%">
         <ComposedChart data={chartData} margin={{ top: 10, right: 10, bottom: 5, left: 5 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#1a1a1a" vertical={false} />
 
@@ -226,19 +243,24 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
                 }}>
                   <Typography sx={{ fontWeight: 700, color: '#fff', fontSize: 14, mb: 0.5 }}>
                     ${d.price.toFixed(2)}
-                    {d.shipping > 0 && (
+                    {!d.isAggregate && d.shipping > 0 && (
                       <Typography component="span" sx={{ color: '#666', fontSize: 11, ml: 1 }}>
                         +${d.shipping.toFixed(2)} ship
                       </Typography>
                     )}
+                    {d.isAggregate && d.quantity > 0 && (
+                      <Typography component="span" sx={{ color: '#888', fontSize: 11, ml: 1 }}>
+                        avg · {d.quantity} sales
+                      </Typography>
+                    )}
                   </Typography>
                   <Typography sx={{ color: getConditionColor(d.condition), fontSize: 11 }}>
-                    {d.condition} · {d.variant}
+                    {d.isAggregate ? 'Daily Average' : d.condition} · {d.variant}
                   </Typography>
                   <Typography sx={{ color: '#888', fontSize: 11 }}>
-                    {d.date} {d.time}
+                    {d.date}{!d.isAggregate && ` ${d.time}`}
                   </Typography>
-                  {d.title && (
+                  {!d.isAggregate && d.title && (
                     <Typography sx={{ color: '#666', fontSize: 10, mt: 0.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {d.title}
                     </Typography>
@@ -274,6 +296,21 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
             dot={(props: any) => {
               const { cx, cy, payload } = props;
               const color = getConditionColor(payload.condition);
+              if (payload.isAggregate) {
+                return (
+                  <polygon
+                    key={`dot-${payload.timestamp}`}
+                    points={`${cx},${cy-6} ${cx+6},${cy} ${cx},${cy+6} ${cx-6},${cy}`}
+                    fill={color}
+                    fillOpacity={0.7}
+                    stroke={color}
+                    strokeWidth={1}
+                    strokeOpacity={0.4}
+                    style={{ cursor: 'pointer' }}
+                    onClick={() => handleDotClick({ payload })}
+                  />
+                );
+              }
               return (
                 <circle
                   key={`dot-${payload.timestamp}`}
@@ -293,6 +330,20 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
             activeDot={(props: any) => {
               const { cx, cy, payload } = props;
               const color = getConditionColor(payload.condition);
+              if (payload.isAggregate) {
+                return (
+                  <polygon
+                    key={`adot-${payload.timestamp}`}
+                    points={`${cx},${cy-8} ${cx+8},${cy} ${cx},${cy+8} ${cx-8},${cy}`}
+                    fill={color}
+                    fillOpacity={1}
+                    stroke="#fff"
+                    strokeWidth={2}
+                    style={{ cursor: 'pointer' }}
+                    onClick={() => handleDotClick({ payload })}
+                  />
+                );
+              }
               return (
                 <circle
                   key={`adot-${payload.timestamp}`}
@@ -313,12 +364,20 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
           />
         </ComposedChart>
       </ResponsiveContainer>
+      </Box>
 
       {/* Legend */}
-      <Stack direction="row" spacing={2} sx={{ mt: 1, justifyContent: 'center' }}>
+      <Stack direction="row" spacing={{ xs: 1, md: 2 }} sx={{ mt: 1, justifyContent: 'center', flexWrap: 'wrap' }}>
         {Object.entries(CONDITION_COLORS).map(([cond, color]) => (
           <Stack key={cond} direction="row" spacing={0.5} alignItems="center">
-            <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: color }} />
+            {cond === 'Daily Average' ? (
+              <Box sx={{
+                width: 8, height: 8, bgcolor: color,
+                transform: 'rotate(45deg)',
+              }} />
+            ) : (
+              <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: color }} />
+            )}
             <Typography sx={{ fontSize: 10, color: '#666', fontFamily: 'monospace' }}>
               {CONDITION_SHORT[cond] || cond}
             </Typography>

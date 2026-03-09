@@ -65,6 +65,17 @@ async def lifespan(app: FastAPI):
             conn.commit()
         except Exception:
             pass
+        # Add is_viable column if missing (sticky: once True, never reset)
+        try:
+            conn.execute(text("ALTER TABLE cards ADD COLUMN is_viable BOOLEAN DEFAULT 0 NOT NULL"))
+            conn.commit()
+        except Exception:
+            pass
+        try:
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_cards_is_viable ON cards (is_viable)"))
+            conn.commit()
+        except Exception:
+            pass
     logger.info("Database tables created")
 
     # Background price sync: runs TCGPlayer sync every 6 hours
@@ -112,7 +123,19 @@ async def _background_price_sync():
                     db.close()
             except Exception as e:
                 logger.error(f"TCGPlayer fallback sync failed: {e}")
-        # 3. Collect individual sales (always, regardless of price source)
+        # 3. Sales history maintenance (daily aggregates for viable cards)
+        try:
+            from server.services.tcgplayer_history import sync_sales_history
+            db = SessionLocal()
+            try:
+                logger.info("Background sync: updating sales history for viable cards...")
+                stats = await sync_sales_history(db, limit=200)
+                logger.info(f"Background sales history sync: {stats}")
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Background sales history sync failed: {e}")
+        # 4. Collect individual sales (always, regardless of price source)
         try:
             from server.services.sales_collector import collect_sales
             db = SessionLocal()
@@ -449,6 +472,21 @@ async def trigger_sales_collection(
         return {"status": "complete", "source": "tcgplayer_sales", **stats}
     except Exception as e:
         logger.error(f"Sales collection failed: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/sync/sales-history")
+async def trigger_sales_history_sync(
+    limit: int = 200,
+    db: Session = Depends(get_db),
+):
+    """Backfill daily aggregated sales history for viable ($20+) cards from TCGPlayer."""
+    from server.services.tcgplayer_history import sync_sales_history
+    try:
+        stats = await sync_sales_history(db, limit=limit)
+        return {"status": "complete", "source": "tcgplayer_history", **stats}
+    except Exception as e:
+        logger.error(f"Sales history sync failed: {e}")
         return {"status": "error", "message": str(e)}
 
 

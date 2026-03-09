@@ -313,10 +313,10 @@ export default function Trader() {
   const personaOrder = ['quant', 'pm', 'liquidity'] as const;
 
   return (
-    <Box sx={{ p: 2, maxWidth: 1600, mx: 'auto' }}>
+    <Box sx={{ p: { xs: 1.5, md: 2 }, maxWidth: 1600, mx: 'auto' }}>
       {/* Header */}
       <Paper sx={{
-        p: 3, mb: 3, bgcolor: '#111', border: '1px solid #1e1e1e',
+        p: { xs: 2, md: 3 }, mb: 3, bgcolor: '#111', border: '1px solid #1e1e1e',
         background: 'linear-gradient(135deg, #111 0%, #1a1a2e 100%)',
       }}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
@@ -367,6 +367,7 @@ export default function Trader() {
             disabled={loading}
             sx={{
               bgcolor: '#00ff41', color: '#000', fontWeight: 700, ...mono, px: 3,
+              width: { xs: '100%', sm: 'auto' },
               '&:hover': { bgcolor: '#00cc33' },
               '&:disabled': { bgcolor: '#333', color: '#666' },
             }}
@@ -385,7 +386,7 @@ export default function Trader() {
       {/* Market Summary Bar */}
       {analysis?.market_data_summary && (
         <Paper sx={{ p: 1.5, mb: 2, bgcolor: '#0a0a0a', border: '1px solid #222' }}>
-          <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+          <Box sx={{ display: 'flex', gap: { xs: 1.5, md: 3 }, flexWrap: 'wrap' }}>
             <Box>
               <Typography sx={{ color: '#666', fontSize: '0.6rem', ...mono }}>CARDS</Typography>
               <Typography sx={{ color: '#fff', fontWeight: 700, ...mono, fontSize: '0.9rem' }}>
@@ -427,14 +428,14 @@ export default function Trader() {
       {/* Trading Economics Bar — Tier-Segmented */}
       {analysis?.trading_economics && (
         <Paper sx={{ p: 1.5, mb: 2, bgcolor: '#1a0a0a', border: '1px solid #ff9800', borderStyle: 'dashed' }}>
-          <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+          <Box sx={{ display: 'flex', gap: { xs: 1, md: 2 }, flexWrap: 'wrap', alignItems: 'center' }}>
             <Box>
               <Typography sx={{ color: '#ff9800', fontSize: '0.6rem', fontWeight: 700, ...mono }}>PLATFORM</Typography>
               <Typography sx={{ color: '#fff', fontWeight: 700, ...mono, fontSize: '0.8rem' }}>
                 TCGPlayer
               </Typography>
             </Box>
-            <Box sx={{ borderLeft: '1px solid #333', pl: 2 }}>
+            <Box sx={{ borderLeft: { xs: 'none', md: '1px solid #333' }, pl: { xs: 0, md: 2 } }}>
               <Typography sx={{ color: '#ff9800', fontSize: '0.6rem', fontWeight: 700, ...mono }}>$100+ BREAKEVEN</Typography>
               <Typography sx={{ color: '#00ff41', fontWeight: 700, ...mono, fontSize: '0.8rem' }}>
                 {analysis.trading_economics.fee_schedule?.examples?.['$100_card']?.breakeven_appreciation_pct ?? '~22'}%
@@ -458,7 +459,7 @@ export default function Trader() {
                 {analysis.trading_economics.fee_schedule?.examples?.['$10_card']?.breakeven_appreciation_pct ?? '~61'}%
               </Typography>
             </Box>
-            <Box sx={{ borderLeft: '1px solid #333', pl: 2 }}>
+            <Box sx={{ borderLeft: { xs: 'none', md: '1px solid #333' }, pl: { xs: 0, md: 2 } }}>
               <Typography sx={{ color: '#ff9800', fontSize: '0.6rem', fontWeight: 700, ...mono }}>TRADEABLE</Typography>
               <Typography sx={{ color: '#00ff41', fontWeight: 700, ...mono, fontSize: '0.8rem' }}>
                 {analysis.trading_economics.cards_above_minimum_trade_size}
@@ -483,7 +484,7 @@ export default function Trader() {
 
       {/* 3-Column Persona Grid */}
       {(loading || personas) && (
-        <Grid container spacing={2} sx={{ mb: 2 }}>
+        <Grid container spacing={{ xs: 1.5, md: 2 }} sx={{ mb: 2 }}>
           {personaOrder.map(pid => (
             <Grid key={pid} size={{ xs: 12, md: 4 }}>
               <PersonaCard
@@ -497,7 +498,7 @@ export default function Trader() {
 
       {/* Consensus Panel */}
       {analysis?.consensus && (
-        <Paper sx={{ p: 3, mb: 2, bgcolor: '#111', border: '1px solid #ffffff33' }}>
+        <Paper sx={{ p: { xs: 2, md: 3 }, mb: 2, bgcolor: '#111', border: '1px solid #ffffff33' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2 }}>
             <Box sx={{ width: 4, height: 28, bgcolor: '#fff', borderRadius: 1 }} />
             <Box>
@@ -515,7 +516,7 @@ export default function Trader() {
 
       {/* Consensus Picks — Card Tiles */}
       {analysis?.consensus_picks && analysis.consensus_picks.length > 0 && (
-        <Paper sx={{ p: 2, mb: 2, bgcolor: '#0a0a0a', border: '1px solid #ffd70033' }}>
+        <Paper sx={{ p: { xs: 1.5, md: 2 }, mb: 2, bgcolor: '#0a0a0a', border: '1px solid #ffd70033' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2 }}>
             <Box sx={{ width: 4, height: 24, bgcolor: '#ffd700', borderRadius: 1 }} />
             <Box>
@@ -568,7 +569,7 @@ export default function Trader() {
           <Typography sx={{ color: '#666', ...mono, mb: 1 }}>
             Click "DEPLOY ALL ANALYSTS" to activate the trading desk
           </Typography>
-          <Box sx={{ display: 'flex', justifyContent: 'center', gap: 3, mt: 2 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'center', gap: { xs: 1.5, md: 3 }, mt: 2, flexWrap: 'wrap' }}>
             {Object.values({
               quant: { title: 'QUANT', color: '#00bcd4', name: 'Dr. Sarah Chen' },
               pm: { title: 'HEDGE FUND PM', color: '#ffd700', name: 'Jamie Blackwood' },

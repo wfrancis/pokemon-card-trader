@@ -143,7 +143,7 @@ export default function PriceChart({ priceData, analysis, showIndicators = true 
   return (
     <Box>
       {/* Price header */}
-      <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 2, mb: 0.5 }}>
+      <Box sx={{ display: 'flex', alignItems: 'baseline', gap: { xs: 1, md: 2 }, mb: 0.5 }}>
         <Typography variant="h2" sx={{ fontWeight: 700, fontFamily: 'monospace' }}>
           ${currentPrice?.toFixed(2)}
         </Typography>
@@ -192,7 +192,7 @@ export default function PriceChart({ priceData, analysis, showIndicators = true 
           size="small"
           sx={{
             '& .MuiToggleButton-root': {
-              color: '#888', border: '1px solid #333', px: 1.5, py: 0.3,
+              color: '#888', border: '1px solid #333', px: { xs: 1, md: 1.5 }, py: { xs: 0.5, md: 0.3 },
               fontSize: '0.7rem', fontWeight: 600, fontFamily: 'monospace',
               '&.Mui-selected': { color: '#00bcd4', bgcolor: 'rgba(0,188,212,0.1)', borderColor: '#00bcd4' },
               '&:hover': { bgcolor: 'rgba(255,255,255,0.04)' },
@@ -204,7 +204,7 @@ export default function PriceChart({ priceData, analysis, showIndicators = true 
           ))}
         </ToggleButtonGroup>
 
-        <Stack direction="row" spacing={0.5}>
+        <Stack direction="row" spacing={0.5} sx={{ flexWrap: 'wrap' }}>
           <Chip
             label="SMA 7" size="small" clickable
             onClick={() => setShowSMA7(!showSMA7)}
@@ -242,7 +242,8 @@ export default function PriceChart({ priceData, analysis, showIndicators = true 
       </Box>
 
       {/* Chart */}
-      <ResponsiveContainer width="100%" height={420}>
+      <Box sx={{ height: { xs: 280, sm: 350, md: 420 } }}>
+      <ResponsiveContainer width="100%" height="100%">
         <ComposedChart data={chartData} margin={{ top: 5, right: 10, bottom: 5, left: 5 }}>
           <defs>
             <linearGradient id="priceGradient" x1="0" y1="0" x2="0" y2="1">
@@ -381,6 +382,7 @@ export default function PriceChart({ priceData, analysis, showIndicators = true 
           )}
         </ComposedChart>
       </ResponsiveContainer>
+      </Box>
     </Box>
   );
 }

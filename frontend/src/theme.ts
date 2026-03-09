@@ -1,6 +1,6 @@
 import { createTheme } from '@mui/material/styles';
 
-const theme = createTheme({
+let theme = createTheme({
   palette: {
     mode: 'dark',
     primary: {
@@ -57,9 +57,42 @@ const theme = createTheme({
           borderBottom: '1px solid #1e1e1e',
           padding: '8px 12px',
           fontSize: '0.8rem',
+          '@media (max-width: 600px)': {
+            padding: '6px 8px',
+            fontSize: '0.75rem',
+          },
         },
       },
     },
+    MuiButton: {
+      styleOverrides: {
+        root: {
+          '@media (max-width: 900px)': {
+            minHeight: 44,
+          },
+        },
+      },
+    },
+    MuiToggleButton: {
+      styleOverrides: {
+        root: {
+          '@media (max-width: 900px)': {
+            minHeight: 36,
+            padding: '6px 10px',
+          },
+        },
+      },
+    },
+  },
+});
+
+// Responsive typography — smaller headings on mobile, unchanged on md+
+theme = createTheme(theme, {
+  typography: {
+    h1: { [theme.breakpoints.down('md')]: { fontSize: '1.4rem' } },
+    h2: { [theme.breakpoints.down('md')]: { fontSize: '1.1rem' } },
+    h3: { [theme.breakpoints.down('md')]: { fontSize: '1rem' } },
+    h4: { [theme.breakpoints.down('md')]: { fontSize: '0.95rem' } },
   },
 });
 

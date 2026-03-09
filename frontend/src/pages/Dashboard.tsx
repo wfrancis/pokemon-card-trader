@@ -45,11 +45,11 @@ export default function Dashboard() {
     <Box>
       <MarketTicker />
 
-      <Box sx={{ p: 2 }}>
+      <Box sx={{ p: { xs: 1.5, md: 2 } }}>
         {/* Header */}
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', flexDirection: { xs: 'column', sm: 'row' }, alignItems: { xs: 'flex-start', sm: 'center' }, gap: 1, mb: 2 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <ShowChartIcon sx={{ color: '#00ff41', fontSize: 32 }} />
+            <ShowChartIcon sx={{ color: '#00ff41', fontSize: { xs: 24, md: 32 } }} />
             <Typography variant="h1" sx={{ color: '#00ff41' }}>
               PKMN MARKET
             </Typography>

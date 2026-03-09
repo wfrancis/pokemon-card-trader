@@ -180,7 +180,7 @@ export const api = {
     fetchApi<QuickBacktestResult>(`/api/signals/${cardId}/quick-backtest`),
 
   // Sales
-  getCardSales: (cardId: number, limit = 200) =>
+  getCardSales: (cardId: number, limit = 500) =>
     fetchApi<CardSalesResponse>(`/api/cards/${cardId}/sales?limit=${limit}`),
 };
 

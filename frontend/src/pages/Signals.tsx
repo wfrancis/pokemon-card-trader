@@ -270,7 +270,7 @@ function CardDrillDown({
           border: `1px solid ${cfg.border}`,
         }}
       >
-        <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+        <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap', flexDirection: { xs: 'column', sm: 'row' }, alignItems: { xs: 'center', sm: 'flex-start' } }}>
           {card.image_small && (
             <img
               src={card.image_small}
@@ -301,7 +301,7 @@ function CardDrillDown({
               {card.set_name} · {card.rarity}
             </Typography>
 
-            <Box sx={{ display: 'flex', gap: 4, mt: 2, flexWrap: 'wrap' }}>
+            <Box sx={{ display: 'flex', gap: { xs: 2, md: 4 }, mt: 2, flexWrap: 'wrap' }}>
               <Box>
                 <Typography sx={{ color: '#555', fontSize: '0.65rem', ...mono }}>PRICE</Typography>
                 <Typography sx={{ color: '#00bcd4', fontSize: '1.3rem', fontWeight: 700, ...mono }}>
@@ -552,7 +552,7 @@ function CardDrillDown({
                   : backtest.best_return_pct.toFixed(1)}% return)
               </Typography>
             </Box>
-            <TableContainer>
+            <TableContainer sx={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
               <Table size="small">
                 <TableHead>
                   <TableRow>
@@ -633,7 +633,7 @@ function IndicatorBox({ label, value, color, sub }: { label: string; value: stri
 /* ─── Pre-signal view: indicator table (before AI is run) ─── */
 function IndicatorTable({ cards, onCardClick }: { cards: CardIndicator[]; onCardClick: (c: CardIndicator) => void }) {
   return (
-    <TableContainer component={Paper} sx={{ bgcolor: '#111', border: '1px solid #1e1e1e' }}>
+    <TableContainer component={Paper} sx={{ bgcolor: '#111', border: '1px solid #1e1e1e', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
       <Table size="small">
         <TableHead>
           <TableRow>
@@ -814,14 +814,14 @@ export default function Signals() {
   // Drill-down view
   if (selectedCard) {
     return (
-      <Box sx={{ p: 2, maxWidth: 1200, mx: 'auto' }}>
+      <Box sx={{ p: { xs: 1, md: 2 }, maxWidth: 1200, mx: 'auto' }}>
         <CardDrillDown card={selectedCard} onBack={() => setSelectedCard(null)} />
       </Box>
     );
   }
 
   return (
-    <Box sx={{ p: 2, maxWidth: 1400, mx: 'auto' }}>
+    <Box sx={{ p: { xs: 1, md: 2 }, maxWidth: 1400, mx: 'auto' }}>
       {/* Header */}
       <Paper
         sx={{
@@ -854,6 +854,7 @@ export default function Signals() {
               color: '#000',
               fontWeight: 700,
               ...mono,
+              width: { xs: '100%', sm: 'auto' },
               '&:hover': { bgcolor: '#ffb300' },
               '&:disabled': { bgcolor: '#333', color: '#666' },
             }}
@@ -935,7 +936,7 @@ export default function Signals() {
                   {aiSignals.summary.hold}
                 </Typography>
               </Box>
-              <Box sx={{ ml: 'auto', textAlign: 'right' }}>
+              <Box sx={{ ml: { xs: 0, md: 'auto' }, width: { xs: '100%', md: 'auto' }, textAlign: 'right' }}>
                 {aiSignals.pipeline && (
                   <Typography sx={{ color: '#555', fontSize: '0.6rem', ...mono }}>
                     {aiSignals.pipeline}

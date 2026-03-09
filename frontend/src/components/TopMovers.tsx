@@ -64,7 +64,13 @@ export default function TopMovers() {
                         sx={{ width: 28, height: 38 }}
                       />
                       <Box>
-                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        <Typography variant="body2" sx={{
+                          fontWeight: 600,
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          maxWidth: { xs: 120, sm: 'none' },
+                        }}>
                           {m.name}
                         </Typography>
                         <Typography variant="body2" sx={{ color: '#666', fontSize: '0.7rem' }}>
@@ -100,7 +106,7 @@ export default function TopMovers() {
 
   if (loading) {
     return (
-      <Box sx={{ display: 'flex', gap: 2 }}>
+      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: 2 }}>
         <Paper sx={{ flex: 1, p: 4, textAlign: 'center' }}>
           <CircularProgress size={24} sx={{ color: '#00ff41' }} />
           <Typography sx={{ color: '#666', mt: 1, fontSize: '0.8rem' }}>Loading gainers...</Typography>
@@ -114,7 +120,7 @@ export default function TopMovers() {
   }
 
   return (
-    <Box sx={{ display: 'flex', gap: 2 }}>
+    <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: 2 }}>
       {renderTable('Top Gainers (7d)', gainers, true)}
       {renderTable('Top Losers (7d)', losers, false)}
     </Box>
