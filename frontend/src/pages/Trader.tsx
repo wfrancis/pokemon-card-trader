@@ -29,9 +29,12 @@ const TIER_CONFIG: Record<string, { label: string; color: string; border: string
 };
 
 const SIGNAL_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
+  buy: { label: 'BUY', color: '#00ff41', bg: '#0a3a0a' },
+  accumulate: { label: 'ACCUM', color: '#66ff99', bg: '#0a2a0a' },
+  watch: { label: 'WATCH', color: '#ffd700', bg: '#2a2a0a' },
+  hold: { label: 'HOLD', color: '#00bcd4', bg: '#1a1a2a' },
   bullish: { label: 'BULL', color: '#00ff41', bg: '#0a3a0a' },
   bearish: { label: 'BEAR', color: '#ff1744', bg: '#3a0a0a' },
-  hold: { label: 'HOLD', color: '#00bcd4', bg: '#1a1a2a' },
 };
 
 function AnalyzedCardTile({ card, onClick }: { card: AnalyzedCard; onClick: () => void }) {

@@ -16,11 +16,38 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/trader", tags=["trader"])
 
 
+def _parse_signal(strategy_text: str) -> str:
+    """Map AI strategy text to a signal value for the frontend."""
+    s = strategy_text.upper()
+    if "BUY NOW" in s:
+        return "buy"
+    if "ACCUMULATE" in s and "PULLBACK" not in s:
+        return "accumulate"
+    if "ACCUMULATE" in s and "PULLBACK" in s:
+        return "watch"
+    if "WATCH" in s:
+        return "watch"
+    return "hold"
+
+
+def _parse_tier(tier_text: str) -> str | None:
+    """Map AI tier text to a price_tier value for the frontend."""
+    t = tier_text.strip().lower()
+    if "premium" in t:
+        return "premium"
+    if "mid-high" in t or "mid high" in t:
+        return "mid_high"
+    if "mid" in t:
+        return "mid"
+    return None
+
+
 def _extract_picks_from_consensus(db: Session, consensus_text: str) -> list[dict]:
     """Extract recommended card picks from consensus text.
 
-    Parses numbered recommendation items (e.g. "1. Charizard — Base Set — $525.82")
+    Parses numbered recommendation BLOCKS (card info + Strategy line)
     and matches each to exactly one card in our database.
+    Preserves the AI's tier assignment and strategy signal from the text.
     Only searches PORTFOLIO RECOMMENDATIONS, not watchlist/discussion sections.
     """
     if not consensus_text:
@@ -45,11 +72,41 @@ def _extract_picks_from_consensus(db: Session, consensus_text: str) -> list[dict
             cutoff = pos
     rec_text = rec_text[:cutoff]
 
-    # Extract numbered recommendation lines (e.g. "1. Base Set Charizard — ...")
-    # Each numbered item is one recommended card
-    rec_lines = re.findall(r'\d+\.\s*(.+?)(?:\n|$)', rec_text)
-    if not rec_lines:
-        logger.warning("No numbered recommendation lines found in consensus text")
+    # Extract numbered recommendation BLOCKS (not just first lines)
+    # Split on newlines before numbered items: "N. ..."
+    parts = re.split(r'\n(?=\s*\d+\.\s)', rec_text)
+    rec_blocks = []
+    for part in parts:
+        part = part.strip()
+        m = re.match(r'(\d+)\.\s*(.*?)(?:\n|$)', part)
+        if not m:
+            continue
+        first_line = m.group(2).strip().strip('*').strip()
+        rest = part[m.end():]
+
+        # Parse tier from line (last segment after "—")
+        tier = None
+        segs = first_line.split('—')
+        if len(segs) >= 2:
+            tier = _parse_tier(segs[-1])
+
+        # Parse strategy/signal from block
+        signal = "hold"
+        strat_m = re.search(
+            r'Strategy:[*\s]*(.+?)(?:\s*\*{0,2}\s*$|\n)',
+            rest, re.IGNORECASE | re.MULTILINE,
+        )
+        if strat_m:
+            signal = _parse_signal(strat_m.group(1).strip())
+
+        rec_blocks.append({
+            "line": first_line,
+            "tier": tier,
+            "signal": signal,
+        })
+
+    if not rec_blocks:
+        logger.warning("No numbered recommendation blocks found in consensus text")
         return []
 
     # Get all tracked cards from DB
@@ -61,13 +118,6 @@ def _extract_picks_from_consensus(db: Session, consensus_text: str) -> list[dict
         if not c.name or not c.current_price:
             continue
         price = c.current_price
-        if price >= 100:
-            tier = "premium"
-        elif price >= 50:
-            tier = "mid_high"
-        else:
-            tier = "mid"
-
         be_pct = calc_breakeven_appreciation(price) if price > 0 else None
 
         card_entries.append({
@@ -77,8 +127,8 @@ def _extract_picks_from_consensus(db: Session, consensus_text: str) -> list[dict
             "rarity": c.rarity,
             "image_small": c.image_small,
             "current_price": price,
-            "price_tier": tier,
-            "signal": "hold",
+            "price_tier": "mid",   # default — overridden from consensus
+            "signal": "hold",      # default — overridden from consensus
             "breakeven_pct": round(be_pct * 100, 1) if be_pct else None,
             "liquidity_score": None,
             "price_change_7d": None,
@@ -87,11 +137,12 @@ def _extract_picks_from_consensus(db: Session, consensus_text: str) -> list[dict
 
     card_entries.sort(key=lambda c: len(c["name"]), reverse=True)
 
-    # For each numbered line, find the best matching card
+    # For each numbered block, find the best matching card
     picks = []
     seen_ids = set()
 
-    for line in rec_lines:
+    for block in rec_blocks:
+        line = block["line"]
         line_lower = line.lower().strip()
 
         # Parse the dollar price from the line (e.g. "$226.11", "$1,090")
@@ -133,11 +184,17 @@ def _extract_picks_from_consensus(db: Session, consensus_text: str) -> list[dict
         # Sort candidates: set_match (True first), then price proximity (closest first)
         candidates.sort(key=lambda x: (not x[1], x[2]))
         best = candidates[0]
-        cdata = best[0]
-        seen_ids.add(cdata["card_id"])
-        picks.append(cdata)
 
-    logger.info(f"Re-extracted {len(picks)} consensus picks from {len(rec_lines)} recommendation lines")
+        # Copy card data and override tier + signal from consensus text
+        pick = dict(best[0])
+        if block["tier"]:
+            pick["price_tier"] = block["tier"]
+        pick["signal"] = block["signal"]
+
+        seen_ids.add(pick["card_id"])
+        picks.append(pick)
+
+    logger.info(f"Re-extracted {len(picks)} consensus picks from {len(rec_blocks)} recommendation blocks")
     return picks
 
 
