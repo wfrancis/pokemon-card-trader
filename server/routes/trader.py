@@ -109,13 +109,14 @@ def _extract_picks_from_consensus(db: Session, consensus_text: str) -> list[dict
         logger.warning("No numbered recommendation blocks found in consensus text")
         return []
 
-    # Get all tracked cards from DB
-    tracked_cards = db.query(Card).filter(Card.is_tracked == True).all()
+    # Get ALL priced cards — not just tracked ones, since new sets
+    # (e.g. Destined Rivals) may have priced cards not yet flagged as tracked
+    all_priced_cards = db.query(Card).filter(Card.current_price > 0).all()
 
     # Build card lookup: sort by name length descending for longest-match-first
     card_entries = []
-    for c in tracked_cards:
-        if not c.name or not c.current_price:
+    for c in all_priced_cards:
+        if not c.name:
             continue
         price = c.current_price
         be_pct = calc_breakeven_appreciation(price) if price > 0 else None
@@ -141,9 +142,22 @@ def _extract_picks_from_consensus(db: Session, consensus_text: str) -> list[dict
     picks = []
     seen_ids = set()
 
+    # Max allowed price deviation (75%) — reject obvious mismatches
+    MAX_PRICE_DIST = 0.75
+
+    def _normalize(text: str) -> str:
+        """Normalize unicode quotes/dashes so AI text matches DB names."""
+        return (text
+                .replace('\u2019', "'")   # curly right quote → straight
+                .replace('\u2018', "'")   # curly left quote → straight
+                .replace('\u201c', '"')   # curly double quotes
+                .replace('\u201d', '"')
+                .replace('\u2014', '-')   # em-dash → hyphen
+                .replace('\u2013', '-'))  # en-dash → hyphen
+
     for block in rec_blocks:
         line = block["line"]
-        line_lower = line.lower().strip()
+        line_lower = _normalize(line.lower().strip())
 
         # Parse the dollar price from the line (e.g. "$226.11", "$1,090")
         price_match = re.search(r'\$[\d,]+\.?\d*', line)
@@ -154,6 +168,11 @@ def _extract_picks_from_consensus(db: Session, consensus_text: str) -> list[dict
             except ValueError:
                 pass
 
+        # Extract the card name segment (before first "—" or "-") for match quality scoring
+        name_segment = line_lower.split('—')[0].strip() if '—' in line_lower else line_lower
+        if '—' not in line_lower and '-' in line_lower:
+            name_segment = line_lower.split('-')[0].strip()
+
         # Collect all candidate matches for this line
         candidates = []
 
@@ -161,14 +180,14 @@ def _extract_picks_from_consensus(db: Session, consensus_text: str) -> list[dict
             cid = cdata["card_id"]
             if cid in seen_ids:
                 continue
-            name_lower = cdata["name"].lower()
+            name_lower = _normalize(cdata["name"].lower())
 
             # Card name must appear in this specific recommendation line
             if name_lower not in line_lower:
                 continue
 
             # Check if set name also appears in the line
-            set_lower = (cdata["set_name"] or "").lower()
+            set_lower = _normalize((cdata["set_name"] or "").lower())
             set_match = set_lower and set_lower in line_lower
 
             # Compute price proximity score (lower = closer match)
@@ -176,13 +195,22 @@ def _extract_picks_from_consensus(db: Session, consensus_text: str) -> list[dict
             if line_price and cdata["current_price"]:
                 price_dist = abs(cdata["current_price"] - line_price) / max(line_price, 1)
 
-            candidates.append((cdata, set_match, price_dist))
+            # Reject candidates with extreme price mismatch
+            if line_price and price_dist > MAX_PRICE_DIST:
+                continue
+
+            # Name coverage: fraction of name_segment covered by card name
+            # Longer names = better match (e.g. "Cynthia's Garchomp ex" > "Garchomp ex")
+            name_coverage = len(name_lower) / max(len(name_segment), 1)
+
+            candidates.append((cdata, set_match, price_dist, name_coverage))
 
         if not candidates:
+            logger.debug(f"No matching card for recommendation: {line[:80]}")
             continue
 
-        # Sort candidates: set_match (True first), then price proximity (closest first)
-        candidates.sort(key=lambda x: (not x[1], x[2]))
+        # Sort: set_match (True first), then name_coverage (higher first), then price proximity
+        candidates.sort(key=lambda x: (not x[1], -x[3], x[2]))
         best = candidates[0]
 
         # Copy card data and override tier + signal from consensus text
