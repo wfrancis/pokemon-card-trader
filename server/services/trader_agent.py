@@ -1030,30 +1030,55 @@ They analyzed the COMPLETE $20+ tradeable universe. Synthesize into a COMPREHENS
             "price_change_30d": c.get("price_change_30d"),
         }
 
-    # Extract consensus picks by matching prices in the consensus text
+    # Extract consensus picks by matching card NAMES in the recommendation sections
+    # Only match from PORTFOLIO RECOMMENDATIONS (not WATCHLIST or general discussion)
     consensus_picks = []
     if consensus_text:
-        # Build price -> card_id lookup (price formatted to 2 decimals)
-        price_to_id = {}
-        for cid, cdata in card_data_by_id.items():
-            price = cdata.get("current_price")
-            if price:
-                key = f"{price:.2f}"
-                price_to_id[key] = cid
+        # Trim to just the recommendation sections (exclude watchlist & later)
+        # CIO format: "2) PORTFOLIO RECOMMENDATIONS" ... "WATCHLIST" or "3) WHERE"
+        rec_text = consensus_text
+        lower_full = consensus_text.lower()
 
-        # Find all dollar amounts in consensus text (e.g., $525.82, $1,090.00)
+        # Find the start of recommendations
+        rec_start = lower_full.find("portfolio recommendations")
+        if rec_start == -1:
+            rec_start = lower_full.find("core holdings")
+        if rec_start > 0:
+            rec_text = consensus_text[rec_start:]
+
+        # Cut off at watchlist or section 3 (whichever comes first)
+        lower_rec = rec_text.lower()
+        cutoff = len(rec_text)
+        for marker in ["watchlist", "where the desk agrees", "key risks", "the honest answer"]:
+            pos = lower_rec.find(marker)
+            if 0 < pos < cutoff:
+                cutoff = pos
+        rec_text = rec_text[:cutoff]
+        rec_lower = rec_text.lower()
+
         seen_ids = set()
-        for match in re.finditer(r'\$[\d,]+\.\d{2}', consensus_text):
-            price_str = match.group().lstrip('$').replace(',', '')
-            if price_str in price_to_id:
-                cid = price_to_id[price_str]
-                if cid not in seen_ids:
-                    seen_ids.add(cid)
-                    consensus_picks.append(card_data_by_id[cid])
+
+        # Sort cards by name length descending so longer names match first
+        # (e.g., "Charizard VMAX" before "Charizard")
+        sorted_cards = sorted(
+            card_data_by_id.values(),
+            key=lambda c: len(c.get("name", "")),
+            reverse=True,
+        )
+
+        for cdata in sorted_cards:
+            name = cdata.get("name", "")
+            cid = cdata["card_id"]
+            if not name or cid in seen_ids:
+                continue
+            # Check if the card name appears in the recommendation sections
+            if name.lower() in rec_lower:
+                seen_ids.add(cid)
+                consensus_picks.append(cdata)
 
         logger.info(
             f"Consensus picks extracted: {len(consensus_picks)} cards matched "
-            f"from {len(card_data_by_id)} analyzed"
+            f"from {len(card_data_by_id)} analyzed (searched recommendation sections only)"
         )
 
     return {

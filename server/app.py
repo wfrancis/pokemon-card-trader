@@ -54,6 +54,17 @@ async def lifespan(app: FastAPI):
             conn.commit()
         except Exception:
             pass
+        # Add tcgplayer_product_id column if missing
+        try:
+            conn.execute(text("ALTER TABLE cards ADD COLUMN tcgplayer_product_id INTEGER"))
+            conn.commit()
+        except Exception:
+            pass
+        try:
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_cards_tcgplayer_product_id ON cards (tcgplayer_product_id)"))
+            conn.commit()
+        except Exception:
+            pass
     logger.info("Database tables created")
 
     # Background price sync: runs TCGPlayer sync every 6 hours
@@ -63,25 +74,45 @@ async def lifespan(app: FastAPI):
 
 
 async def _background_price_sync():
-    """Background task: sync TCGPlayer prices + collect sales every 6 hours."""
+    """Background task: sync prices every 6 hours.
+
+    Uses TCGCSV (bulk, fast) as primary source.
+    Falls back to TCGPlayer per-card sync if TCGCSV fails.
+    Always collects individual sales regardless.
+    """
     SYNC_INTERVAL = 6 * 60 * 60  # 6 hours in seconds
     # Wait 60s after startup before first sync (let app fully initialize)
     await asyncio.sleep(60)
     while True:
         from server.database import SessionLocal
-        # 1. TCGPlayer price sync
+        # 1. Try TCGCSV bulk price sync (fast: ~30s for all cards)
+        tcgcsv_success = False
         try:
-            from server.services.tcgplayer_sync import sync_tcgplayer_prices
+            from server.services.tcgcsv_sync import sync_tcgcsv_prices
             db = SessionLocal()
             try:
-                logger.info("Background sync: starting TCGPlayer price update...")
-                stats = await sync_tcgplayer_prices(db)
-                logger.info(f"Background price sync complete: {stats}")
+                logger.info("Background sync: starting TCGCSV bulk price update...")
+                stats = await sync_tcgcsv_prices(db)
+                logger.info(f"TCGCSV background sync complete: {stats}")
+                tcgcsv_success = stats.get("prices_updated", 0) > 0
             finally:
                 db.close()
         except Exception as e:
-            logger.error(f"Background price sync failed: {e}")
-        # 2. Collect individual sales
+            logger.error(f"TCGCSV background sync failed: {e}")
+        # 2. Fallback: TCGPlayer per-card sync if TCGCSV didn't update anything
+        if not tcgcsv_success:
+            try:
+                from server.services.tcgplayer_sync import sync_tcgplayer_prices
+                db = SessionLocal()
+                try:
+                    logger.info("Background sync: falling back to TCGPlayer per-card...")
+                    stats = await sync_tcgplayer_prices(db)
+                    logger.info(f"TCGPlayer fallback sync complete: {stats}")
+                finally:
+                    db.close()
+            except Exception as e:
+                logger.error(f"TCGPlayer fallback sync failed: {e}")
+        # 3. Collect individual sales (always, regardless of price source)
         try:
             from server.services.sales_collector import collect_sales
             db = SessionLocal()
@@ -233,6 +264,30 @@ async def trigger_tcgplayer_history(
         return {"status": "complete", "source": "tcgplayer_history", **stats}
     except Exception as e:
         logger.error(f"TCGPlayer history backfill failed: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/sync/tcgcsv/mapping")
+async def trigger_tcgcsv_mapping(db: Session = Depends(get_db)):
+    """Build productId mapping from TCGCSV products to our cards (one-time)."""
+    from server.services.tcgcsv_sync import sync_tcgcsv_mapping
+    try:
+        stats = await sync_tcgcsv_mapping(db)
+        return {"status": "complete", "source": "tcgcsv_mapping", **stats}
+    except Exception as e:
+        logger.error(f"TCGCSV mapping failed: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/sync/tcgcsv/prices")
+async def trigger_tcgcsv_prices(db: Session = Depends(get_db)):
+    """Sync current prices from TCGCSV (daily bulk sync)."""
+    from server.services.tcgcsv_sync import sync_tcgcsv_prices
+    try:
+        stats = await sync_tcgcsv_prices(db)
+        return {"status": "complete", "source": "tcgcsv", **stats}
+    except Exception as e:
+        logger.error(f"TCGCSV price sync failed: {e}")
         return {"status": "error", "message": str(e)}
 
 
