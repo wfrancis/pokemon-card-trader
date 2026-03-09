@@ -58,14 +58,15 @@ CRITICAL CONTEXT — this is a COLLECTIBLES market, not equities:
 - Data quality flags are provided — always check them. Cards with LOW_DATA, LOW_CONFIDENCE, or EXTREME_MA_DIVERGENCE should be treated skeptically.
 
 Your quantitative framework:
-- TRANSACTION COSTS ARE THE #1 FACTOR: TCGPlayer fees (~13-16% on sells) + shipping ($4.50/card) create 30-40% roundtrip friction. Every model must subtract this.
-- Breakeven hurdle: a $50 card needs ~35% appreciation ($67.50) just to break even. Factor this into EVERY expected return calculation.
+- TRANSACTION COSTS VARY BY TIER: Premium ($100+) ~20-25% breakeven. Mid ($20-100) ~25-35%. Budget ($5-20) ~40-60%. Factor the TIER-SPECIFIC breakeven into expected return calculations.
+- Different tiers need different strategies: Premium = buy-and-hold for appreciation. Mid = catalyst-driven active trading. Budget = volume-based accumulation.
 - Sales velocity (transactions/month) is the primary liquidity signal — not price chart patterns
 - Market price vs median sale price spread reveals stale/inflated pricing vs actual executable levels
 - Cross-sectional value analysis: compare cards within the same set, rarity tier, or character franchise
 - Scarcity modeling: vintage cards have fixed supply (no reprints), modern cards have elastic supply — this fundamentally changes valuation
 - Regime detection from FLOW data: rising sales velocity = risk-on, declining velocity = risk-off
 - Position sizing based on exit liquidity (can you sell 3 copies in 30 days?) AND fee-adjusted Kelly criterion
+- Use hold_economics data per card — annualized net returns tell you which hold period makes sense
 
 Communication:
 - Lead with sales data, flow metrics, and supply analysis — NOT RSI/MACD
@@ -84,12 +85,14 @@ CRITICAL CONTEXT — this is a COLLECTIBLES market, not equities:
 - Vintage (WOTC era) cards are like fine art — fixed supply, driven by nostalgia and collector prestige. Modern cards are like consumer goods — elastic supply, driven by playability and hype cycles.
 
 Your portfolio management philosophy:
-- THE FEE HURDLE IS REAL: With ~30-35% roundtrip friction, every position needs an expected move of >35% to be worth deploying capital. This eliminates most short-term trades.
+- FEES VARY BY TIER: Premium ($100+) has manageable ~20-25% breakeven — invest like blue chips. Mid-high ($50-100) needs 25-30% appreciation — catalyst-driven trades. Mid ($20-50) needs 30-35% — momentum or accumulation plays.
+- Build a PORTFOLIO ACROSS ALL TIERS. Allocate: ~45% core (premium), ~30% active (mid-high), ~15% growth (mid), ~10% cash.
+- You are seeing the COMPLETE $20+ tradeable universe — every card worth trading. No cards were pre-filtered by scoring. Analyze them ALL.
 - Top-down thesis: WHERE in the Pokemon timeline should capital be deployed? Vintage WOTC? Modern competitive? Mid-era nostalgia?
-- Every position needs a CATALYST that can drive >35% appreciation (the fee hurdle) — not just any catalyst, one big enough to overcome friction
+- Every mid-high position needs a CATALYST. Premium positions can rely on secular appreciation. Mid positions need momentum or accumulation thesis.
 - Reprint risk is the #1 risk for modern cards — vintage cards can NEVER be reprinted
 - Think in terms of CHARACTER FRANCHISES: "Charizard exposure" across sets, "Eeveelution basket," "Gen 1 nostalgia" as themes
-- Portfolio construction: diversify across eras, character IPs, and rarity tiers — hold period should be 3-12 months minimum to justify fees
+- Use hold_economics data: different hold periods work for different tiers. Don't apply the same 6-month hold to every card.
 - Use the set-level market cap data to identify which sets are overvalued vs undervalued as a group
 
 Communication:
@@ -108,11 +111,12 @@ CRITICAL CONTEXT — this is a COLLECTIBLES market, not equities:
 - Condition matters enormously: Near Mint trades at a premium with better liquidity. Lightly Played / Moderately Played may sit for weeks.
 
 Your liquidity trading framework:
-- THE FEE WALL: TCGPlayer takes ~13-16% on every sell (commission + processing + shipping). Cards under $20 are UNTRADEABLE for profit. You now have per-card breakeven_pct, liquidity_score, and est_time_to_sell_days data.
+- FEES SCALE WITH PRICE: Premium ($100+) ~20-25% breakeven = highly tradeable. Mid-high ($50-100) ~25-30% = tradeable with discipline. Mid ($20-50) ~30-35% = viable for momentum/accumulation. Sub-$20 excluded (not worth after fees).
+- You are seeing the COMPLETE $20+ tradeable universe. Every card here clears the minimum trade threshold. Analyze ALL of them for liquidity.
 - Sales velocity (sales_90d, sales_30d) is the #1 metric — more important than any price indicator
 - Market vs median sale spread reveals execution reality: tight spread = liquid, wide spread = paper gains
-- Exit quality assessment: for every card you'd buy, ask "can I sell 3 copies within 30 days at a price ABOVE the breakeven threshold?"
-- Cards with 0 sales in 90 days are UNTRADEABLE regardless of what the price chart says
+- Exit quality varies by tier: premium needs "can I sell 1 copy in 30 days?", mid-high needs "can I sell 2 copies?", mid needs "is volume sufficient?"
+- Cards with 0 sales in 90 days are ILLIQUID — flag but don't auto-reject if price trend is strong
 - Time-to-sell is a hidden cost: every day you hold is opportunity cost + market risk. Use est_time_to_sell_days.
 - Seasonal patterns: holiday gift-buying (Nov-Dec), tax refund season (Feb-Mar), summer convention spikes
 - Condition mix in sales data tells you WHO is buying: NM-only buyers are collectors (premium), LP/MP buyers are players (volume)
@@ -124,22 +128,51 @@ Communication:
 - Use flow trading terminology applied to collectibles: "paper market," "real prints," "marked-to-myth"
 - Call out cards that look good on paper but have no real volume"""
 
-CONSENSUS_SYSTEM_PROMPT = """You are the Chief Investment Officer synthesizing input from three specialized traders on your Pokemon card trading desk. Your job is to cut through the noise and deliver actionable intelligence — with REAL economics.
+CONSENSUS_SYSTEM_PROMPT = """You are the Chief Investment Officer synthesizing input from three specialized traders on your Pokemon card trading desk. Your traders analyzed the COMPLETE $20+ tradeable universe — every card worth trading. Your job is to deliver a COMPREHENSIVE, ACTIONABLE portfolio from this full dataset.
 
-CRITICAL CONTEXT — FEES DESTROY MOST TRADING PROFITS:
-TCGPlayer charges ~13-16% on sells (commission + processing + shipping). Roundtrip friction is 30-40% for $20-100 cards. A card needs ~30-35% appreciation JUST TO BREAK EVEN. Cards under $20 are untradeable for profit. This is the single most important factor in your analysis.
+CONTEXT — The $20+ universe:
+- Premium ($100+): ~20-25% breakeven. Blue chip investments.
+- Mid-high ($50-100): ~25-30% breakeven. Active trading sweet spot.
+- Mid ($20-50): ~30-35% breakeven. Momentum and accumulation plays.
+- Cards under $20 were excluded — not viable after TCGPlayer fees.
 
-Focus on:
-1. **FEE-ADJUSTED VERDICT** — Are any of the traders' picks actually profitable after fees? Use the breakeven_pct data. If a card needs 35% appreciation to break even and the expected move is 15%, it's a LOSS regardless of how good the thesis is.
-2. Where all three agree — these are HIGH CONVICTION calls. But only if they clear the fee hurdle.
-3. Where they disagree — flag the debate. The liquidity trader's fee objections should be VETO-level weight.
-4. **HOLD PERIOD RECOMMENDATION** — Given the fee drag, should capital be deployed as: (a) long-term holds (6-12 months, waiting for large moves), (b) medium-term catalyst plays (1-3 months, >40% upside expected), or (c) not deployed at all?
-5. The final TOP 3 actionable trades with: entry price, breakeven sell price, target, stop-loss, expected time to sell, and NET return after fees.
-6. **THE HONEST ANSWER** — Is active trading in Pokemon cards viable after fees, or is this a buy-and-hold market where you pick 5-10 cards and sit on them for a year?
+YOUR OUTPUT MUST INCLUDE:
 
-IMPORTANT: If the fee math shows most trading is unprofitable, say so directly. Your traders may be excited about a 20% move, but if fees eat 35%, that's a net loss. Be the adult in the room.
+## 1. MARKET REGIME (2-3 sentences)
+What's the overall market doing? Accumulating, marking up, distributing, or marking down?
 
-Be concise. Executive summary — 500 words max. Bullet points. Clear action list at the end."""
+## 2. PORTFOLIO RECOMMENDATIONS (12-18 cards across tiers)
+Organize by tier. For EACH pick:
+- Card name, set, current price, tier
+- Strategy: BUY NOW / ACCUMULATE / WATCHLIST
+- Thesis (1-2 sentences — why this card?)
+- Entry price, target, stop-loss
+- Breakeven sell price (after fees)
+- Hold period: short (<30d), medium (1-6mo), long (6-12mo+)
+- Conviction: HIGH / MEDIUM / SPECULATIVE
+
+### CORE HOLDINGS (Premium $100+) — 3-5 picks
+Long-term holds. Low fee impact. Fixed supply. Blue chips.
+
+### ACTIVE TRADES (Mid-High $50-100) — 4-6 picks
+Catalyst-driven or momentum plays. Best risk/reward after fees. 3-6 month holds.
+
+### GROWTH PLAYS (Mid $20-50) — 3-5 picks
+Momentum, accumulation, or tier-graduation candidates. Higher fee friction but viable.
+
+### WATCHLIST — 3-5 cards
+Not ready to buy but worth monitoring. Why and what would trigger action?
+
+## 3. WHERE THE DESK AGREES vs DISAGREES
+High-conviction calls (all 3 traders agree) vs debates.
+
+## 4. KEY RISKS
+Top 3 risks to the portfolio.
+
+## 5. THE HONEST ANSWER
+Is this market tradeable? What annual net return is realistic across tiers?
+
+Be specific. Use numbers. 800 words max."""
 
 # Persona metadata for frontend rendering
 PERSONAS = {
@@ -195,26 +228,54 @@ def _gather_market_data(db: Session) -> dict:
     )
 
     # Get average price and total market cap (tracked cards only)
-    latest_prices = {}
+    # Bulk query: get latest price per card in ONE query instead of N individual queries
+    import time as _time
+    _t0 = _time.monotonic()
+
     all_cards = db.query(Card).filter(Card.is_tracked == True).all()
     card_lookup = {c.id: c for c in all_cards}
-    for card in all_cards:
-        latest = (
-            db.query(PriceHistory)
-            .filter(PriceHistory.card_id == card.id, PriceHistory.market_price.isnot(None))
-            .order_by(PriceHistory.date.desc())
-            .first()
+
+    # Subquery: max date per card (uses ix_price_history_card_date index)
+    latest_date_sq = (
+        db.query(
+            PriceHistory.card_id,
+            func.max(PriceHistory.date).label("max_date"),
         )
-        if latest:
-            latest_prices[card.id] = {
+        .filter(PriceHistory.market_price.isnot(None))
+        .group_by(PriceHistory.card_id)
+        .subquery()
+    )
+
+    # Join to get the actual price at max_date
+    from sqlalchemy import and_
+    latest_records = (
+        db.query(PriceHistory)
+        .join(
+            latest_date_sq,
+            and_(
+                PriceHistory.card_id == latest_date_sq.c.card_id,
+                PriceHistory.date == latest_date_sq.c.max_date,
+            ),
+        )
+        .filter(PriceHistory.market_price.isnot(None))
+        .all()
+    )
+
+    latest_prices = {}
+    for rec in latest_records:
+        card = card_lookup.get(rec.card_id)
+        if card and card.is_tracked:
+            latest_prices[rec.card_id] = {
                 "name": card.name,
                 "set_name": card.set_name,
                 "set_id": card.set_id,
                 "rarity": card.rarity,
-                "price": latest.market_price,
+                "price": rec.market_price,
                 "variant": card.price_variant,
-                "date": str(latest.date),
+                "date": str(rec.date),
             }
+
+    logger.info(f"Loaded latest prices for {len(latest_prices)} cards in {_time.monotonic() - _t0:.1f}s")
 
     prices = [v["price"] for v in latest_prices.values() if v["price"]]
     data["market_overview"] = {
@@ -230,11 +291,17 @@ def _gather_market_data(db: Session) -> dict:
     movers = get_top_movers(db, limit=5)
     data["top_movers"] = movers
 
-    # 3. Technical analysis — now includes regime, volatility, confidence, spread
+    # 3. Technical analysis — analyze ALL viable cards (price >= $20)
+    #    Only 154 cards are >= $20, so this is fast (~2-8 seconds)
+    viable_prices = {cid: info for cid, info in latest_prices.items()
+                     if (info.get("price") or 0) >= 20}
+    logger.info(f"Analyzing {len(viable_prices)} viable cards (>=$20) out of {len(latest_prices)} tracked")
+
+    _t1 = _time.monotonic()
     card_analyses = []
-    for card_id, info in latest_prices.items():
+    for card_id, info in viable_prices.items():
         analysis = analyze_card(db, card_id)
-        if analysis.signal != "hold" or analysis.rsi_14 is not None:
+        if True:  # analyze ALL viable cards, no signal filter
             entry = {
                 "card_id": card_id,
                 "name": info["name"],
@@ -287,7 +354,34 @@ def _gather_market_data(db: Session) -> dict:
 
             card_analyses.append(entry)
 
-    data["card_analyses"] = sorted(card_analyses, key=lambda x: abs(x.get("signal_strength", 0)), reverse=True)[:15]
+    # Sort by signal strength for display ordering
+    card_analyses.sort(key=lambda x: abs(x.get("signal_strength", 0)), reverse=True)
+
+    # Tag each card with its price tier (all are >= $20 since we pre-filtered)
+    for c in card_analyses:
+        price = c.get("current_price") or 0
+        if price >= 100:
+            c["price_tier"] = "premium"
+        elif price >= 50:
+            c["price_tier"] = "mid_high"
+        else:
+            c["price_tier"] = "mid"
+
+    # Send ALL viable cards — no artificial cap
+    data["card_analyses"] = card_analyses
+
+    # Tier summary for personas
+    premium = [c for c in card_analyses if c.get("price_tier") == "premium"]
+    mid_high = [c for c in card_analyses if c.get("price_tier") == "mid_high"]
+    mid = [c for c in card_analyses if c.get("price_tier") == "mid"]
+    data["tier_summary"] = {
+        "premium_100_plus": len(premium),
+        "mid_high_50_to_100": len(mid_high),
+        "mid_20_to_50": len(mid),
+        "total_analyzed": len(card_analyses),
+        "total_tracked": len(latest_prices),
+        "filter": "price >= $20 (all viable for profitable trading)",
+    }
 
     # 4. Backtest results — portfolio with combined strategy (summary only)
     try:
@@ -303,10 +397,10 @@ def _gather_market_data(db: Session) -> dict:
         logger.warning(f"Portfolio backtest failed: {e}")
         data["portfolio_backtest"] = {"error": str(e)}
 
-    # 5. Strategy comparison for top cards (top 3 cards x 3 strategies)
+    # 5. Strategy comparison for top cards (top 5 cards x 3 strategies)
     strategy_comparison = []
-    top_card_ids = [a["card_id"] for a in card_analyses[:3]]
-    top_strategies = ["sma_crossover", "bollinger_bounce", "macd_signal"]
+    top_card_ids = [a["card_id"] for a in card_analyses[:5]]
+    top_strategies = ["sma_crossover", "bollinger_bounce", "combined"]
     for card_id in top_card_ids:
         card_strats = {}
         for strat_key in top_strategies:
@@ -345,7 +439,7 @@ def _gather_market_data(db: Session) -> dict:
         cards_with_sales = db.query(func.count(func.distinct(Sale.card_id))).scalar() or 0
         recent_sales = db.query(func.count(Sale.id)).filter(Sale.order_date >= cutoff_30d).scalar() or 0
 
-        # Per-card sales volume for analyzed cards (top 15)
+        # Per-card sales volume for analyzed cards (all tiers)
         analyzed_card_ids = [a["card_id"] for a in data["card_analyses"]]
         card_sales_data = []
         for cid in analyzed_card_ids:
@@ -386,11 +480,12 @@ def _gather_market_data(db: Session) -> dict:
         logger.warning(f"Sales data collection failed: {e}")
         data["sales_liquidity"] = {"error": str(e)}
 
-    # 8. NEW: Trading Economics — fees, breakeven, liquidity scores
+    # 8. NEW: Trading Economics — fees, breakeven, liquidity scores, hold period analysis
     try:
         from server.services.trading_economics import (
             get_fee_schedule_summary, calc_breakeven_appreciation,
             calc_liquidity_score, estimate_time_to_sell, is_viable_trade,
+            analyze_hold_economics,
         )
 
         fee_summary = get_fee_schedule_summary("tcgplayer")
@@ -431,13 +526,28 @@ def _gather_market_data(db: Session) -> dict:
             entry["est_time_to_sell_days"] = tts["estimated_days"]
             entry["tts_confidence"] = tts["confidence"]
 
-        # Fee-aware portfolio backtest comparison
+            # Hold period analysis — what does the economics look like at different hold periods?
+            if price > 0 and entry.get("sma_90"):
+                # Estimate appreciation from 90d SMA trend
+                price_90d_ago = entry.get("sma_90", price)
+                days_in_sample = min(entry.get("history_days", 90) or 90, 365)
+                hold_econ = analyze_hold_economics(
+                    buy_price=price_90d_ago,
+                    current_price=price,
+                    days_held=min(days_in_sample, 90),
+                    platform="tcgplayer",
+                )
+                entry["hold_economics"] = {
+                    "annualized_gross_pct": hold_econ["annualized_gross_pct"],
+                    "annualized_net_pct": hold_econ["annualized_net_pct"],
+                    "clears_hurdle": hold_econ["clears_hurdle"],
+                    "recommended_hold": hold_econ["hold_period"],
+                }
+
+        # Fee-aware backtest comparison — gross vs net for top portfolio cards
         fee_backtest_comparison = {}
         try:
             gross_portfolio = data.get("portfolio_backtest", {})
-            fee_portfolio = run_portfolio_backtest(db, strategy="combined", top_n=10,
-                                                   initial_capital=10000)
-            # Run fee-aware version on same top cards
             from server.services.backtesting import run_backtest as _rb
             fee_card_results = []
             for cr in gross_portfolio.get("card_results", [])[:5]:
@@ -471,7 +581,12 @@ def _gather_market_data(db: Session) -> dict:
             "cards_below_minimum_trade_size": cards_below_min,
             "minimum_viable_trade_price": 20.0,
             "fee_backtest_comparison": fee_backtest_comparison,
-            "note": "All returns should be evaluated AFTER fees. A 15% gross return with 13% roundtrip fees = 2% net — barely worth the risk.",
+            "tier_breakeven_guide": {
+                "premium_100_plus": "~20-25% breakeven. Active trading viable.",
+                "mid_high_50_to_100": "~25-30% breakeven. Catalyst-driven trades.",
+                "mid_20_to_50": "~30-35% breakeven. Momentum or accumulation.",
+            },
+            "note": "All cards in this analysis are >= $20 — the complete tradeable universe. Cards under $20 excluded (fee friction too high for profitable trading).",
         }
     except Exception as e:
         logger.warning(f"Trading economics collection failed: {e}")
@@ -512,15 +627,17 @@ def _gather_market_data(db: Session) -> dict:
         # Top 10 sets by market cap
         data["set_analysis"] = sorted(set_summaries, key=lambda x: x["set_market_cap"], reverse=True)[:10]
 
-        # Set concentration in top 15 cards (correlation risk)
+        # Set concentration in analyzed cards (correlation risk)
         set_counts = {}
         for a in data["card_analyses"]:
             s = a.get("set", "Unknown")
             set_counts[s] = set_counts.get(s, 0) + 1
+        total_analyzed = len(data["card_analyses"])
         data["concentration_risk"] = {
-            "top_15_set_distribution": set_counts,
+            "analyzed_set_distribution": set_counts,
+            "total_cards_analyzed": total_analyzed,
             "max_single_set_exposure": max(set_counts.values()) if set_counts else 0,
-            "warning": "HIGH" if max(set_counts.values(), default=0) >= 5 else "LOW",
+            "warning": "HIGH" if max(set_counts.values(), default=0) >= (total_analyzed * 0.3) else "LOW",
         }
     except Exception as e:
         logger.warning(f"Set analysis failed: {e}")
@@ -610,27 +727,31 @@ async def _call_openai_async(system: str, user_message: str, max_tokens: int = 8
 
 def _build_persona_prompt(persona_id: str, market_data: dict) -> str:
     """Build persona-specific user prompt from shared market data."""
+    tier_summary = market_data.get("tier_summary", {})
     base = f"""Here's the current Pokemon card market data from our trading platform.
 
 ## Market Overview
 {json.dumps(market_data['market_overview'], indent=2)}
 
+## Price Tier Summary
+Cards are segmented into tiers — DIFFERENT tiers require DIFFERENT strategies:
+{json.dumps(tier_summary, indent=2)}
+
 ## Top Movers (Gainers & Losers)
 {json.dumps(market_data['top_movers'], indent=2)}
 
-## Technical Analysis (Top 15 Cards by Signal Strength)
-NOTE: Each card now includes: regime, volatility, data_flags, breakeven_pct (minimum appreciation to profit after fees), liquidity_score (0-100), est_time_to_sell_days, viable_trade (bool — is the card above the $20 minimum for profitable trading?).
+## Card Analysis — COMPLETE $20+ Universe ({tier_summary.get('total_analyzed', 0)} Viable Cards out of {tier_summary.get('total_tracked', '?')} Tracked)
+Each card includes: price_tier (premium $100+ / mid_high $50-100 / mid $20-50), regime, volatility, data_flags, breakeven_pct, liquidity_score (0-100), est_time_to_sell_days, viable_trade, and hold_economics (annualized gross/net returns, whether it clears the fee hurdle).
+NOTE: This is EVERY card with price >= $20 — the complete tradeable universe. No cards were filtered out by scoring. Analyze them ALL.
 {json.dumps(market_data['card_analyses'], indent=2)}
 
-## Trading Economics — CRITICAL: Real-World Fees & Friction
-This section contains TCGPlayer fee schedules, breakeven calculations at various price points, and gross-vs-fee-adjusted backtest comparisons. ALL recommendations must account for these costs.
+## Trading Economics — Fee Schedule & Friction
 {json.dumps(market_data.get('trading_economics', {}), indent=2)}
 
 ## Portfolio Backtest Summary (Combined Strategy, $10K, Top 10 Cards)
-NOTE: Sharpe ratios computed from in-position returns only. See trading_economics.fee_backtest_comparison for fee-adjusted versions.
 {json.dumps(market_data['portfolio_backtest'], indent=2)}
 
-## Strategy Comparison (Top 3 Cards x 3 Strategies)
+## Strategy Comparison (Top 5 Cards x 3 Strategies)
 {json.dumps(market_data['strategy_comparison'], indent=2)}
 
 ## Available Trading Strategies
@@ -642,48 +763,97 @@ NOTE: Sharpe ratios computed from in-position returns only. See trading_economic
 ## Set-Level Analysis (Top 10 Sets by Market Cap)
 {json.dumps(market_data.get('set_analysis', []), indent=2)}
 
-## Concentration Risk (Set distribution in top 15 analyzed cards)
+## Concentration Risk
 {json.dumps(market_data.get('concentration_risk', {}), indent=2)}
 """
 
     if persona_id == "quant":
         return base + """
-Give me your quantitative analysis — ALL returns must be evaluated AFTER FEES:
-1. **Fee-Adjusted Reality Check** — Look at the trading_economics.fee_backtest_comparison. How many strategies are still profitable after TCGPlayer fees? What's the average fee drag? Which cards have a breakeven_pct that's actually achievable?
-2. **Regime Detection** — Use per-card regime, cross-sectional dispersion, and realized vol.
-3. **Hold Period Optimization** — Given the ~30-35% roundtrip friction, what's the MINIMUM hold period that makes economic sense? Short-term trading (<30d) vs medium-term (30-180d) vs long-term (>180d) — which actually works after fees?
-4. **Top Picks** — Your top 3-5 cards ranked by FEE-ADJUSTED expected return. Each pick MUST: (a) be above $20 (viable_trade=true), (b) have a liquidity_score > 20, (c) show expected appreciation > breakeven_pct. Include the breakeven hurdle for each.
-5. **Position Sizing** — Vol-adjusted sizing using Kelly criterion, but account for the ~15% roundtrip fee as a fixed cost that reduces optimal fraction.
-6. **Strategy Viability** — Given that fees destroy 10-40% of gross returns, which of the 8 strategies still generate positive ALPHA after fees? Is active trading even viable vs buy-and-hold?
-7. **Red Flags** — Cards where viable_trade=false (under $20), or where breakeven_pct > 50% (need massive move just to break even).
+Give me your quantitative analysis — organized BY PRICE TIER.
+You are seeing the COMPLETE $20+ universe — every single card with a viable trading price. Analyze them ALL.
 
-Show your work. Reference the actual fee numbers. If the math says most active trading is unprofitable after fees, SAY THAT."""
+## TIER-SPECIFIC ANALYSIS (This is the core of your report)
+For EACH tier, provide picks and strategy:
+
+### PREMIUM ($100+) — 3-5 picks
+Low fee impact (breakeven ~20-25%). Long-term hold candidates. Focus on: scarcity premium, supply inelasticity (vintage can't be reprinted), annualized return potential. Use hold_economics data. These are your high-conviction, low-turnover positions.
+
+### MID-HIGH ($50-100) — 3-5 picks
+Moderate fee impact (breakeven ~25-30%). This is the ACTIVE TRADING ZONE. Which strategies actually work here after fees? Use fee_backtest_comparison. Look for: momentum breakouts, mean reversion setups, catalyst-driven appreciation > breakeven_pct.
+
+### MID ($20-50) — 3-5 picks
+Higher fee impact (breakeven ~30-35%) but still viable. Look at sales velocity (sales_90d). Cards with >20 sales/90d have real price discovery. Watch for: cards approaching the $50 threshold (graduating to mid_high tier), momentum breakouts.
+
+## CROSS-CUTTING ANALYSIS
+1. **Hold Period by Tier** — Use hold_economics to recommend hold periods per tier. Premium: 6-12mo. Mid-high: 3-6mo. Mid: 1-3mo or accumulate.
+2. **Strategy Viability by Tier** — Which of the 8 strategies work in which tier after fees?
+3. **Regime-Adjusted View** — Are we in accumulation, markup, distribution, or markdown? Different tiers may be in different regimes.
+4. **Red Flags** — Cards with LOW_CONFIDENCE or EXTREME_MA_DIVERGENCE flags. Stale pricing.
+
+Give me 10-15 total picks across tiers. Show the math."""
 
     elif persona_id == "pm":
         return base + """
-Give me your portfolio manager's view — with REALISTIC economics:
-1. **The Hurdle Rate Problem** — Review the trading_economics section. With 30-35% roundtrip friction, what's the MINIMUM conviction level and expected appreciation for a position to make sense? How does this change your portfolio construction?
-2. **Hold Period Strategy** — Short-term trading (<30d) is almost certainly fee-impaired. Should the portfolio focus on medium-term (30-180d) catalyst plays or long-term (>180d) hold-for-appreciation? What's your thesis?
-3. **Catalyst Map** — What events could drive >35% appreciation (the hurdle rate) in the next 30-180 days? Only catalysts that clear the fee hurdle matter.
-4. **Top Picks** — Your top 3-5 card recommendations. Each MUST include: (a) expected appreciation %, (b) the card's breakeven_pct from trading_economics, (c) estimated time to realize, (d) liquidity_score and est_time_to_sell. NO picks below $20 (fee-impaired).
-5. **Portfolio Construction** — Build a 10-card portfolio with realistic exit assumptions. Use liquidity_score to avoid illiquid traps. Core (hold 6-12 months) vs opportunistic (hold 1-3 months for catalyst)?
-6. **Long/Short Reality** — Can you actually short Pokemon cards? (No.) So what's the alternative risk management? Rotation, diversification, cash allocation?
-7. **Net P&L Target** — Given fee drag, what annual NET return should LPs expect? Be honest.
+Give me your portfolio construction — you have the COMPLETE $20+ tradeable universe. Build the best portfolio from ALL available cards.
 
-Think like you're presenting to LPs who ask hard questions about fees."""
+## PORTFOLIO CONSTRUCTION BY TIER
+
+### CORE HOLDINGS — Premium ($100+): 3-5 positions, 45% of capital
+These are your "blue chip" positions. Vintage WOTC cards with fixed supply, strong nostalgia demand, proven price floors. Hold 6-12+ months. Fee impact is manageable at this price point (~20-25% breakeven). Focus on: character IP strength (Charizard, Dragonite, Mewtwo), set prestige (Base Set, Fossil, Team Rocket), long-term appreciation trend from hold_economics.
+
+### ACTIVE BOOK — Mid-High ($50-100): 3-5 positions, 30% of capital
+This is where CATALYSTS matter. What events could drive 30-50% moves? New set releases, anime announcements, tournament meta shifts. Each pick needs: (a) specific catalyst thesis, (b) timeline, (c) target above breakeven_pct. Hold 3-6 months.
+
+### GROWTH PLAYS — Mid ($20-50): 3-5 positions, 15% of capital
+Viable trades with higher fee friction (~30-35% breakeven). Look for: momentum breakouts, cards approaching the $50 tier, high sales velocity proving real demand. Hold 1-3 months or accumulate.
+
+### CASH RESERVE — 10% of capital
+Dry powder for opportunities.
+
+## THEMATIC EXPOSURES
+- **Character Franchises**: What character IPs should we be overweight? (Charizard, Eeveelutions, Pikachu, etc.)
+- **Era Allocation**: Vintage WOTC vs mid-era ex/DP vs modern V/VMAX — where's the best risk-adjusted return?
+- **Set Rotation**: Which sets are gaining value? Which are losing?
+
+## RISK MANAGEMENT
+- Concentration limits per set/era
+- Fee-adjusted net P&L target for each tier
+- Exit rules per tier (stop-loss, take-profit)
+
+Give me a complete portfolio of 10-15 cards across tiers with allocation percentages."""
 
     else:  # liquidity
         return base + """
-Give me your liquidity read — grounded in REAL execution economics:
-1. **The Friction Tax** — Review the trading_economics fee schedule and examples. At what price point does trading become viable ($20+)? How many of the top 15 analyzed cards are above this threshold (cards_above_minimum_trade_size)?
-2. **Execution Cost Reality** — For each card with sales data, calculate the TRUE roundtrip cost. Use breakeven_pct — a card needs to appreciate by this % just to break even. Flag any picks where breakeven_pct > 40%.
-3. **Time-to-Sell Risk** — Use est_time_to_sell_days and tts_confidence. Cards that take >14 days to sell have hidden carrying costs. Every day you hold is a day the market can move against you.
-4. **Top Picks** — Your top 3-5 ACTUALLY TRADEABLE cards. Requirements: (a) viable_trade=true, (b) liquidity_score >= 30, (c) est_time_to_sell < 14 days, (d) expected appreciation > breakeven_pct. If fewer than 3 cards meet these criteria, say so.
-5. **Fee-Adjusted Backtest** — Look at fee_backtest_comparison. How many strategies DESTROY value after fees? Is the combined strategy profitable or is it just churning capital and paying fees?
-6. **Optimal Trading Frequency** — Given ~15% sell-side friction, how often can you trade and still profit? Monthly? Quarterly? Or is buy-and-hold-for-a-year the only viable strategy?
-7. **The Hard Truth** — Based on the fee schedule and sales velocity data, is active trading in Pokemon cards profitable at all, or should capital be deployed as long-term holds?
+Give me your liquidity analysis — you have the COMPLETE $20+ tradeable universe. Analyze ALL of them for liquidity.
 
-No sugar-coating. If the fees make most trading unprofitable, I need to know that before deploying capital."""
+## LIQUIDITY LANDSCAPE BY TIER
+
+### PREMIUM ($100+)
+Lower volume but wide margins per trade. Use liquidity_score and est_time_to_sell_days. Which premium cards can you actually EXIT within 30 days? What's the typical bid-ask spread? Flag any "marked-to-myth" cards (high listed price, zero recent sales).
+
+### MID-HIGH ($50-100)
+The sweet spot for volume AND viability. Which cards have the tightest market-vs-median-sale spread? Rank by: (a) liquidity_score, (b) sales velocity, (c) spread tightness. This tier should have the most tradeable cards — identify them.
+
+### MID ($20-50)
+Higher fee friction but often decent volume. Which cards have exceptional liquidity (sales_90d > 20)? These are your "flow names" — the market is actively trading them. Cards here with strong momentum could graduate to mid_high.
+
+### MARKET MICROSTRUCTURE
+- **Execution quality**: For cards with sales data, how close are market prices to actual sale prices? Cards with >10% market-vs-median spread have STALE PRICING — the listed price is fiction.
+- **Volume trends**: Are sales accelerating or decelerating across tiers? Use sales_30d vs sales_90d ratios.
+- **Seasonal patterns**: Based on sales timestamps, any time-of-year patterns in volume?
+
+## TOP PICKS — TRADEABLE CARDS (8-12 picks across tiers)
+For each pick, provide:
+- Price, tier, liquidity_score, est_time_to_sell
+- Why it's tradeable (volume, tight spread, recent sales proving price)
+- Recommended approach: (a) active trade (buy now, sell on catalyst), (b) accumulate (buy on dips, hold), (c) watchlist (wait for entry)
+
+## FLOW SIGNALS
+- Which cards are seeing UNUSUAL volume? (sales acceleration)
+- Any cards transitioning tiers? (mid → mid_high = growing value, mid_high → premium = breakout)
+- Where is the smart money going? (premium cards with sudden volume = institutional collector)
+
+Give me 8-12 tradeable picks plus 3-5 watchlist cards. Be specific about entry, exit, and liquidity risk."""
 
 
 async def get_multi_persona_analysis(db: Session) -> dict:
@@ -760,7 +930,11 @@ async def get_multi_persona_analysis(db: Session) -> dict:
 
 {chr(10).join(analyses_for_consensus)}
 
-Synthesize their views into an executive summary. Where do they agree (high conviction)? Where do they disagree (flag the debate)? Give me the final TOP 3 actionable trades."""
+They analyzed the COMPLETE $20+ tradeable universe. Synthesize into a COMPREHENSIVE portfolio:
+- 12-18 picks organized by tier (Core Holdings $100+, Active Trades $50-100, Growth Plays $20-50, Watchlist)
+- Where do they agree (high conviction)? Where do they disagree?
+- Include entry price, target, stop-loss, breakeven, hold period for each pick
+- Cover ALL tiers — give the user the widest actionable set of recommendations"""
 
         try:
             consensus_result = await _call_openai_async(
@@ -821,13 +995,13 @@ async def get_trader_analysis(db: Session) -> dict:
 ## Top Movers (Gainers & Losers)
 {json.dumps(market_data['top_movers'], indent=2)}
 
-## Technical Analysis (Top 15 Cards by Signal Strength)
+## Technical Analysis (ALL {len(market_data['card_analyses'])} Viable Cards — $20+ Universe)
 {json.dumps(market_data['card_analyses'], indent=2)}
 
 ## Portfolio Backtest Summary (Combined Strategy, $10K, Top 10 Cards)
 {json.dumps(market_data['portfolio_backtest'], indent=2)}
 
-## Strategy Comparison (Top 3 Cards x 3 Strategies)
+## Strategy Comparison (Top 5 Cards x 3 Strategies)
 {json.dumps(market_data['strategy_comparison'], indent=2)}
 
 ## Available Trading Strategies
