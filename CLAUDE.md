@@ -102,6 +102,10 @@ frontend/        # React app
 5. **Document Results**: Add review section to `tasks/todo.md`
 6. **Capture Lessons**: Update `tasks/lessons.md` after corrections
 
+## Git Commits
+- **NEVER add `Co-Authored-By: Claude` or any Claude attribution line to commits**
+- All commits are authored by William Francis <wbfranci@gmail.com> only
+
 ## Core Principles
 
 - **Simplicity First**: Make every change as simple as possible. Impact minimal code.
