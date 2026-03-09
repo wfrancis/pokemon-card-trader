@@ -5,6 +5,7 @@ Uses OpenAI GPT-5.4 with three specialized trader personas (Quant, Hedge Fund PM
 Liquidity Trader) running in parallel, plus a consensus CIO synthesis.
 """
 import os
+import re
 import json
 import logging
 import asyncio
@@ -13,6 +14,7 @@ from sqlalchemy import func, asc
 
 from server.models.card import Card
 from server.models.price_history import PriceHistory
+from server.models.trader_snapshot import TraderAnalysisSnapshot
 from server.services.market_analysis import analyze_card, get_top_movers
 from server.services.backtesting import run_backtest, run_portfolio_backtest, STRATEGIES
 
@@ -273,6 +275,7 @@ def _gather_market_data(db: Session) -> dict:
                 "price": rec.market_price,
                 "variant": card.price_variant,
                 "date": str(rec.date),
+                "image_small": card.image_small,
             }
 
     logger.info(f"Loaded latest prices for {len(latest_prices)} cards in {_time.monotonic() - _t0:.1f}s")
@@ -304,6 +307,7 @@ def _gather_market_data(db: Session) -> dict:
         if True:  # analyze ALL viable cards, no signal filter
             entry = {
                 "card_id": card_id,
+                "image_small": info.get("image_small"),
                 "name": info["name"],
                 "set": info["set_name"],
                 "set_id": info["set_id"],
@@ -725,8 +729,12 @@ async def _call_openai_async(system: str, user_message: str, max_tokens: int = 8
     }
 
 
-def _build_persona_prompt(persona_id: str, market_data: dict) -> str:
-    """Build persona-specific user prompt from shared market data."""
+def _build_persona_prompt(persona_id: str, market_data: dict, previous_consensus: dict | None = None) -> str:
+    """Build persona-specific user prompt from shared market data.
+
+    Args:
+        previous_consensus: Optional dict with 'text' and 'date' from the last analysis run.
+    """
     tier_summary = market_data.get("tier_summary", {})
     base = f"""Here's the current Pokemon card market data from our trading platform.
 
@@ -743,7 +751,7 @@ Cards are segmented into tiers — DIFFERENT tiers require DIFFERENT strategies:
 ## Card Analysis — COMPLETE $20+ Universe ({tier_summary.get('total_analyzed', 0)} Viable Cards out of {tier_summary.get('total_tracked', '?')} Tracked)
 Each card includes: price_tier (premium $100+ / mid_high $50-100 / mid $20-50), regime, volatility, data_flags, breakeven_pct, liquidity_score (0-100), est_time_to_sell_days, viable_trade, and hold_economics (annualized gross/net returns, whether it clears the fee hurdle).
 NOTE: This is EVERY card with price >= $20 — the complete tradeable universe. No cards were filtered out by scoring. Analyze them ALL.
-{json.dumps(market_data['card_analyses'], indent=2)}
+{json.dumps([{k: v for k, v in c.items() if k != 'image_small'} for c in market_data['card_analyses']], indent=2)}
 
 ## Trading Economics — Fee Schedule & Friction
 {json.dumps(market_data.get('trading_economics', {}), indent=2)}
@@ -765,6 +773,20 @@ NOTE: This is EVERY card with price >= $20 — the complete tradeable universe. 
 
 ## Concentration Risk
 {json.dumps(market_data.get('concentration_risk', {}), indent=2)}
+"""
+
+    # Inject previous consensus for temporal context
+    if previous_consensus:
+        base += f"""
+
+## PREVIOUS DESK CONSENSUS (from {previous_consensus['date']})
+This was the CIO's consensus portfolio from the last analysis run. Compare your current analysis against it:
+- Which prior picks have appreciated or declined since then?
+- Are the prior theses still valid given the current data?
+- What has changed in the market since the last run?
+- Flag any picks that should be upgraded, downgraded, or dropped.
+
+{previous_consensus['text']}
 """
 
     if persona_id == "quant":
@@ -868,10 +890,27 @@ async def get_multi_persona_analysis(db: Session) -> dict:
     # Gather market data ONCE
     market_data = _gather_market_data(db)
 
+    # Load previous consensus for temporal context
+    previous_consensus = None
+    try:
+        prev_snapshot = (
+            db.query(TraderAnalysisSnapshot)
+            .order_by(TraderAnalysisSnapshot.created_at.desc())
+            .first()
+        )
+        if prev_snapshot and prev_snapshot.consensus:
+            previous_consensus = {
+                "text": prev_snapshot.consensus,
+                "date": prev_snapshot.created_at.strftime("%Y-%m-%d %H:%M UTC"),
+            }
+            logger.info(f"Injecting previous consensus from {previous_consensus['date']}")
+    except Exception as e:
+        logger.warning(f"Could not load previous consensus: {e}")
+
     # Build persona-specific prompts
     persona_tasks = {}
     for pid, persona in PERSONAS.items():
-        user_prompt = _build_persona_prompt(pid, market_data)
+        user_prompt = _build_persona_prompt(pid, market_data, previous_consensus)
         persona_tasks[pid] = _call_openai_async(
             persona["system_prompt"], user_prompt, max_tokens=8192
         )
@@ -926,15 +965,30 @@ async def get_multi_persona_analysis(db: Session) -> dict:
     # Generate consensus from all 3 analyses
     consensus_text = None
     if analyses_for_consensus:
+        prev_context = ""
+        if previous_consensus:
+            prev_context = f"""
+
+## PREVIOUS CIO CONSENSUS (from {previous_consensus['date']})
+Below is the portfolio from your last run. Track changes explicitly:
+- Which prior picks are RETAINED vs DROPPED vs NEW?
+- Note any price movement since the last run for retained picks.
+- If a thesis has changed, explain why.
+
+{previous_consensus['text']}
+---
+"""
+
         consensus_prompt = f"""Here are the analyses from your three desk traders:
 
 {chr(10).join(analyses_for_consensus)}
-
+{prev_context}
 They analyzed the COMPLETE $20+ tradeable universe. Synthesize into a COMPREHENSIVE portfolio:
 - 12-18 picks organized by tier (Core Holdings $100+, Active Trades $50-100, Growth Plays $20-50, Watchlist)
 - Where do they agree (high conviction)? Where do they disagree?
 - Include entry price, target, stop-loss, breakeven, hold period for each pick
-- Cover ALL tiers — give the user the widest actionable set of recommendations"""
+- Cover ALL tiers — give the user the widest actionable set of recommendations
+- If a previous consensus exists above, explicitly note portfolio changes since then"""
 
         try:
             consensus_result = await _call_openai_async(
@@ -956,9 +1010,56 @@ They analyzed the COMPLETE $20+ tradeable universe. Synthesize into a COMPREHENS
         "fee_schedule": te.get("fee_schedule"),
     }
 
+    # Build lookup of card data for consensus matching
+    card_data_by_id = {}
+    for c in market_data["card_analyses"]:
+        card_data_by_id[c["card_id"]] = {
+            "card_id": c["card_id"],
+            "name": c["name"],
+            "set_name": c.get("set"),
+            "rarity": c.get("rarity"),
+            "image_small": c.get("image_small"),
+            "current_price": c.get("current_price"),
+            "price_tier": c.get("price_tier"),
+            "signal": c.get("signal"),
+            "signal_strength": c.get("signal_strength"),
+            "breakeven_pct": c.get("breakeven_pct"),
+            "liquidity_score": c.get("liquidity_score"),
+            "viable_trade": c.get("viable_trade"),
+            "price_change_7d": c.get("price_change_7d"),
+            "price_change_30d": c.get("price_change_30d"),
+        }
+
+    # Extract consensus picks by matching prices in the consensus text
+    consensus_picks = []
+    if consensus_text:
+        # Build price -> card_id lookup (price formatted to 2 decimals)
+        price_to_id = {}
+        for cid, cdata in card_data_by_id.items():
+            price = cdata.get("current_price")
+            if price:
+                key = f"{price:.2f}"
+                price_to_id[key] = cid
+
+        # Find all dollar amounts in consensus text (e.g., $525.82, $1,090.00)
+        seen_ids = set()
+        for match in re.finditer(r'\$[\d,]+\.\d{2}', consensus_text):
+            price_str = match.group().lstrip('$').replace(',', '')
+            if price_str in price_to_id:
+                cid = price_to_id[price_str]
+                if cid not in seen_ids:
+                    seen_ids.add(cid)
+                    consensus_picks.append(card_data_by_id[cid])
+
+        logger.info(
+            f"Consensus picks extracted: {len(consensus_picks)} cards matched "
+            f"from {len(card_data_by_id)} analyzed"
+        )
+
     return {
         "personas": persona_results,
         "consensus": consensus_text,
+        "consensus_picks": consensus_picks,
         "market_data_summary": {
             "total_cards": market_data["market_overview"]["total_cards"],
             "avg_price": market_data["market_overview"]["avg_price"],
@@ -996,7 +1097,7 @@ async def get_trader_analysis(db: Session) -> dict:
 {json.dumps(market_data['top_movers'], indent=2)}
 
 ## Technical Analysis (ALL {len(market_data['card_analyses'])} Viable Cards — $20+ Universe)
-{json.dumps(market_data['card_analyses'], indent=2)}
+{json.dumps([{k: v for k, v in c.items() if k != 'image_small'} for c in market_data['card_analyses']], indent=2)}
 
 ## Portfolio Backtest Summary (Combined Strategy, $10K, Top 10 Cards)
 {json.dumps(market_data['portfolio_backtest'], indent=2)}

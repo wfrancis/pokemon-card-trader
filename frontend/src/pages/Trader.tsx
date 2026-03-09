@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -9,14 +9,107 @@ import {
   Chip,
   Divider,
   Skeleton,
+  Avatar,
+  Select,
+  MenuItem,
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
-import type { MultiPersonaAnalysis, PersonaResult } from '../services/api';
+import type { MultiPersonaAnalysis, PersonaResult, AnalyzedCard, SnapshotSummary } from '../services/api';
 
 const mono = { fontFamily: '"JetBrains Mono", "Fira Code", monospace' };
+
+const TIER_CONFIG: Record<string, { label: string; color: string; border: string }> = {
+  premium: { label: 'PREMIUM', color: '#ffd700', border: '#ffd70033' },
+  mid_high: { label: 'MID-HIGH', color: '#00bcd4', border: '#00bcd433' },
+  mid: { label: 'MID', color: '#888', border: '#88888833' },
+};
+
+const SIGNAL_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
+  bullish: { label: 'BULL', color: '#00ff41', bg: '#0a3a0a' },
+  bearish: { label: 'BEAR', color: '#ff1744', bg: '#3a0a0a' },
+  hold: { label: 'HOLD', color: '#00bcd4', bg: '#1a1a2a' },
+};
+
+function AnalyzedCardTile({ card, onClick }: { card: AnalyzedCard; onClick: () => void }) {
+  const tier = TIER_CONFIG[card.price_tier] || TIER_CONFIG.mid;
+  const signal = SIGNAL_CONFIG[card.signal] || { label: 'N/A', color: '#666', bg: '#1a1a1a' };
+  const beColor = (card.breakeven_pct ?? 100) < 25 ? '#00ff41'
+    : (card.breakeven_pct ?? 100) < 30 ? '#ffd700' : '#ff9800';
+
+  return (
+    <Paper
+      sx={{
+        p: 1, cursor: 'pointer', transition: 'all 0.15s',
+        border: `1px solid ${tier.border}`, bgcolor: '#0a0a0a',
+        '&:hover': { borderColor: tier.color, transform: 'translateY(-2px)' },
+        height: '100%', display: 'flex', flexDirection: 'column',
+      }}
+      onClick={onClick}
+    >
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+        <Chip label={tier.label} size="small" sx={{
+          bgcolor: `${tier.color}15`, color: tier.color,
+          fontSize: '0.5rem', height: 16, fontWeight: 700, ...mono,
+        }} />
+        <Chip label={signal.label} size="small" sx={{
+          bgcolor: signal.bg, color: signal.color,
+          fontSize: '0.5rem', height: 16, fontWeight: 700, ...mono,
+        }} />
+      </Box>
+
+      <Box sx={{ textAlign: 'center', mb: 0.5, flexShrink: 0 }}>
+        <Avatar
+          src={card.image_small || undefined}
+          variant="rounded"
+          sx={{ width: '100%', height: 'auto', aspectRatio: '2.5/3.5', mx: 'auto', bgcolor: '#1a1a1a' }}
+          imgProps={{ loading: 'lazy' }}
+        />
+      </Box>
+
+      <Typography sx={{
+        color: '#fff', fontWeight: 600, fontSize: '0.7rem', ...mono,
+        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+      }}>
+        {card.name}
+      </Typography>
+      <Typography sx={{
+        color: '#666', fontSize: '0.55rem', ...mono,
+        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', mb: 0.5,
+      }}>
+        {card.set_name}
+      </Typography>
+
+      <Typography sx={{ color: '#00ff41', fontWeight: 700, ...mono, fontSize: '0.85rem' }}>
+        ${card.current_price.toFixed(2)}
+      </Typography>
+
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 'auto', pt: 0.5 }}>
+        {card.breakeven_pct != null && (
+          <Typography sx={{ color: beColor, fontSize: '0.5rem', ...mono }}>
+            {card.breakeven_pct.toFixed(0)}% BE
+          </Typography>
+        )}
+        {card.liquidity_score != null && (
+          <Typography sx={{ color: '#00bcd4', fontSize: '0.5rem', ...mono }}>
+            LIQ {card.liquidity_score.toFixed(0)}
+          </Typography>
+        )}
+        {card.price_change_7d != null && (
+          <Typography sx={{
+            color: card.price_change_7d >= 0 ? '#00ff41' : '#ff1744',
+            fontSize: '0.5rem', ...mono,
+          }}>
+            {card.price_change_7d >= 0 ? '+' : ''}{card.price_change_7d.toFixed(1)}%
+          </Typography>
+        )}
+      </Box>
+    </Paper>
+  );
+}
 
 function MarkdownBlock({ text }: { text: string }) {
   const lines = text.split('\n');
@@ -161,9 +254,35 @@ function PersonaCard({ persona, loading }: { persona?: PersonaResult; loading: b
 }
 
 export default function Trader() {
+  const navigate = useNavigate();
   const [analysis, setAnalysis] = useState<MultiPersonaAnalysis | null>(null);
   const [loading, setLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [history, setHistory] = useState<SnapshotSummary[]>([]);
+  const [selectedSnapshotId, setSelectedSnapshotId] = useState<number | 'latest'>('latest');
+
+  // Load latest saved analysis + history list on mount
+  useEffect(() => {
+    Promise.all([
+      api.getLatestPersonaAnalysis().catch(() => ({ error: 'failed' } as MultiPersonaAnalysis)),
+      api.getPersonaHistory().catch(() => [] as SnapshotSummary[]),
+    ]).then(([latest, hist]) => {
+      if (!latest.error) {
+        setAnalysis(latest);
+        if (hist.length > 0) setSelectedSnapshotId(hist[0].id);
+      }
+      setHistory(hist);
+    }).finally(() => setInitialLoading(false));
+  }, []);
+
+  const loadSnapshot = async (snapshotId: number) => {
+    setSelectedSnapshotId(snapshotId);
+    try {
+      const result = await api.getPersonaSnapshot(snapshotId);
+      if (!result.error) setAnalysis(result);
+    } catch {}
+  };
 
   const runAnalysis = async () => {
     setLoading(true);
@@ -174,6 +293,11 @@ export default function Trader() {
         setError(result.error);
       } else {
         setAnalysis(result);
+        // Refresh history list (new snapshot was auto-saved)
+        api.getPersonaHistory().then(hist => {
+          setHistory(hist);
+          if (hist.length > 0) setSelectedSnapshotId(hist[0].id);
+        }).catch(() => {});
       }
     } catch (err: any) {
       setError(err.message || 'Failed to get trading desk analysis');
@@ -202,6 +326,34 @@ export default function Trader() {
               <Typography sx={{ color: '#666', fontSize: '0.8rem', ...mono }}>
                 3 SPECIALIZED ANALYSTS · PARALLEL EXECUTION · CONSENSUS SYNTHESIS
               </Typography>
+              {history.length > 0 && !loading && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
+                  <Typography sx={{ color: '#666', fontSize: '0.65rem', ...mono }}>
+                    VIEWING:
+                  </Typography>
+                  <Select
+                    size="small"
+                    value={selectedSnapshotId}
+                    onChange={(e) => {
+                      const val = e.target.value as number;
+                      loadSnapshot(val);
+                    }}
+                    sx={{
+                      color: '#00bcd4', fontSize: '0.7rem', ...mono,
+                      '& .MuiSelect-select': { py: 0.25, px: 1 },
+                      '& .MuiOutlinedInput-notchedOutline': { borderColor: '#333' },
+                      '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#00bcd4' },
+                      '& .MuiSvgIcon-root': { color: '#666', fontSize: '1rem' },
+                    }}
+                  >
+                    {history.map((snap) => (
+                      <MenuItem key={snap.id} value={snap.id} sx={{ fontSize: '0.75rem', ...mono }}>
+                        {new Date(snap.created_at).toLocaleString()} · {snap.pick_count} picks
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </Box>
+              )}
             </Box>
           </Box>
 
@@ -358,6 +510,44 @@ export default function Trader() {
         </Paper>
       )}
 
+      {/* Consensus Picks — Card Tiles */}
+      {analysis?.consensus_picks && analysis.consensus_picks.length > 0 && (
+        <Paper sx={{ p: 2, mb: 2, bgcolor: '#0a0a0a', border: '1px solid #ffd70033' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2 }}>
+            <Box sx={{ width: 4, height: 24, bgcolor: '#ffd700', borderRadius: 1 }} />
+            <Box>
+              <Typography variant="h6" sx={{ color: '#ffd700', fontWeight: 700, ...mono, fontSize: '1rem' }}>
+                RECOMMENDED PICKS
+              </Typography>
+              <Typography sx={{ color: '#666', fontSize: '0.65rem', ...mono }}>
+                {analysis.consensus_picks.length} CONSENSUS CARDS · CLICK TO VIEW DETAIL &amp; CHARTS
+              </Typography>
+            </Box>
+          </Box>
+
+          {(['premium', 'mid_high', 'mid'] as const).map(tier => {
+            const tierCards = analysis.consensus_picks!.filter(c => c.price_tier === tier);
+            if (tierCards.length === 0) return null;
+            const tierLabel = { premium: 'CORE HOLDINGS ($100+)', mid_high: 'ACTIVE TRADES ($50-100)', mid: 'GROWTH PLAYS ($20-50)' }[tier];
+            const tierColor = { premium: '#ffd700', mid_high: '#00bcd4', mid: '#888' }[tier];
+            return (
+              <Box key={tier} sx={{ mb: 2 }}>
+                <Typography sx={{ color: tierColor, fontWeight: 700, fontSize: '0.75rem', ...mono, mb: 1 }}>
+                  {tierLabel} — {tierCards.length} picks
+                </Typography>
+                <Grid container spacing={1}>
+                  {tierCards.map(card => (
+                    <Grid key={card.card_id} size={{ xs: 6, sm: 4, md: 3, lg: 2 }}>
+                      <AnalyzedCardTile card={card} onClick={() => navigate(`/card/${card.card_id}`)} />
+                    </Grid>
+                  ))}
+                </Grid>
+              </Box>
+            );
+          })}
+        </Paper>
+      )}
+
       {/* Token Usage */}
       {analysis?.tokens_used && (
         <Box sx={{ mt: 1, textAlign: 'right' }}>
@@ -369,7 +559,7 @@ export default function Trader() {
       )}
 
       {/* Empty State */}
-      {!analysis && !loading && !error && (
+      {!analysis && !loading && !initialLoading && !error && (
         <Paper sx={{ p: 4, bgcolor: '#111', border: '1px solid #1e1e1e', textAlign: 'center' }}>
           <SmartToyIcon sx={{ color: '#333', fontSize: 60, mb: 2 }} />
           <Typography sx={{ color: '#666', ...mono, mb: 1 }}>

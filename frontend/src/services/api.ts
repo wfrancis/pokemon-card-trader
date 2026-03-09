@@ -154,6 +154,15 @@ export const api = {
   getMultiPersonaAnalysis: () =>
     fetchApi<MultiPersonaAnalysis>('/api/trader/personas', { timeoutMs: 600_000 }),
 
+  getLatestPersonaAnalysis: () =>
+    fetchApi<MultiPersonaAnalysis>('/api/trader/personas/latest'),
+
+  getPersonaHistory: () =>
+    fetchApi<SnapshotSummary[]>('/api/trader/personas/history'),
+
+  getPersonaSnapshot: (id: number) =>
+    fetchApi<MultiPersonaAnalysis>(`/api/trader/personas/snapshot/${id}`),
+
   getTraderCardAnalysis: (cardId: number) =>
     fetchApi<TraderCardAnalysis>(`/api/trader/card/${cardId}`),
 
@@ -416,9 +425,27 @@ export interface TradingEconomics {
   };
 }
 
+export interface AnalyzedCard {
+  card_id: number;
+  name: string;
+  set_name: string;
+  rarity: string;
+  image_small: string | null;
+  current_price: number;
+  price_tier: 'premium' | 'mid_high' | 'mid';
+  signal: string;
+  signal_strength: number;
+  breakeven_pct: number | null;
+  liquidity_score: number | null;
+  viable_trade: boolean;
+  price_change_7d: number | null;
+  price_change_30d: number | null;
+}
+
 export interface MultiPersonaAnalysis {
   personas?: Record<string, PersonaResult>;
   consensus?: string;
+  consensus_picks?: AnalyzedCard[];
   market_data_summary?: {
     total_cards: number;
     avg_price: number;
@@ -429,4 +456,13 @@ export interface MultiPersonaAnalysis {
   trading_economics?: TradingEconomics;
   tokens_used?: { input: number; output: number };
   error?: string;
+  created_at?: string;
+}
+
+export interface SnapshotSummary {
+  id: number;
+  created_at: string;
+  tokens_input: number;
+  tokens_output: number;
+  pick_count: number;
 }
