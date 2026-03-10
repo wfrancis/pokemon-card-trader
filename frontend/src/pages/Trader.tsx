@@ -375,14 +375,14 @@ function InlineRecommendation({
         </Typography>
         <MarkdownBlock text={detailText} />
 
-        {/* Historical Backtest Results */}
+        {/* Historical Buy & Hold Backtest */}
         {backtestResult && !backtestResult.error && (
           <Box sx={{
             mt: 1.5, pt: 1, borderTop: '1px solid #222',
             display: 'flex', gap: { xs: 1, sm: 2 }, flexWrap: 'wrap', alignItems: 'center',
           }}>
             <Typography sx={{ color: '#666', fontSize: '0.6rem', fontWeight: 700, ...mono, letterSpacing: 1 }}>
-              BACKTEST
+              BUY & HOLD
             </Typography>
             <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', alignItems: 'center' }}>
               <Typography sx={{
@@ -390,16 +390,16 @@ function InlineRecommendation({
                 fontSize: '0.7rem', fontWeight: 700, ...mono,
               }}>
                 {(backtestResult.fee_adjusted_return_pct ?? 0) >= 0 ? '+' : ''}
-                {backtestResult.fee_adjusted_return_pct?.toFixed(1)}% net
+                {backtestResult.fee_adjusted_return_pct?.toFixed(1)}% after fees
               </Typography>
               <Typography sx={{ color: '#888', fontSize: '0.65rem', ...mono }}>
-                B&H {(backtestResult.buy_hold_return_pct ?? 0) >= 0 ? '+' : ''}{backtestResult.buy_hold_return_pct?.toFixed(1)}%
+                raw {(backtestResult.buy_hold_return_pct ?? 0) >= 0 ? '+' : ''}{backtestResult.buy_hold_return_pct?.toFixed(1)}%
               </Typography>
               <Typography sx={{ color: '#888', fontSize: '0.65rem', ...mono }}>
-                {backtestResult.win_rate?.toFixed(0)}% win
+                {backtestResult.hold_days ?? '?'}d hold
               </Typography>
               <Typography sx={{ color: '#888', fontSize: '0.65rem', ...mono }}>
-                {backtestResult.total_trades} trades
+                -{backtestResult.max_drawdown_pct?.toFixed(0)}% max DD
               </Typography>
               <Chip
                 label={backtestResult.profitable_after_fees ? 'PROFITABLE' : 'UNPROFITABLE'}

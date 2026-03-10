@@ -213,16 +213,16 @@ export interface BacktestResult {
 
 export interface BacktestPickResult {
   strategy?: string;
-  strategy_return_pct?: number;
   buy_hold_return_pct?: number;
   fee_adjusted_return_pct?: number | null;
-  win_rate?: number;
-  total_trades?: number;
+  total_fees?: number;
   max_drawdown_pct?: number;
-  total_fees_paid?: number;
   profitable_after_fees?: boolean;
+  initial_price?: number;
+  final_price?: number;
   start_date?: string | null;
   end_date?: string | null;
+  hold_days?: number;
   error?: string;
 }
 

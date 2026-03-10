@@ -10,7 +10,7 @@ from server.models.trader_snapshot import TraderAnalysisSnapshot
 from server.services.trader_agent import (
     get_trader_analysis, get_card_trader_analysis, get_multi_persona_analysis,
 )
-from server.services.trading_economics import calc_breakeven_appreciation
+from server.services.trading_economics import calc_breakeven_appreciation, calc_roundtrip_pnl
 from server.services.backtesting import run_backtest
 
 logger = logging.getLogger(__name__)
@@ -330,11 +330,15 @@ async def trader_personas_snapshot(snapshot_id: int, db: Session = Depends(get_d
 
 @router.get("/backtest-picks")
 async def backtest_consensus_picks(db: Session = Depends(get_db)):
-    """Run fee-aware backtests on the latest consensus picks.
+    """Run fee-aware buy & hold backtests on the latest consensus picks.
 
-    For each pick, runs the 'combined' strategy with TCGPlayer fees
-    and returns a summary keyed by card_id.
+    For each pick, calculates: if you bought at the earliest price and sold
+    at the latest price, what's the net return after TCGPlayer fees?
+    This matches the AI's BUY/HOLD recommendations (not active trading).
     """
+    from server.models.price_history import PriceHistory
+    from sqlalchemy import asc
+
     snapshot = (
         db.query(TraderAnalysisSnapshot)
         .order_by(TraderAnalysisSnapshot.created_at.desc())
@@ -348,34 +352,60 @@ async def backtest_consensus_picks(db: Session = Depends(get_db)):
         return {"error": "No picks found in consensus text."}
 
     results = {}
-    for pick in picks[:18]:  # Cap at 18 to match consensus limit
+    for pick in picks[:18]:
         card_id = pick["card_id"]
         try:
-            bt = run_backtest(
-                db, card_id, strategy="combined",
-                fees_enabled=True, platform="tcgplayer",
+            # Get price history for B&H calculation
+            records = (
+                db.query(PriceHistory)
+                .filter(PriceHistory.card_id == card_id, PriceHistory.market_price.isnot(None))
+                .order_by(asc(PriceHistory.date))
+                .all()
             )
-            if bt is None:
+            if len(records) < 35:
                 results[card_id] = {"error": "Insufficient price history (need 35+ days)"}
                 continue
+
+            initial_price = records[0].market_price
+            final_price = records[-1].market_price
+            start_date = str(records[0].date)
+            end_date = str(records[-1].date)
+
+            # Raw buy & hold return (no fees)
+            bh_return_pct = ((final_price - initial_price) / initial_price) * 100
+
+            # Fee-aware buy & hold: one roundtrip (buy once, sell once)
+            roundtrip = calc_roundtrip_pnl(initial_price, final_price, platform="tcgplayer")
+            net_return_pct = roundtrip["net_return_pct"]
+
+            # Max drawdown from peak
+            peak = initial_price
+            max_dd = 0.0
+            for r in records:
+                if r.market_price > peak:
+                    peak = r.market_price
+                dd = (peak - r.market_price) / peak * 100
+                if dd > max_dd:
+                    max_dd = dd
+
             results[card_id] = {
-                "strategy": bt.strategy,
-                "strategy_return_pct": round(bt.strategy_return_pct, 2),
-                "buy_hold_return_pct": round(bt.buy_hold_return_pct, 2),
-                "fee_adjusted_return_pct": round(bt.fee_adjusted_return_pct, 2) if bt.fee_adjusted_return_pct is not None else None,
-                "win_rate": round(bt.win_rate, 1),
-                "total_trades": bt.total_trades,
-                "max_drawdown_pct": round(bt.max_drawdown_pct, 2),
-                "total_fees_paid": round(bt.total_fees_paid, 2),
-                "profitable_after_fees": (bt.fee_adjusted_return_pct or 0) > 0,
-                "start_date": str(bt.start_date) if bt.start_date else None,
-                "end_date": str(bt.end_date) if bt.end_date else None,
+                "strategy": "buy_and_hold",
+                "buy_hold_return_pct": round(bh_return_pct, 2),
+                "fee_adjusted_return_pct": round(net_return_pct, 2),
+                "total_fees": round(roundtrip["total_fees"], 2),
+                "max_drawdown_pct": round(max_dd, 2),
+                "profitable_after_fees": net_return_pct > 0,
+                "initial_price": round(initial_price, 2),
+                "final_price": round(final_price, 2),
+                "start_date": start_date,
+                "end_date": end_date,
+                "hold_days": len(records),
             }
         except Exception as e:
             logger.error(f"Backtest failed for card {card_id}: {e}")
             results[card_id] = {"error": str(e)}
 
-    logger.info(f"Backtested {len(results)} consensus picks")
+    logger.info(f"Backtested {len(results)} consensus picks (buy & hold)")
     return results
 
 
