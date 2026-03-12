@@ -68,15 +68,42 @@ export default function Dashboard() {
               PKMN MARKET
             </Typography>
           </Box>
-          <Button
-            variant="outlined"
-            startIcon={syncing ? <CircularProgress size={16} /> : <SyncIcon />}
-            onClick={handleSync}
-            disabled={syncing}
-            size="small"
-          >
-            {syncing ? 'Syncing...' : 'Sync Data'}
-          </Button>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            {agentStatus?.last_analysis_at && (
+              <Chip
+                label={`Data: ${getTimeAgo(agentStatus.last_analysis_at)}`}
+                size="small"
+                sx={{
+                  fontFamily: '"JetBrains Mono", monospace',
+                  fontSize: '0.6rem',
+                  height: 22,
+                  bgcolor: (() => {
+                    const hrs = (Date.now() - new Date(agentStatus.last_analysis_at).getTime()) / 3600000;
+                    return hrs < 12 ? '#0a3a0a' : hrs < 48 ? '#2a2a0a' : '#3a0a0a';
+                  })(),
+                  color: (() => {
+                    const hrs = (Date.now() - new Date(agentStatus.last_analysis_at).getTime()) / 3600000;
+                    return hrs < 12 ? '#00e676' : hrs < 48 ? '#ffd740' : '#ff1744';
+                  })(),
+                  border: '1px solid',
+                  borderColor: (() => {
+                    const hrs = (Date.now() - new Date(agentStatus.last_analysis_at).getTime()) / 3600000;
+                    return hrs < 12 ? '#00e67633' : hrs < 48 ? '#ffd74033' : '#ff174433';
+                  })(),
+                }}
+              />
+            )}
+            <Button
+              variant="text"
+              startIcon={syncing ? <CircularProgress size={14} /> : <SyncIcon sx={{ fontSize: 14 }} />}
+              onClick={handleSync}
+              disabled={syncing}
+              size="small"
+              sx={{ minWidth: 'auto', color: '#666', fontSize: '0.65rem', '&:hover': { color: '#00bcd4' } }}
+            >
+              {syncing ? '...' : 'Sync'}
+            </Button>
+          </Box>
         </Box>
 
         {/* Market Index Cards */}

@@ -109,12 +109,6 @@ export default function CardDetail() {
               </Typography>
             )}
 
-            {card.hp && (
-              <Typography variant="body2" sx={{ mt: 0.5, color: '#00bcd4' }}>
-                HP: {card.hp}
-              </Typography>
-            )}
-
             {card.price_variant && (
               <Chip
                 label={card.price_variant.toUpperCase()}

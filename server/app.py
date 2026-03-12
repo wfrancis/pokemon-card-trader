@@ -358,10 +358,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS — needed for local dev, on Fly everything is same-origin
+# CORS — same-origin on Fly.io, allow localhost for dev
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://pokemon-card-trader.fly.dev",
+        "http://localhost:3000",
+        "http://localhost:8000",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

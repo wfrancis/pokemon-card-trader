@@ -43,7 +43,7 @@ class AnalysisResult:
     total_history_days: int = 0
     first_price_date: str | None = None
     volatility: float | None = None  # Std dev of daily returns (proxy for volume)
-    spread_ratio: float | None = None  # Avg (high-low)/market ratio
+    spread_ratio: float | None = None  # Price range ratio: avg (high-low)/market (NOT bid-ask spread)
     momentum_accel: float | None = None  # Change in momentum (2nd derivative)
     activity_score: float | None = None  # Composite hotness 0-100
     adx: float | None = None  # Average Directional Index (trend strength 0-100)
@@ -101,26 +101,35 @@ def _rsi(prices: list[float], period: int = 14) -> float | None:
 
 
 def _macd(prices: list[float]) -> tuple[float | None, float | None, float | None]:
-    """Returns (macd_line, signal_line, histogram)."""
+    """Returns (macd_line, signal_line, histogram).
+
+    MACD = EMA(12) - EMA(26), computed at each price point from index 26 onward.
+    Signal = 9-period EMA of the MACD line.
+    Histogram = MACD - Signal.
+    """
     if len(prices) < 26:
         return None, None, None
 
-    ema_12_vals = []
-    ema_12 = sum(prices[:12]) / 12
-    ema_12_vals.append(ema_12)
+    # Compute full EMA-12 series starting from index 12
     mult_12 = 2 / 13
-    for p in prices[12:]:
+    ema_12 = sum(prices[:12]) / 12
+    ema_12_series = [None] * 12  # placeholder for first 12 prices
+    ema_12_series.append(ema_12)
+    for p in prices[13:]:
         ema_12 = (p - ema_12) * mult_12 + ema_12
-        ema_12_vals.append(ema_12)
+        ema_12_series.append(ema_12)
 
-    ema_26 = sum(prices[:26]) / 26
+    # Compute full EMA-26 series starting from index 26
     mult_26 = 2 / 27
+    ema_26 = sum(prices[:26]) / 26
+    ema_26_val = ema_26
+
+    # MACD line = EMA(12) - EMA(26) at each point from index 26 onward
     macd_vals = []
-    # Align: ema_12_vals starts at index 12, ema_26 starts at index 26
-    for i, p in enumerate(prices[26:], start=26):
-        ema_26 = (p - ema_26) * mult_26 + ema_26
-        ema_12_val = ema_12_vals[i - 12]  # offset
-        macd_vals.append(ema_12_val - ema_26)
+    macd_vals.append(ema_12_series[26] - ema_26_val)
+    for i in range(27, len(prices)):
+        ema_26_val = (prices[i] - ema_26_val) * mult_26 + ema_26_val
+        macd_vals.append(ema_12_series[i] - ema_26_val)
 
     if not macd_vals:
         return None, None, None
@@ -146,7 +155,7 @@ def _bollinger_bands(prices: list[float], period: int = 20, std_dev: float = 2.0
         return None, None, None
     window = prices[-period:]
     middle = sum(window) / period
-    variance = sum((p - middle) ** 2 for p in window) / period
+    variance = sum((p - middle) ** 2 for p in window) / (period - 1)  # Sample variance (Bessel's correction)
     std = math.sqrt(variance)
     lower = max(0, middle - std_dev * std)  # Clamp to 0 — prices can't be negative
     return middle + std_dev * std, middle, lower
@@ -432,6 +441,18 @@ def analyze_card(db: Session, card_id: int) -> AnalysisResult:
     records = _filter_dominant_variant(records)
 
     prices = [r.market_price for r in records]
+
+    # Spike detection: remove anomalous price points that are >10x the median
+    # These are typically data errors from the source API (e.g., wrong variant price leaking in)
+    if len(prices) >= 5:
+        sorted_p = sorted(prices)
+        median = sorted_p[len(sorted_p) // 2]
+        if median > 0:
+            filtered = [(r, p) for r, p in zip(records, prices) if p <= median * 10 and p >= median * 0.05]
+            if len(filtered) >= 3:  # Keep at least 3 data points
+                records = [f[0] for f in filtered]
+                prices = [f[1] for f in filtered]
+
     result = AnalysisResult()
 
     # Moving averages — short, medium, and long-term
@@ -644,10 +665,15 @@ def _generate_signal(analysis: AnalysisResult, prices: list[float]) -> tuple[str
 
     strength = max(-1.0, min(1.0, weighted_score / total_weight))
 
-    if strength > 0.15:
-        return "bullish", strength
+    # Collectibles-appropriate signal names
+    if strength > 0.4:
+        return "buy", strength
+    elif strength > 0.15:
+        return "accumulate", strength
+    elif strength < -0.4:
+        return "avoid", strength
     elif strength < -0.15:
-        return "bearish", strength
+        return "reduce", strength
     return "hold", strength
 
 
@@ -731,7 +757,7 @@ def get_top_movers(db: Session, limit: int = 10) -> dict:
             "name": row.name,
             "set_name": row.set_name,
             "image_small": row.image_small,
-            "current_price": row.current_price,
+            "current_price": round(row.recent_avg, 2),  # Use recent avg (consistent with change_pct)
             "previous_price": round(row.prev_avg, 2),
             "change_pct": round(change_pct, 2),
             "variant": row.price_variant,
@@ -905,6 +931,12 @@ def get_hot_cards(db: Session, limit: int = 12) -> list[dict]:
 
         card = db.query(Card).filter(Card.id == row.card_id).first()
         if not card or not card.current_price:
+            continue
+
+        # Skip cards with extreme/unrealistic values (data quality issues)
+        if analysis.volatility and analysis.volatility > 500:
+            continue
+        if analysis.price_change_pct_7d and abs(analysis.price_change_pct_7d) > 500:
             continue
 
         hot.append({

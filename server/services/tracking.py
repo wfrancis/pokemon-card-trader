@@ -176,17 +176,40 @@ def refresh_current_prices(db: Session) -> int:
     Fixes staleness where Card.current_price diverges from actual price history.
     """
     from sqlalchemy import text
+    # First: update cards that have a known price_variant — filter to same variant
     result = db.execute(text("""
+        UPDATE cards SET current_price = (
+            SELECT ph.market_price FROM price_history ph
+            WHERE ph.card_id = cards.id
+              AND ph.market_price IS NOT NULL
+              AND ph.variant = cards.price_variant
+            ORDER BY ph.date DESC LIMIT 1
+        )
+        WHERE is_tracked = 1
+          AND price_variant IS NOT NULL
+          AND (
+            SELECT ph.market_price FROM price_history ph
+            WHERE ph.card_id = cards.id
+              AND ph.market_price IS NOT NULL
+              AND ph.variant = cards.price_variant
+            ORDER BY ph.date DESC LIMIT 1
+          ) IS NOT NULL
+    """))
+    # Second: update cards without a price_variant — use any variant
+    result2 = db.execute(text("""
         UPDATE cards SET current_price = (
             SELECT ph.market_price FROM price_history ph
             WHERE ph.card_id = cards.id AND ph.market_price IS NOT NULL
             ORDER BY ph.date DESC LIMIT 1
         )
-        WHERE is_tracked = 1 AND (
+        WHERE is_tracked = 1
+          AND price_variant IS NULL
+          AND current_price IS NULL
+          AND (
             SELECT ph.market_price FROM price_history ph
             WHERE ph.card_id = cards.id AND ph.market_price IS NOT NULL
             ORDER BY ph.date DESC LIMIT 1
-        ) IS NOT NULL
+          ) IS NOT NULL
     """))
     db.commit()
     updated = result.rowcount

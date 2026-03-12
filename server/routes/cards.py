@@ -33,8 +33,12 @@ def list_cards(
     if has_price:
         query = query.filter(Card.current_price.isnot(None), Card.current_price > 0)
 
-    # Sorting
-    sort_column = getattr(Card, sort_by, Card.name)
+    # Sorting — validate sort_by against known columns
+    allowed_sort = {"name", "current_price", "set_name", "rarity", "number"}
+    if sort_by in allowed_sort:
+        sort_column = getattr(Card, sort_by)
+    else:
+        sort_column = Card.name
     if sort_dir == "desc":
         query = query.order_by(sort_column.desc())
     else:
