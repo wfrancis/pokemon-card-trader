@@ -172,6 +172,35 @@ export const api = {
   // Sales
   getCardSales: (cardId: number, limit = 500) =>
     fetchApi<CardSalesResponse>(`/api/cards/${cardId}/sales?limit=${limit}`),
+
+  // Agent
+  getAgentInsights: (params?: { type?: string; acknowledged?: boolean; limit?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.type) qs.set('type', params.type);
+    if (params?.acknowledged !== undefined) qs.set('acknowledged', String(params.acknowledged));
+    if (params?.limit) qs.set('limit', String(params.limit));
+    const q = qs.toString();
+    return fetchApi<AgentInsight[]>(`/api/agent/insights${q ? '?' + q : ''}`);
+  },
+
+  acknowledgeInsight: (id: number) =>
+    fetchApi<{ status: string }>(`/api/agent/insights/${id}/acknowledge`, { method: 'POST' }),
+
+  getAgentStatus: () =>
+    fetchApi<AgentStatus>('/api/agent/status'),
+
+  getAgentAccuracy: () =>
+    fetchApi<AccuracyReport>('/api/trader/accuracy'),
+
+  getAgentPredictions: (outcome?: string, limit = 50) => {
+    const params = new URLSearchParams();
+    if (outcome) params.set('outcome', outcome);
+    params.set('limit', String(limit));
+    return fetchApi<AgentPrediction[]>(`/api/trader/predictions?${params}`);
+  },
+
+  runAgentAnalysis: (model = 'gpt-5') =>
+    fetchApi<AgentAnalysisResult>(`/api/trader/agent?model=${model}`, { timeoutMs: 300_000 }),
 };
 
 export interface BacktestTrade {
@@ -418,4 +447,68 @@ export interface SnapshotSummary {
   tokens_input: number;
   tokens_output: number;
   pick_count: number;
+}
+
+// ── Agent Types ─────────────────────────────────────────────────────────────
+
+export interface AgentInsight {
+  id: number;
+  type: 'opportunity' | 'warning' | 'anomaly' | 'milestone';
+  severity: 'info' | 'notable' | 'urgent';
+  card_id: number | null;
+  title: string;
+  message: string;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+  acknowledged: boolean;
+}
+
+export interface AgentPrediction {
+  id: number;
+  card_id: number;
+  card_name: string;
+  card_image: string | null;
+  signal: string;
+  persona_source: string;
+  entry_price: number;
+  current_price: number | null;
+  target_price: number | null;
+  stop_loss: number | null;
+  return_pct_7d: number | null;
+  return_pct_30d: number | null;
+  return_pct_90d: number | null;
+  outcome: 'pending' | 'correct' | 'incorrect' | 'expired';
+  predicted_at: string;
+}
+
+export interface AccuracyReport {
+  total_predictions: number;
+  resolved: number;
+  pending: number;
+  overall_hit_rate: number | null;
+  by_persona: Record<string, { total: number; correct: number; hit_rate: number }>;
+  by_signal: Record<string, { total: number; correct: number; hit_rate: number }>;
+  best_pick: AgentPrediction | null;
+  worst_pick: AgentPrediction | null;
+  recent_picks: AgentPrediction[];
+}
+
+export interface AgentStatus {
+  last_analysis_at: string | null;
+  active_predictions: number;
+  total_predictions: number;
+  unread_insights: number;
+  overall_hit_rate: number | null;
+  resolved_predictions: number;
+}
+
+export interface AgentAnalysisResult {
+  analysis?: string;
+  consensus_picks?: AnalyzedCard[];
+  model?: string;
+  tool_calls?: number;
+  tokens_used?: { input: number; output: number };
+  predictions_created?: number;
+  snapshot_id?: number;
+  error?: string;
 }

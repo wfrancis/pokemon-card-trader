@@ -14,6 +14,7 @@ from server.routes import cards, prices, analysis
 from server.routes import backtest
 from server.routes import trader
 from server.routes import sales
+from server.routes import agent
 from server.services.card_sync import sync_all_cards
 from server.services.price_collector import collect_prices_for_cards
 from server.services.seed_data import seed_database
@@ -31,8 +32,15 @@ FRONTEND_BUILD = os.path.join(os.path.dirname(__file__), "..", "frontend", "buil
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
-    # Migrations for existing tables (create_all won't add columns to existing tables)
+    # Enable WAL mode for better concurrent read/write (agent writes during sync)
     from sqlalchemy import text
+    with engine.connect() as conn:
+        try:
+            conn.execute(text("PRAGMA journal_mode=WAL"))
+            conn.commit()
+        except Exception:
+            pass
+    # Migrations for existing tables (create_all won't add columns to existing tables)
     with engine.connect() as conn:
         try:
             conn.execute(text(
@@ -146,7 +154,173 @@ async def _background_price_sync():
                 db.close()
         except Exception as e:
             logger.error(f"Background sales collection failed: {e}")
+        # 5. Backfill prediction prices (update agent accuracy tracking)
+        try:
+            from server.services.prediction_tracker import backfill_prediction_prices
+            db = SessionLocal()
+            try:
+                stats = backfill_prediction_prices(db)
+                if stats["predictions_updated"] > 0:
+                    logger.info(f"Prediction backfill: {stats}")
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Prediction backfill failed: {e}")
+        # 6. Autonomous agent scan
+        try:
+            await _autonomous_agent_scan()
+        except Exception as e:
+            logger.error(f"Autonomous agent scan failed: {e}")
         await asyncio.sleep(SYNC_INTERVAL)
+
+
+async def _autonomous_agent_scan():
+    """Autonomous agent scan — runs after each price sync.
+
+    1. Anomaly detection (pure SQL, zero AI cost)
+    2. Generate insights for notable changes
+    3. Once daily: run full agent analysis (GPT-5)
+    4. Other scans: quick anomaly analysis (GPT-5 mini) only if anomalies found
+    """
+    from server.database import SessionLocal
+    from server.models.agent_insight import AgentInsight
+    from server.models.agent_prediction import AgentPrediction
+    from server.models.trader_snapshot import TraderAnalysisSnapshot
+    from server.models.card import Card
+    from server.models.price_history import PriceHistory
+    from sqlalchemy import text
+    from datetime import datetime, timedelta, timezone
+
+    db = SessionLocal()
+    try:
+        now = datetime.now(timezone.utc)
+
+        # Check when last full analysis ran
+        last_snapshot = (
+            db.query(TraderAnalysisSnapshot)
+            .order_by(TraderAnalysisSnapshot.created_at.desc())
+            .first()
+        )
+        hours_since_last = 999
+        if last_snapshot and last_snapshot.created_at:
+            last_time = last_snapshot.created_at
+            if last_time.tzinfo is None:
+                last_time = last_time.replace(tzinfo=timezone.utc)
+            hours_since_last = (now - last_time).total_seconds() / 3600
+
+        # Anomaly detection (pure SQL — zero AI cost)
+        anomalies = []
+
+        # Find cards with >10% price change in last 24h
+        try:
+            yesterday = (now - timedelta(days=1)).date()
+            two_days_ago = (now - timedelta(days=2)).date()
+
+            big_movers = db.execute(text("""
+                SELECT c.id, c.name, c.current_price,
+                       ph_old.market_price as old_price,
+                       ((c.current_price - ph_old.market_price) / ph_old.market_price * 100) as change_pct
+                FROM cards c
+                JOIN price_history ph_old ON ph_old.card_id = c.id
+                WHERE c.is_viable = 1
+                  AND c.current_price > 0
+                  AND ph_old.market_price > 0
+                  AND ph_old.date = :two_days_ago
+                  AND ABS((c.current_price - ph_old.market_price) / ph_old.market_price) > 0.10
+                ORDER BY ABS((c.current_price - ph_old.market_price) / ph_old.market_price) DESC
+                LIMIT 10
+            """), {"two_days_ago": two_days_ago}).fetchall()
+
+            for row in big_movers:
+                direction = "spiked" if row.change_pct > 0 else "dropped"
+                severity = "urgent" if abs(row.change_pct) > 20 else "notable"
+                anomalies.append({
+                    "card_id": row.id,
+                    "title": f"{row.name} {direction} {abs(row.change_pct):.1f}%",
+                    "message": f"{row.name} {direction} from ${row.old_price:.2f} to ${row.current_price:.2f} ({row.change_pct:+.1f}%) in the last day.",
+                    "type": "anomaly",
+                    "severity": severity,
+                })
+        except Exception as e:
+            logger.warning(f"Anomaly detection query failed: {e}")
+
+        # Check predictions that hit targets or stop-losses
+        try:
+            active_preds = db.query(AgentPrediction).filter_by(outcome="pending").all()
+            for pred in active_preds:
+                card = db.query(Card).filter_by(id=pred.card_id).first()
+                if not card or not card.current_price:
+                    continue
+
+                if pred.target_price and card.current_price >= pred.target_price:
+                    anomalies.append({
+                        "card_id": card.id,
+                        "title": f"{card.name} hit target price ${pred.target_price:.2f}",
+                        "message": f"Your BUY prediction on {card.name} hit the target. Entry: ${pred.entry_price:.2f}, Current: ${card.current_price:.2f}, Target: ${pred.target_price:.2f}.",
+                        "type": "milestone",
+                        "severity": "notable",
+                    })
+                elif pred.stop_loss and card.current_price <= pred.stop_loss:
+                    anomalies.append({
+                        "card_id": card.id,
+                        "title": f"{card.name} hit stop-loss ${pred.stop_loss:.2f}",
+                        "message": f"Your BUY prediction on {card.name} hit the stop-loss. Entry: ${pred.entry_price:.2f}, Current: ${card.current_price:.2f}, Stop: ${pred.stop_loss:.2f}.",
+                        "type": "warning",
+                        "severity": "urgent",
+                    })
+        except Exception as e:
+            logger.warning(f"Prediction check failed: {e}")
+
+        # Record anomaly insights
+        for anomaly in anomalies:
+            insight = AgentInsight(
+                type=anomaly["type"],
+                severity=anomaly["severity"],
+                card_id=anomaly.get("card_id"),
+                title=anomaly["title"],
+                message=anomaly["message"],
+            )
+            db.add(insight)
+        if anomalies:
+            db.commit()
+            logger.info(f"Agent scan: recorded {len(anomalies)} anomaly insights")
+
+        # Daily full analysis (GPT-5) — run if >20 hours since last analysis
+        if hours_since_last > 20:
+            logger.info("Agent scan: running daily full analysis (GPT-5)...")
+            try:
+                from server.services.trader_agent import run_agent_analysis
+                result = await run_agent_analysis(db, model="gpt-5")
+                if result.get("error"):
+                    logger.error(f"Daily agent analysis failed: {result['error']}")
+                else:
+                    logger.info(
+                        f"Daily agent analysis complete: {result.get('tool_calls', 0)} tool calls, "
+                        f"{result.get('predictions_created', 0)} predictions"
+                    )
+            except Exception as e:
+                logger.error(f"Daily agent analysis exception: {e}")
+
+        # Quick anomaly scan (GPT-5 mini) — only if anomalies found and not doing daily
+        elif anomalies and hours_since_last <= 20:
+            logger.info(f"Agent scan: {len(anomalies)} anomalies found, running quick scan (GPT-5 mini)...")
+            try:
+                from server.services.trader_agent import run_agent_analysis
+                result = await run_agent_analysis(db, model="gpt-5-mini")
+                if result.get("error"):
+                    logger.error(f"Quick agent scan failed: {result['error']}")
+                else:
+                    logger.info(
+                        f"Quick agent scan complete: {result.get('tool_calls', 0)} tool calls"
+                    )
+            except Exception as e:
+                logger.error(f"Quick agent scan exception: {e}")
+        else:
+            logger.info("Agent scan: no anomalies, skipping AI analysis (next daily in "
+                        f"{max(0, 20 - hours_since_last):.1f}h)")
+
+    finally:
+        db.close()
 
 
 app = FastAPI(
@@ -172,6 +346,7 @@ app.include_router(analysis.router)
 app.include_router(backtest.router)
 app.include_router(trader.router)
 app.include_router(sales.router)
+app.include_router(agent.router)
 
 
 @app.get("/health")

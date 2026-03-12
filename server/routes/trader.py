@@ -9,9 +9,12 @@ from server.models.card import Card
 from server.models.trader_snapshot import TraderAnalysisSnapshot
 from server.services.trader_agent import (
     get_trader_analysis, get_card_trader_analysis, get_multi_persona_analysis,
+    run_agent_analysis,
 )
 from server.services.trading_economics import calc_breakeven_appreciation, calc_roundtrip_pnl
 from server.services.backtesting import run_backtest
+from server.models.agent_prediction import AgentPrediction
+from server.services.prediction_tracker import get_accuracy_report
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/trader", tags=["trader"])
@@ -253,6 +256,9 @@ async def trader_personas_analysis(db: Session = Depends(get_db)):
             db.add(snapshot)
             db.commit()
             logger.info(f"Saved trader analysis snapshot #{snapshot.id}")
+
+            # Create AgentPrediction rows for consensus picks
+            _create_predictions_from_picks(db, snapshot)
         except Exception as e:
             logger.error(f"Failed to save trader snapshot: {e}")
             db.rollback()
@@ -409,7 +415,96 @@ async def backtest_consensus_picks(db: Session = Depends(get_db)):
     return results
 
 
+@router.get("/agent")
+async def trader_agent_analysis(
+    model: str = "gpt-5",
+    db: Session = Depends(get_db),
+):
+    """Run the autonomous tool-using agent. Uses function calling to investigate
+    the market and produce investment recommendations.
+
+    model: 'gpt-5' (daily deep analysis) or 'gpt-5-mini' (quick scans)
+    """
+    return await run_agent_analysis(db, model=model)
+
+
 @router.get("/card/{card_id}")
 async def trader_card_analysis(card_id: int, db: Session = Depends(get_db)):
     """Get the AI trader's analysis for a specific card."""
     return await get_card_trader_analysis(db, card_id)
+
+
+# ── Prediction Tracking ─────────────────────────────────────────────────────
+
+def _create_predictions_from_picks(db: Session, snapshot: TraderAnalysisSnapshot):
+    """Create AgentPrediction rows from a saved snapshot's consensus picks."""
+    picks = _extract_picks_from_consensus(db, snapshot.consensus or "")
+    if not picks:
+        return
+
+    created = 0
+    for pick in picks:
+        # Only track actionable signals (buy/accumulate)
+        if pick.get("signal") not in ("buy", "accumulate"):
+            continue
+
+        card = db.query(Card).filter_by(id=pick["card_id"]).first()
+        if not card or not card.current_price:
+            continue
+
+        prediction = AgentPrediction(
+            card_id=card.id,
+            snapshot_id=snapshot.id,
+            signal=pick["signal"],
+            persona_source="consensus",
+            entry_price=card.current_price,
+            target_price=None,  # TODO: parse from consensus text
+            stop_loss=None,     # TODO: parse from consensus text
+        )
+        db.add(prediction)
+        created += 1
+
+    if created > 0:
+        db.commit()
+        logger.info(f"Created {created} agent predictions from snapshot #{snapshot.id}")
+
+
+@router.get("/accuracy")
+async def trader_accuracy(db: Session = Depends(get_db)):
+    """Get prediction accuracy report across all dimensions."""
+    return get_accuracy_report(db)
+
+
+@router.get("/predictions")
+async def trader_predictions(
+    outcome: str | None = None,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+):
+    """List agent predictions, optionally filtered by outcome."""
+    query = db.query(AgentPrediction).order_by(AgentPrediction.predicted_at.desc())
+    if outcome:
+        query = query.filter(AgentPrediction.outcome == outcome)
+    predictions = query.limit(limit).all()
+
+    results = []
+    for p in predictions:
+        card = db.query(Card).filter_by(id=p.card_id).first()
+        results.append({
+            "id": p.id,
+            "card_id": p.card_id,
+            "card_name": card.name if card else "Unknown",
+            "card_image": card.image_small if card else None,
+            "signal": p.signal,
+            "persona_source": p.persona_source,
+            "entry_price": p.entry_price,
+            "current_price": card.current_price if card else None,
+            "target_price": p.target_price,
+            "stop_loss": p.stop_loss,
+            "return_pct_7d": p.return_pct_7d,
+            "return_pct_30d": p.return_pct_30d,
+            "return_pct_90d": p.return_pct_90d,
+            "outcome": p.outcome,
+            "predicted_at": p.predicted_at.isoformat() + "Z" if p.predicted_at else None,
+        })
+    return results

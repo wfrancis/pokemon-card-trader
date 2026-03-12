@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react';
-import { Box, Paper, Typography, Grid, Button, CircularProgress, Snackbar, Alert } from '@mui/material';
+import { Box, Paper, Typography, Grid, Button, CircularProgress, Snackbar, Alert, Chip } from '@mui/material';
 import SyncIcon from '@mui/icons-material/Sync';
 import ShowChartIcon from '@mui/icons-material/ShowChart';
+import SmartToyIcon from '@mui/icons-material/SmartToy';
 import MarketTicker from '../components/MarketTicker';
 import TopMovers from '../components/TopMovers';
+import AgentFeed from '../components/AgentFeed';
 import { api } from '../services/api';
+import type { AgentStatus } from '../services/api';
 
 interface MarketIndex {
   avg_price: number;
@@ -12,8 +15,18 @@ interface MarketIndex {
   total_market_cap: number;
 }
 
+function getTimeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
 export default function Dashboard() {
   const [index, setIndex] = useState<MarketIndex | null>(null);
+  const [agentStatus, setAgentStatus] = useState<AgentStatus | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
     open: false, message: '', severity: 'success',
@@ -21,6 +34,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     api.getMarketIndex().then(setIndex).catch(console.error);
+    api.getAgentStatus().then(setAgentStatus).catch(() => {});
   }, []);
 
   const handleSync = async () => {
@@ -98,6 +112,64 @@ export default function Dashboard() {
             </Paper>
           </Grid>
         </Grid>
+
+        {/* Agent Status Bar */}
+        <Paper sx={{
+          p: 1, mb: 2, bgcolor: '#0a0a0a',
+          border: '1px solid #00bcd422',
+          display: 'flex', alignItems: 'center', gap: 1.5,
+          flexWrap: 'wrap',
+        }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <SmartToyIcon sx={{ color: '#00bcd4', fontSize: 16 }} />
+            <Typography sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.65rem', color: '#00bcd4', fontWeight: 700 }}>
+              AGENT
+            </Typography>
+          </Box>
+          {agentStatus && (
+            <>
+              <Chip
+                label={`Last: ${agentStatus.last_analysis_at ? getTimeAgo(agentStatus.last_analysis_at) : 'never'}`}
+                size="small"
+                sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.55rem', height: 20, bgcolor: '#1a1a1a', color: '#888' }}
+              />
+              <Chip
+                label={`${agentStatus.active_predictions} active predictions`}
+                size="small"
+                sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.55rem', height: 20, bgcolor: '#1a1a1a', color: '#00ff41' }}
+              />
+              {agentStatus.overall_hit_rate !== null && (
+                <Chip
+                  label={`${agentStatus.overall_hit_rate}% accuracy (${agentStatus.resolved_predictions} resolved)`}
+                  size="small"
+                  sx={{
+                    fontFamily: '"JetBrains Mono", monospace', fontSize: '0.55rem', height: 20,
+                    bgcolor: '#1a1a1a',
+                    color: agentStatus.overall_hit_rate >= 60 ? '#00ff41' : agentStatus.overall_hit_rate >= 50 ? '#ffd700' : '#ff1744',
+                  }}
+                />
+              )}
+              {agentStatus.unread_insights > 0 && (
+                <Chip
+                  label={`${agentStatus.unread_insights} new insights`}
+                  size="small"
+                  sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.55rem', height: 20, bgcolor: '#ffd70015', color: '#ffd700' }}
+                />
+              )}
+            </>
+          )}
+        </Paper>
+
+        {/* Agent Insights Feed */}
+        <Box sx={{ mb: 2 }}>
+          <Typography sx={{
+            fontFamily: '"JetBrains Mono", monospace', fontSize: '0.7rem',
+            color: '#555', textTransform: 'uppercase', mb: 0.5, letterSpacing: 1,
+          }}>
+            Agent Insights
+          </Typography>
+          <AgentFeed limit={5} />
+        </Box>
 
         {/* Top Movers */}
         <TopMovers />

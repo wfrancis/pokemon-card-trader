@@ -1259,3 +1259,210 @@ Keep it tight — this is a single-card trade brief, not a dissertation."""
     except Exception as e:
         logger.error(f"Card trader analysis failed: {e}")
         return {"error": f"Analysis failed: {str(e)}"}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# AUTONOMOUS TOOL-USING AGENT
+# ══════════════════════════════════════════════════════════════════════════════
+
+AGENT_SYSTEM_PROMPT = """You are the Chief Investment Officer of a Pokemon card trading desk. You have access to tools that let you query market data, analyze individual cards, run backtests, and check your prediction accuracy.
+
+CRITICAL CONTEXT — Pokemon Card Market:
+- This is a COLLECTIBLES market. Cards trade on TCGPlayer with significant fees (20-35% breakeven depending on price tier).
+- Premium ($100+): ~20-25% breakeven. Blue chip investments, buy-and-hold.
+- Mid-high ($50-100): ~25-30% breakeven. Active trading sweet spot.
+- Mid ($20-50): ~30-35% breakeven. Need strong momentum or accumulation thesis.
+- Cards under $20 are excluded — not viable after fees.
+
+YOUR WORKFLOW:
+1. Start by checking your previous picks and accuracy (learn from your track record)
+2. Get a market overview to understand current conditions
+3. Search for interesting cards across tiers
+4. Deep-dive into promising cards (get_card_data, check_sales_velocity)
+5. Validate hypotheses with backtests
+6. Record insights for notable findings (opportunities, warnings, anomalies)
+7. Provide your final analysis with specific picks
+
+FOR EACH PICK, SPECIFY:
+- Card name and set
+- Signal: BUY / ACCUMULATE / WATCH / HOLD
+- Current price and tier
+- Entry price, target price, stop-loss
+- Thesis (1-2 sentences — why this card?)
+- Conviction: high / medium / speculative
+
+Be data-driven. Use your tools to investigate, don't guess. If sales velocity doesn't support a thesis, say so. If a backtest shows a strategy doesn't work for a card, acknowledge it.
+
+{accuracy_context}"""
+
+
+async def run_agent_analysis(db: Session, model: str = "gpt-5") -> dict:
+    """Run the autonomous tool-using agent analysis.
+
+    Uses OpenAI function calling: the agent decides which tools to call,
+    investigates the market, and produces picks with supporting data.
+
+    Args:
+        db: Database session
+        model: OpenAI model to use ("gpt-5" for daily, "gpt-5-mini" for scans)
+    """
+    import openai
+
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        return {"error": "OPENAI_API_KEY not configured"}
+
+    from server.services.agent_tools import TOOL_SCHEMAS, execute_tool
+    from server.services.prediction_tracker import get_accuracy_report
+    from server.models.agent_prediction import AgentPrediction
+
+    # Build accuracy context for system prompt
+    accuracy = get_accuracy_report(db)
+    accuracy_context = ""
+    if accuracy.get("resolved", 0) > 0:
+        accuracy_context = f"""
+## YOUR TRACK RECORD
+- Overall hit rate: {accuracy['overall_hit_rate']}% ({accuracy['resolved']} resolved predictions)
+- Pending predictions: {accuracy['pending']}"""
+        for persona, stats in accuracy.get("by_persona", {}).items():
+            accuracy_context += f"\n- {persona}: {stats['hit_rate']}% ({stats['correct']}/{stats['total']})"
+        if accuracy.get("best_pick"):
+            bp = accuracy["best_pick"]
+            accuracy_context += f"\n- Best pick: {bp['card_name']} ({bp['return_pct_30d']}% in 30d)"
+        if accuracy.get("worst_pick"):
+            wp = accuracy["worst_pick"]
+            accuracy_context += f"\n- Worst pick: {wp['card_name']} ({wp['return_pct_30d']}% in 30d)"
+        accuracy_context += "\n\nLearn from your track record. Adjust confidence levels based on what's working."
+    else:
+        accuracy_context = "## YOUR TRACK RECORD\nNo resolved predictions yet. This is your first analysis — establish your baseline."
+
+    system_prompt = AGENT_SYSTEM_PROMPT.format(accuracy_context=accuracy_context)
+
+    # Initialize conversation
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": (
+            "Analyze the current Pokemon card market. "
+            "Start by reviewing your previous picks and accuracy, then get a market overview, "
+            "investigate interesting opportunities across all price tiers, and provide your "
+            "investment recommendations. Record insights for anything notable you find."
+        )},
+    ]
+
+    client = openai.AsyncOpenAI(api_key=api_key)
+    total_input_tokens = 0
+    total_output_tokens = 0
+    tool_calls_made = 0
+    max_rounds = 15
+
+    for round_num in range(max_rounds):
+        try:
+            response = await client.chat.completions.create(
+                model=model,
+                messages=messages,
+                tools=TOOL_SCHEMAS,
+                max_completion_tokens=8192,
+            )
+        except Exception as e:
+            logger.error(f"Agent OpenAI call failed (round {round_num}): {e}")
+            return {"error": f"OpenAI API call failed: {str(e)}"}
+
+        total_input_tokens += response.usage.prompt_tokens
+        total_output_tokens += response.usage.completion_tokens
+
+        choice = response.choices[0]
+
+        # If the model wants to call tools
+        if choice.finish_reason == "tool_calls" or (choice.message.tool_calls and len(choice.message.tool_calls) > 0):
+            # Add the assistant message with tool calls
+            messages.append(choice.message)
+
+            # Execute each tool call
+            for tc in choice.message.tool_calls:
+                tool_name = tc.function.name
+                try:
+                    arguments = json.loads(tc.function.arguments)
+                except json.JSONDecodeError:
+                    arguments = {}
+
+                logger.info(f"Agent tool call [{round_num}]: {tool_name}({arguments})")
+                result = execute_tool(db, tool_name, arguments)
+                tool_calls_made += 1
+
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": result,
+                })
+
+            continue  # Next round
+
+        # Model finished (no more tool calls) — extract final analysis
+        final_text = choice.message.content or ""
+        logger.info(
+            f"Agent analysis complete: {tool_calls_made} tool calls, "
+            f"{total_input_tokens + total_output_tokens} total tokens, "
+            f"model={model}"
+        )
+
+        # Save as snapshot
+        snapshot = TraderAnalysisSnapshot(
+            personas_json=json.dumps({"agent": {"model": model, "tool_calls": tool_calls_made}}),
+            consensus=final_text,
+            consensus_picks_json="[]",
+            market_data_summary_json=json.dumps({"source": "agent_tools", "tool_calls": tool_calls_made}),
+            tokens_input=total_input_tokens,
+            tokens_output=total_output_tokens,
+        )
+        db.add(snapshot)
+        db.commit()
+
+        # Extract picks and create predictions
+        from server.routes.trader import _extract_picks_from_consensus, _parse_signal
+        picks = _extract_picks_from_consensus(db, final_text)
+
+        # Create predictions for actionable picks
+        predictions_created = 0
+        for pick in picks:
+            if pick.get("signal") not in ("buy", "accumulate"):
+                continue
+            card = db.query(Card).filter_by(id=pick["card_id"]).first()
+            if not card or not card.current_price:
+                continue
+
+            prediction = AgentPrediction(
+                card_id=card.id,
+                snapshot_id=snapshot.id,
+                signal=pick["signal"],
+                persona_source="agent",
+                entry_price=card.current_price,
+            )
+            db.add(prediction)
+            predictions_created += 1
+
+        if predictions_created > 0:
+            db.commit()
+
+        return {
+            "analysis": final_text,
+            "consensus_picks": picks,
+            "model": model,
+            "tool_calls": tool_calls_made,
+            "tokens_used": {
+                "input": total_input_tokens,
+                "output": total_output_tokens,
+            },
+            "predictions_created": predictions_created,
+            "snapshot_id": snapshot.id,
+        }
+
+    # Hit max rounds
+    logger.warning(f"Agent hit max rounds ({max_rounds})")
+    return {
+        "error": f"Agent reached max tool call rounds ({max_rounds})",
+        "tool_calls": tool_calls_made,
+        "tokens_used": {
+            "input": total_input_tokens,
+            "output": total_output_tokens,
+        },
+    }

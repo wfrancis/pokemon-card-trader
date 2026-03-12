@@ -18,7 +18,7 @@ import SmartToyIcon from '@mui/icons-material/SmartToy';
 import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
-import type { MultiPersonaAnalysis, PersonaResult, AnalyzedCard, SnapshotSummary, BacktestPickResult } from '../services/api';
+import type { MultiPersonaAnalysis, PersonaResult, AnalyzedCard, SnapshotSummary, BacktestPickResult, AgentPrediction, AccuracyReport, AgentAnalysisResult } from '../services/api';
 
 const mono = { fontFamily: '"JetBrains Mono", "Fira Code", monospace' };
 
@@ -522,6 +522,10 @@ export default function Trader() {
   const [history, setHistory] = useState<SnapshotSummary[]>([]);
   const [selectedSnapshotId, setSelectedSnapshotId] = useState<number | 'latest'>('latest');
   const [backtestResults, setBacktestResults] = useState<Record<number, BacktestPickResult>>({});
+  const [agentLoading, setAgentLoading] = useState(false);
+  const [predictions, setPredictions] = useState<AgentPrediction[]>([]);
+  const [accuracy, setAccuracy] = useState<AccuracyReport | null>(null);
+  const [activeTab, setActiveTab] = useState<'desk' | 'predictions'>('desk');
 
   // Load latest saved analysis + history list on mount
   useEffect(() => {
@@ -571,6 +575,36 @@ export default function Trader() {
       setError(err.message || 'Failed to get trading desk analysis');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Load predictions and accuracy
+  useEffect(() => {
+    api.getAgentPredictions(undefined, 30).then(setPredictions).catch(() => {});
+    api.getAgentAccuracy().then(setAccuracy).catch(() => {});
+  }, []);
+
+  const runAgent = async () => {
+    setAgentLoading(true);
+    setError(null);
+    try {
+      const result = await api.runAgentAnalysis('gpt-5');
+      if (result.error) {
+        setError(result.error);
+      } else {
+        // Refresh predictions after agent run
+        api.getAgentPredictions(undefined, 30).then(setPredictions).catch(() => {});
+        api.getAgentAccuracy().then(setAccuracy).catch(() => {});
+        // Refresh analysis if one was produced
+        api.getLatestPersonaAnalysis().then((latest) => {
+          if (!latest.error) setAnalysis(latest);
+        }).catch(() => {});
+        api.getPersonaHistory().then(setHistory).catch(() => {});
+      }
+    } catch (err: any) {
+      setError(err.message || 'Agent analysis failed');
+    } finally {
+      setAgentLoading(false);
     }
   };
 
@@ -625,20 +659,34 @@ export default function Trader() {
             </Box>
           </Box>
 
-          <Button
-            variant="contained"
-            startIcon={loading ? <CircularProgress size={16} sx={{ color: '#000' }} /> : <RocketLaunchIcon />}
-            onClick={runAnalysis}
-            disabled={loading}
-            sx={{
-              bgcolor: '#00ff41', color: '#000', fontWeight: 700, ...mono, px: 3,
-              width: { xs: '100%', sm: 'auto' },
-              '&:hover': { bgcolor: '#00cc33' },
-              '&:disabled': { bgcolor: '#333', color: '#666' },
-            }}
-          >
-            {loading ? 'DEPLOYING ANALYSTS...' : 'DEPLOY ALL ANALYSTS'}
-          </Button>
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+            <Button
+              variant="contained"
+              startIcon={agentLoading ? <CircularProgress size={16} sx={{ color: '#000' }} /> : <SmartToyIcon />}
+              onClick={runAgent}
+              disabled={agentLoading || loading}
+              sx={{
+                bgcolor: '#00bcd4', color: '#000', fontWeight: 700, ...mono, px: 3,
+                '&:hover': { bgcolor: '#0097a7' },
+                '&:disabled': { bgcolor: '#333', color: '#666' },
+              }}
+            >
+              {agentLoading ? 'AGENT RUNNING...' : 'RUN AGENT'}
+            </Button>
+            <Button
+              variant="contained"
+              startIcon={loading ? <CircularProgress size={16} sx={{ color: '#000' }} /> : <RocketLaunchIcon />}
+              onClick={runAnalysis}
+              disabled={loading || agentLoading}
+              sx={{
+                bgcolor: '#00ff41', color: '#000', fontWeight: 700, ...mono, px: 3,
+                '&:hover': { bgcolor: '#00cc33' },
+                '&:disabled': { bgcolor: '#333', color: '#666' },
+              }}
+            >
+              {loading ? 'DEPLOYING...' : 'FULL DESK'}
+            </Button>
+          </Box>
         </Box>
 
         {loading && (
@@ -648,6 +696,158 @@ export default function Trader() {
         )}
       </Paper>
 
+      {/* Tab Toggle */}
+      <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
+        {(['desk', 'predictions'] as const).map((tab) => (
+          <Chip
+            key={tab}
+            label={tab === 'desk' ? 'TRADING DESK' : 'TRACK RECORD'}
+            onClick={() => setActiveTab(tab)}
+            sx={{
+              ...mono, fontWeight: 700, fontSize: '0.7rem',
+              bgcolor: activeTab === tab ? '#00ff4120' : '#1a1a1a',
+              color: activeTab === tab ? '#00ff41' : '#666',
+              border: `1px solid ${activeTab === tab ? '#00ff4144' : '#333'}`,
+              '&:hover': { bgcolor: activeTab === tab ? '#00ff4130' : '#222' },
+            }}
+          />
+        ))}
+        {accuracy && accuracy.resolved > 0 && (
+          <Chip
+            label={`${accuracy.overall_hit_rate}% accuracy`}
+            size="small"
+            sx={{
+              ...mono, fontSize: '0.6rem', height: 24, ml: 'auto',
+              bgcolor: 'transparent',
+              color: (accuracy.overall_hit_rate ?? 0) >= 60 ? '#00ff41' : (accuracy.overall_hit_rate ?? 0) >= 50 ? '#ffd700' : '#ff1744',
+              border: '1px solid #333',
+            }}
+          />
+        )}
+      </Box>
+
+      {/* Predictions Tab */}
+      {activeTab === 'predictions' && (
+        <Box>
+          {/* Accuracy Summary */}
+          {accuracy && accuracy.resolved > 0 && (
+            <Paper sx={{ p: 2, mb: 2, bgcolor: '#0a0a0a', border: '1px solid #222' }}>
+              <Typography sx={{ ...mono, fontSize: '0.7rem', color: '#555', mb: 1, textTransform: 'uppercase' }}>
+                Prediction Accuracy
+              </Typography>
+              <Grid container spacing={2}>
+                <Grid size={{ xs: 6, md: 3 }}>
+                  <Typography sx={{ ...mono, fontSize: '0.6rem', color: '#666' }}>OVERALL</Typography>
+                  <Typography sx={{
+                    ...mono, fontSize: '1.5rem', fontWeight: 700,
+                    color: (accuracy.overall_hit_rate ?? 0) >= 60 ? '#00ff41' : '#ffd700',
+                  }}>
+                    {accuracy.overall_hit_rate}%
+                  </Typography>
+                  <Typography sx={{ ...mono, fontSize: '0.6rem', color: '#555' }}>
+                    {accuracy.resolved} resolved / {accuracy.pending} pending
+                  </Typography>
+                </Grid>
+                {Object.entries(accuracy.by_persona).map(([persona, stats]) => (
+                  <Grid size={{ xs: 6, md: 3 }} key={persona}>
+                    <Typography sx={{ ...mono, fontSize: '0.6rem', color: '#666', textTransform: 'uppercase' }}>
+                      {persona}
+                    </Typography>
+                    <Typography sx={{
+                      ...mono, fontSize: '1.2rem', fontWeight: 700,
+                      color: stats.hit_rate >= 60 ? '#00ff41' : stats.hit_rate >= 50 ? '#ffd700' : '#ff1744',
+                    }}>
+                      {stats.hit_rate}%
+                    </Typography>
+                    <Typography sx={{ ...mono, fontSize: '0.55rem', color: '#555' }}>
+                      {stats.correct}/{stats.total}
+                    </Typography>
+                  </Grid>
+                ))}
+              </Grid>
+            </Paper>
+          )}
+
+          {/* Predictions Table */}
+          <Paper sx={{ bgcolor: '#0a0a0a', border: '1px solid #222', overflow: 'hidden' }}>
+            <Box sx={{ p: 1.5, borderBottom: '1px solid #222' }}>
+              <Typography sx={{ ...mono, fontSize: '0.7rem', color: '#555', textTransform: 'uppercase' }}>
+                Active Predictions ({predictions.length})
+              </Typography>
+            </Box>
+            {predictions.length === 0 ? (
+              <Box sx={{ p: 3, textAlign: 'center' }}>
+                <Typography sx={{ ...mono, fontSize: '0.75rem', color: '#555' }}>
+                  No predictions yet. Run the agent to generate picks.
+                </Typography>
+              </Box>
+            ) : (
+              predictions.map((pred) => {
+                const returnPct = pred.current_price && pred.entry_price
+                  ? ((pred.current_price - pred.entry_price) / pred.entry_price) * 100
+                  : null;
+                const outcomeColor = pred.outcome === 'correct' ? '#00ff41'
+                  : pred.outcome === 'incorrect' ? '#ff1744'
+                  : '#ffd700';
+                const signal = SIGNAL_CONFIG[pred.signal] || { label: pred.signal?.toUpperCase(), color: '#888', bg: '#1a1a1a' };
+
+                return (
+                  <Box
+                    key={pred.id}
+                    sx={{
+                      display: 'flex', alignItems: 'center', gap: 1, p: 1,
+                      borderBottom: '1px solid #111', cursor: 'pointer',
+                      '&:hover': { bgcolor: '#111' },
+                    }}
+                    onClick={() => navigate(`/card/${pred.card_id}`)}
+                  >
+                    {pred.card_image && (
+                      <Avatar src={pred.card_image} variant="rounded" sx={{ width: 28, height: 38 }} />
+                    )}
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      <Typography sx={{ ...mono, fontSize: '0.7rem', color: '#fff', fontWeight: 600 }} noWrap>
+                        {pred.card_name}
+                      </Typography>
+                      <Typography sx={{ ...mono, fontSize: '0.55rem', color: '#555' }}>
+                        {pred.persona_source} · {new Date(pred.predicted_at).toLocaleDateString()}
+                      </Typography>
+                    </Box>
+                    <Chip
+                      label={signal.label}
+                      size="small"
+                      sx={{ ...mono, fontSize: '0.5rem', height: 16, color: signal.color, bgcolor: signal.bg }}
+                    />
+                    <Box sx={{ textAlign: 'right', minWidth: 60 }}>
+                      <Typography sx={{ ...mono, fontSize: '0.65rem', color: '#888' }}>
+                        ${pred.entry_price?.toFixed(2)}
+                      </Typography>
+                      {pred.current_price && (
+                        <Typography sx={{
+                          ...mono, fontSize: '0.65rem', fontWeight: 700,
+                          color: returnPct && returnPct > 0 ? '#00ff41' : '#ff1744',
+                        }}>
+                          ${pred.current_price.toFixed(2)} ({returnPct ? `${returnPct > 0 ? '+' : ''}${returnPct.toFixed(1)}%` : '—'})
+                        </Typography>
+                      )}
+                    </Box>
+                    <Chip
+                      label={pred.outcome.toUpperCase()}
+                      size="small"
+                      sx={{
+                        ...mono, fontSize: '0.5rem', height: 16, minWidth: 60,
+                        color: outcomeColor, bgcolor: 'transparent', border: `1px solid ${outcomeColor}44`,
+                      }}
+                    />
+                  </Box>
+                );
+              })
+            )}
+          </Paper>
+        </Box>
+      )}
+
+      {/* Trading Desk Tab */}
+      {activeTab === 'desk' && <>
       {/* Market Summary Bar */}
       {analysis?.market_data_summary && (
         <Paper sx={{ p: 1.5, mb: 2, bgcolor: '#0a0a0a', border: '1px solid #222' }}>
@@ -816,7 +1016,7 @@ export default function Trader() {
         <Paper sx={{ p: 4, bgcolor: '#111', border: '1px solid #1e1e1e', textAlign: 'center' }}>
           <SmartToyIcon sx={{ color: '#333', fontSize: 60, mb: 2 }} />
           <Typography sx={{ color: '#666', ...mono, mb: 1 }}>
-            Click "DEPLOY ALL ANALYSTS" to activate the trading desk
+            Click "RUN AGENT" for autonomous analysis or "FULL DESK" for 3 parallel analysts
           </Typography>
           <Box sx={{ display: 'flex', justifyContent: 'center', gap: { xs: 1.5, md: 3 }, mt: 2, flexWrap: 'wrap' }}>
             {Object.values({
@@ -836,6 +1036,7 @@ export default function Trader() {
           </Box>
         </Paper>
       )}
+      </>}
     </Box>
   );
 }
