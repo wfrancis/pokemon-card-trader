@@ -405,17 +405,30 @@ def _filter_dominant_variant(records: list) -> list:
 
 def analyze_card(db: Session, card_id: int) -> AnalysisResult:
     """Run full technical analysis on a card's price history."""
-    records = (
+    from server.models.card import Card as CardModel
+    card = db.query(CardModel).filter_by(id=card_id).first()
+
+    # If card has a known variant, filter to only that variant's prices
+    query = (
         db.query(PriceHistory)
         .filter(PriceHistory.card_id == card_id, PriceHistory.market_price.isnot(None))
-        .order_by(asc(PriceHistory.date))
-        .all()
     )
+    if card and card.price_variant:
+        query = query.filter(PriceHistory.variant == card.price_variant)
+    records = query.order_by(asc(PriceHistory.date)).all()
 
+    if not records:
+        # Fallback: try all variants if card variant filter returned nothing
+        records = (
+            db.query(PriceHistory)
+            .filter(PriceHistory.card_id == card_id, PriceHistory.market_price.isnot(None))
+            .order_by(asc(PriceHistory.date))
+            .all()
+        )
     if not records:
         return AnalysisResult()
 
-    # Filter to dominant variant to avoid mixed-variant noise
+    # Filter to dominant variant to avoid mixed-variant noise (fallback only)
     records = _filter_dominant_variant(records)
 
     prices = [r.market_price for r in records]
@@ -531,78 +544,109 @@ def analyze_card(db: Session, card_id: int) -> AnalysisResult:
 
 def _generate_signal(analysis: AnalysisResult, prices: list[float]) -> tuple[str, float]:
     """
-    Combine indicators into a bull/bear/hold signal.
+    Combine indicators into a bull/bear/hold signal using weighted scoring.
     Returns (signal_name, strength from -1.0 to 1.0).
+
+    Weights ensure extreme indicator values (RSI > 80, RSI < 20) dominate
+    the signal rather than being diluted by minor trend-following factors.
     """
     if not prices:
         return "hold", 0.0
 
     current_price = prices[-1]
-    score = 0.0
-    factors = 0
+    weighted_score = 0.0
+    total_weight = 0.0
 
-    # RSI signal
+    # RSI signal — weight 3 (heaviest: overbought/oversold is the strongest signal)
     if analysis.rsi_14 is not None:
-        if analysis.rsi_14 < 30:
-            score += 1.0  # Oversold = bullish
+        rsi_weight = 3.0
+        if analysis.rsi_14 > 80:
+            weighted_score += -1.0 * rsi_weight   # Extremely overbought
         elif analysis.rsi_14 > 70:
-            score -= 1.0  # Overbought = bearish
+            weighted_score += -0.7 * rsi_weight   # Overbought
+        elif analysis.rsi_14 < 20:
+            weighted_score += 1.0 * rsi_weight    # Extremely oversold
+        elif analysis.rsi_14 < 30:
+            weighted_score += 0.7 * rsi_weight    # Oversold
         else:
-            score += (50 - analysis.rsi_14) / 50  # Neutral zone lean
-        factors += 1
+            # Neutral zone: slight lean based on distance from 50
+            weighted_score += ((50 - analysis.rsi_14) / 50) * 0.3 * rsi_weight
+        total_weight += rsi_weight
 
-    # MACD signal
+    # MACD signal — weight 2
     if analysis.macd_histogram is not None:
+        macd_weight = 2.0
         if analysis.macd_histogram > 0:
-            score += 0.5
+            weighted_score += 0.5 * macd_weight
         else:
-            score -= 0.5
-        factors += 1
+            weighted_score += -0.5 * macd_weight
+        # Bonus: MACD line crossing signal line direction
+        if analysis.macd_line is not None and analysis.macd_signal is not None:
+            if analysis.macd_line > analysis.macd_signal:
+                weighted_score += 0.2 * macd_weight
+            else:
+                weighted_score += -0.2 * macd_weight
+        total_weight += macd_weight
 
-    # Price vs SMA (trend following)
+    # Price vs SMA (trend following) — weight 2
     if analysis.sma_30 is not None and analysis.sma_30 != 0:
-        if current_price > analysis.sma_30:
-            score += 0.5
+        sma_weight = 2.0
+        pct_from_sma = (current_price - analysis.sma_30) / analysis.sma_30
+        if pct_from_sma > 0.10:
+            weighted_score += 0.6 * sma_weight   # Well above SMA = bullish trend
+        elif pct_from_sma > 0:
+            weighted_score += 0.3 * sma_weight   # Slightly above
+        elif pct_from_sma < -0.10:
+            weighted_score += -0.6 * sma_weight  # Well below SMA = bearish trend
         else:
-            score -= 0.5
-        factors += 1
+            weighted_score += -0.3 * sma_weight  # Slightly below
+        total_weight += sma_weight
 
-    # Bollinger Band position
+    # Bollinger Band position — weight 1.5
     if analysis.bollinger_lower is not None and analysis.bollinger_upper is not None:
+        bb_weight = 1.5
         band_range = analysis.bollinger_upper - analysis.bollinger_lower
         if band_range > 0:
             position = (current_price - analysis.bollinger_lower) / band_range
             if position < 0.2:
-                score += 0.7  # Near lower band = potential bounce
+                weighted_score += 0.7 * bb_weight   # Near lower band = potential bounce
             elif position > 0.8:
-                score -= 0.7  # Near upper band = potential pullback
-            factors += 1
+                weighted_score += -0.7 * bb_weight  # Near upper band = potential pullback
+            else:
+                # Slight lean based on position
+                weighted_score += ((0.5 - position) * 0.4) * bb_weight
+            total_weight += bb_weight
 
-    # Momentum
+    # Momentum — weight 1
     if analysis.momentum is not None:
-        if analysis.momentum > 5:
-            score += 0.3
+        mom_weight = 1.0
+        if analysis.momentum > 10:
+            weighted_score += 0.5 * mom_weight
+        elif analysis.momentum > 5:
+            weighted_score += 0.3 * mom_weight
+        elif analysis.momentum < -10:
+            weighted_score += -0.5 * mom_weight
         elif analysis.momentum < -5:
-            score -= 0.3
-        factors += 1
+            weighted_score += -0.3 * mom_weight
+        total_weight += mom_weight
 
-    # Volume proxy: high activity amplifies existing signals
+    # Volume proxy: high activity amplifies existing signals — weight 0.5
     if analysis.activity_score is not None and analysis.activity_score > 50:
-        # Hot cards with positive momentum get a boost, negative get a penalty
-        if score > 0:
-            score += 0.3
-        elif score < 0:
-            score -= 0.3
-        factors += 1
+        act_weight = 0.5
+        if weighted_score > 0:
+            weighted_score += 0.3 * act_weight
+        elif weighted_score < 0:
+            weighted_score += -0.3 * act_weight
+        total_weight += act_weight
 
-    if factors == 0:
+    if total_weight == 0:
         return "hold", 0.0
 
-    strength = max(-1.0, min(1.0, score / factors))
+    strength = max(-1.0, min(1.0, weighted_score / total_weight))
 
-    if strength > 0.2:
+    if strength > 0.15:
         return "bullish", strength
-    elif strength < -0.2:
+    elif strength < -0.15:
         return "bearish", strength
     return "hold", strength
 
@@ -621,30 +665,34 @@ def get_top_movers(db: Session, limit: int = 10) -> dict:
     recent_start = today - timedelta(days=7)
     prev_start = today - timedelta(days=14)
 
-    # Get average price in last 7 days per card
+    # Get average price in last 7 days per card (same variant only)
     recent = (
         db.query(
             PriceHistory.card_id,
             func.avg(PriceHistory.market_price).label("recent_avg"),
         )
+        .join(Card, Card.id == PriceHistory.card_id)
         .filter(
             PriceHistory.market_price.isnot(None),
             PriceHistory.date >= recent_start,
+            PriceHistory.variant == Card.price_variant,
         )
         .group_by(PriceHistory.card_id)
         .subquery()
     )
 
-    # Get average price in previous 7 days per card
+    # Get average price in previous 7 days per card (same variant only)
     prev = (
         db.query(
             PriceHistory.card_id,
             func.avg(PriceHistory.market_price).label("prev_avg"),
         )
+        .join(Card, Card.id == PriceHistory.card_id)
         .filter(
             PriceHistory.market_price.isnot(None),
             PriceHistory.date >= prev_start,
             PriceHistory.date < recent_start,
+            PriceHistory.variant == Card.price_variant,
         )
         .group_by(PriceHistory.card_id)
         .subquery()
@@ -672,7 +720,11 @@ def get_top_movers(db: Session, limit: int = 10) -> dict:
 
     movers = []
     for row in rows:
+        if row.prev_avg < 1.0:
+            continue  # Skip near-zero prices to avoid division artifacts
         change_pct = ((row.recent_avg - row.prev_avg) / row.prev_avg) * 100
+        if abs(change_pct) > 500:
+            continue  # Skip extreme values — likely variant mixing artifacts or stale data
         movers.append({
             "card_id": row.id,
             "tcg_id": row.tcg_id,
@@ -820,7 +872,9 @@ def get_hot_cards(db: Session, limit: int = 12) -> list[dict]:
             func.min(PriceHistory.market_price).label("min_price"),
             func.max(PriceHistory.market_price).label("max_price"),
         )
+        .join(Card, Card.id == PriceHistory.card_id)
         .filter(PriceHistory.market_price.isnot(None))
+        .filter(PriceHistory.variant == Card.price_variant)
         .group_by(PriceHistory.card_id)
         .having(func.count(PriceHistory.id) >= 10)
         .subquery()

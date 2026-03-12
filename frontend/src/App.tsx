@@ -21,13 +21,11 @@ import MenuIcon from '@mui/icons-material/Menu';
 import ShowChartIcon from '@mui/icons-material/ShowChart';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import ViewModuleIcon from '@mui/icons-material/ViewModule';
-import ScienceIcon from '@mui/icons-material/Science';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const CardExplorer = lazy(() => import('./pages/CardExplorer'));
 const CardDetail = lazy(() => import('./pages/CardDetail'));
-const Backtest = lazy(() => import('./pages/Backtest'));
 const Trader = lazy(() => import('./pages/Trader'));
 
 function NavBar() {
@@ -40,7 +38,6 @@ function NavBar() {
   const navItems = [
     { label: 'Dashboard', path: '/', icon: <DashboardIcon /> },
     { label: 'Explorer', path: '/explore', icon: <ViewModuleIcon /> },
-    { label: 'Backtest', path: '/backtest', icon: <ScienceIcon /> },
     { label: 'AI Trader', path: '/trader', icon: <SmartToyIcon /> },
   ];
 
@@ -91,19 +88,6 @@ function NavBar() {
                 }}
               >
                 Explorer
-              </Button>
-              <Button
-                component={Link}
-                to="/backtest"
-                startIcon={<ScienceIcon />}
-                size="small"
-                sx={{
-                  color: isActive('/backtest') ? '#00bcd4' : '#666',
-                  textTransform: 'none',
-                  mr: 1,
-                }}
-              >
-                Backtest
               </Button>
               <Button
                 component={Link}
@@ -187,7 +171,6 @@ export default function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/explore" element={<CardExplorer />} />
             <Route path="/card/:id" element={<CardDetail />} />
-            <Route path="/backtest" element={<Backtest />} />
             <Route path="/trader" element={<Trader />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

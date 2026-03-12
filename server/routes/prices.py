@@ -20,15 +20,21 @@ def get_price_history(
 
     from server.services.market_analysis import _filter_dominant_variant
 
-    records = (
+    # Filter to card's tracked variant first, fallback to dominant variant
+    query = (
         db.query(PriceHistory)
         .filter(PriceHistory.card_id == card_id, PriceHistory.market_price.isnot(None))
-        .order_by(asc(PriceHistory.date))
-        .all()
     )
-
-    # Filter to dominant variant to avoid mixed-variant noise
-    records = _filter_dominant_variant(records)
+    if card.price_variant:
+        variant_records = query.filter(PriceHistory.variant == card.price_variant).order_by(asc(PriceHistory.date)).all()
+        if variant_records:
+            records = variant_records
+        else:
+            records = query.order_by(asc(PriceHistory.date)).all()
+            records = _filter_dominant_variant(records)
+    else:
+        records = query.order_by(asc(PriceHistory.date)).all()
+        records = _filter_dominant_variant(records)
 
     # Deduplicate: one price per date (latest record wins)
     by_date: dict[str, dict] = {}

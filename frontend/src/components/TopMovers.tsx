@@ -92,7 +92,7 @@ export default function TopMovers() {
                         color: m.change_pct >= 0 ? '#00ff41' : '#ff1744',
                       }}
                     >
-                      {m.change_pct >= 0 ? '+' : ''}{m.change_pct}%
+                      {m.change_pct >= 0 ? '+' : ''}{m.change_pct}%{Math.abs(m.change_pct) > 200 ? ' \u26a0\ufe0f' : ''}
                     </Typography>
                   </TableCell>
                 </TableRow>

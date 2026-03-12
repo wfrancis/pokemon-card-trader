@@ -15,11 +15,16 @@ def get_card_analysis(card_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Card not found")
 
     analysis = analyze_card(db, card_id)
+    analysis_dict = analysis.to_dict()
+    # Override last_analyzed_price with the card's actual current_price
+    # to avoid disagreement between sync-updated price and latest price_history record
+    if card.current_price is not None:
+        analysis_dict["last_analyzed_price"] = card.current_price
     return {
         "card_id": card_id,
         "card_name": card.name,
         "current_price": card.current_price,
-        "analysis": analysis.to_dict(),
+        "analysis": analysis_dict,
     }
 
 

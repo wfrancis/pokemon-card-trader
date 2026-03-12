@@ -84,7 +84,7 @@ export default function Dashboard() {
           <Grid size={{ xs: 12, md: 4 }}>
             <Paper sx={{ p: 2, textAlign: 'center' }}>
               <Typography variant="body2" sx={{ color: '#666', textTransform: 'uppercase', fontSize: '0.65rem' }}>
-                Market Index (Avg Price)
+                Avg Card Price
               </Typography>
               <Typography variant="h2" sx={{ color: '#00ff41', fontWeight: 700 }}>
                 ${index?.avg_price?.toFixed(2) || '—'}
@@ -94,7 +94,7 @@ export default function Dashboard() {
           <Grid size={{ xs: 12, md: 4 }}>
             <Paper sx={{ p: 2, textAlign: 'center' }}>
               <Typography variant="body2" sx={{ color: '#666', textTransform: 'uppercase', fontSize: '0.65rem' }}>
-                Total Market Cap
+                Catalog Value
               </Typography>
               <Typography variant="h2" sx={{ color: '#00bcd4', fontWeight: 700 }}>
                 ${index?.total_market_cap ? (index.total_market_cap > 1000 ? `${(index.total_market_cap / 1000).toFixed(1)}K` : index.total_market_cap.toFixed(0)) : '—'}

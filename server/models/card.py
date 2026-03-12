@@ -25,6 +25,7 @@ class Card(Base):
     price_variant = Column(String)  # normal, holofoil, reverseHolofoil
     is_tracked = Column(Boolean, default=False, nullable=False, index=True)
     is_viable = Column(Boolean, default=False, nullable=False, index=True)  # Sticky: True once price >= $20
+    artist = Column(String, nullable=True)  # Card illustrator/artist
     tcgplayer_product_id = Column(Integer, nullable=True, index=True)  # TCGCSV/TCGPlayer productId
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))

@@ -68,6 +68,7 @@ def _process_card_data(db: Session, card_data: dict, today: date, min_price: flo
         existing.name = card_data.get("name", existing.name)
         existing.current_price = market_price
         existing.price_variant = variant or existing.price_variant
+        existing.artist = card_data.get("artist") or existing.artist
         existing.updated_at = datetime.now(timezone.utc)
         card_obj = existing
         result = "updated"
@@ -87,6 +88,7 @@ def _process_card_data(db: Session, card_data: dict, today: date, min_price: flo
             image_large=card_data.get("images", {}).get("large", ""),
             current_price=market_price,
             price_variant=variant,
+            artist=card_data.get("artist"),
         )
         db.add(card_obj)
         db.flush()

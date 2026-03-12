@@ -62,6 +62,20 @@ async def acknowledge_insight(insight_id: int, db: Session = Depends(get_db)):
     return {"status": "acknowledged", "id": insight_id}
 
 
+@router.delete("/insights/clear-bad")
+async def clear_bad_insights(db: Session = Depends(get_db)):
+    """Clear variant-mismatch false alerts (anomalies with >50% change are almost always variant mixing)."""
+    count = (
+        db.query(AgentInsight)
+        .filter(AgentInsight.type == "anomaly")
+        .filter(AgentInsight.message.like("%dropped%"))
+        .filter(AgentInsight.acknowledged == False)
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    return {"status": "cleared", "deleted": count}
+
+
 @router.get("/status")
 async def agent_status(db: Session = Depends(get_db)):
     """Get agent health: last run, active predictions, accuracy summary."""

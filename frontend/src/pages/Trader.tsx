@@ -29,12 +29,16 @@ const TIER_CONFIG: Record<string, { label: string; color: string; border: string
 };
 
 const SIGNAL_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
-  buy: { label: 'BUY', color: '#00ff41', bg: '#0a3a0a' },
-  accumulate: { label: 'ACCUM', color: '#66ff99', bg: '#0a2a0a' },
-  watch: { label: 'WATCH', color: '#ffd700', bg: '#2a2a0a' },
-  hold: { label: 'HOLD', color: '#00bcd4', bg: '#1a1a2a' },
-  bullish: { label: 'BULL', color: '#00ff41', bg: '#0a3a0a' },
-  bearish: { label: 'BEAR', color: '#ff1744', bg: '#3a0a0a' },
+  buy: { label: 'BUY', color: '#00e676', bg: '#0a3a0a' },
+  accumulate: { label: 'ACCUMULATE', color: '#69f0ae', bg: '#0a2a0a' },
+  hold: { label: 'HOLD', color: '#ffd740', bg: '#2a2a0a' },
+  watch: { label: 'HOLD', color: '#ffd740', bg: '#2a2a0a' },
+  sell: { label: 'REDUCE', color: '#ff9100', bg: '#2a1a0a' },
+  reduce: { label: 'REDUCE', color: '#ff9100', bg: '#2a1a0a' },
+  avoid: { label: 'AVOID', color: '#ff1744', bg: '#3a0a0a' },
+  bullish: { label: 'BUY', color: '#00e676', bg: '#0a3a0a' },
+  bearish: { label: 'AVOID', color: '#ff1744', bg: '#3a0a0a' },
+  neutral: { label: 'HOLD', color: '#ffd740', bg: '#2a2a0a' },
 };
 
 function AnalyzedCardTile({ card, onClick }: { card: AnalyzedCard; onClick: () => void }) {
@@ -609,7 +613,7 @@ export default function Trader() {
   };
 
   const personas = analysis?.personas;
-  const personaOrder = ['quant', 'pm', 'liquidity'] as const;
+  const personaOrder = ['quant', 'data_analytics', 'art_sales', 'liquidity', 'swe', 'pokemon_expert'] as const;
 
   return (
     <Box sx={{ p: { xs: 1.5, md: 2 }, maxWidth: 1600, mx: 'auto' }}>
@@ -626,7 +630,7 @@ export default function Trader() {
                 AI TRADING DESK
               </Typography>
               <Typography sx={{ color: '#666', fontSize: '0.8rem', ...mono }}>
-                3 SPECIALIZED ANALYSTS · PARALLEL EXECUTION · CONSENSUS SYNTHESIS
+                6 SPECIALIZED ANALYSTS · PARALLEL EXECUTION · CONSENSUS SYNTHESIS
               </Typography>
               {history.length > 0 && !loading && (
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
@@ -671,7 +675,7 @@ export default function Trader() {
                 '&:disabled': { bgcolor: '#333', color: '#666' },
               }}
             >
-              {agentLoading ? 'AGENT RUNNING...' : 'RUN AGENT'}
+              {agentLoading ? 'SCANNING...' : 'QUICK SCAN'}
             </Button>
             <Button
               variant="contained"
@@ -684,14 +688,14 @@ export default function Trader() {
                 '&:disabled': { bgcolor: '#333', color: '#666' },
               }}
             >
-              {loading ? 'DEPLOYING...' : 'FULL DESK'}
+              {loading ? 'DEPLOYING...' : 'RUN FULL ANALYSIS'}
             </Button>
           </Box>
         </Box>
 
         {loading && (
           <Typography sx={{ color: '#666', mt: 1.5, fontSize: '0.75rem', ...mono }}>
-            Running 3 parallel GPT-5.4 analyses + consensus synthesis... ~40s
+            Running 6 parallel GPT-5.4 analyses + consensus synthesis...
           </Typography>
         )}
       </Paper>
@@ -1006,7 +1010,7 @@ export default function Trader() {
         <Box sx={{ mt: 1, textAlign: 'right' }}>
           <Typography sx={{ color: '#444', fontSize: '0.7rem', ...mono }}>
             TOKENS: {analysis.tokens_used.input.toLocaleString()} in / {analysis.tokens_used.output.toLocaleString()} out
-            {' · '}4 GPT-5.4 calls (3 parallel + consensus)
+            {' · '}7 GPT-5.4 calls (6 parallel + consensus)
           </Typography>
         </Box>
       )}
@@ -1016,20 +1020,20 @@ export default function Trader() {
         <Paper sx={{ p: 4, bgcolor: '#111', border: '1px solid #1e1e1e', textAlign: 'center' }}>
           <SmartToyIcon sx={{ color: '#333', fontSize: 60, mb: 2 }} />
           <Typography sx={{ color: '#666', ...mono, mb: 1 }}>
-            Click "RUN AGENT" for autonomous analysis or "FULL DESK" for 3 parallel analysts
+            Click "QUICK SCAN" for autonomous analysis or "RUN FULL ANALYSIS" for 6 parallel analysts
           </Typography>
-          <Box sx={{ display: 'flex', justifyContent: 'center', gap: { xs: 1.5, md: 3 }, mt: 2, flexWrap: 'wrap' }}>
+          <Box sx={{ display: 'flex', justifyContent: 'center', gap: { xs: 1.5, md: 2 }, mt: 2, flexWrap: 'wrap' }}>
             {Object.values({
-              quant: { title: 'QUANT', color: '#00bcd4', name: 'Dr. Sarah Chen' },
-              pm: { title: 'HEDGE FUND PM', color: '#ffd700', name: 'Jamie Blackwood' },
-              liquidity: { title: 'CONTRARIAN VALUE', color: '#e040fb', name: 'Vic Morales' },
+              quant: { title: 'QUANT', color: '#00bcd4' },
+              data_analytics: { title: 'DATA ANALYTICS', color: '#ffd700' },
+              art_sales: { title: 'ART & SALES', color: '#e040fb' },
+              liquidity: { title: 'CONTRARIAN VALUE', color: '#ff9800' },
+              swe: { title: 'SWE', color: '#69f0ae' },
+              pokemon_expert: { title: 'POKEMON EXPERT', color: '#ff1744' },
             }).map(p => (
               <Box key={p.title} sx={{ textAlign: 'center' }}>
                 <Typography sx={{ color: p.color, fontWeight: 700, ...mono, fontSize: '0.75rem' }}>
                   {p.title}
-                </Typography>
-                <Typography sx={{ color: '#555', ...mono, fontSize: '0.7rem' }}>
-                  {p.name}
                 </Typography>
               </Box>
             ))}

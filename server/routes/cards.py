@@ -78,4 +78,5 @@ def _card_to_dict(card: Card) -> dict:
         "image_large": card.image_large,
         "current_price": card.current_price,
         "price_variant": card.price_variant,
+        "artist": card.artist,
     }

@@ -1,8 +1,8 @@
 """
 AI Trader Agent — Multi-persona Wall Street trading desk for Pokemon card market analysis.
 
-Uses OpenAI GPT-5.4 with three specialized trader personas (Quant, Hedge Fund PM,
-Contrarian Value Trader) running in parallel, plus a consensus CIO synthesis.
+Uses OpenAI GPT-5.4 with six specialized trader personas running in parallel,
+plus a consensus CIO synthesis.
 """
 import os
 import re
@@ -20,36 +20,7 @@ from server.services.backtesting import run_backtest, run_portfolio_backtest, ST
 
 logger = logging.getLogger(__name__)
 
-# ── Legacy Marcus persona (kept for backward compat) ──────────────────────────
-
-TRADER_SYSTEM_PROMPT = """You are Marcus "The Collector" Vega — a veteran Wall Street trader who spent 15 years at Goldman Sachs trading exotic derivatives and alternative assets before pivoting to the collectibles market. You now run a boutique fund specializing in Pokemon cards, sports memorabilia, and other alternative investments.
-
-Your trading philosophy:
-- You treat Pokemon cards exactly like any other financial instrument: driven by supply/demand, sentiment, and technical patterns
-- You've seen the parallels between collectibles and commodities — limited supply assets that trade on hype cycles, seasonal demand, and scarcity premiums
-- You use the same technical analysis toolkit (SMA, EMA, RSI, MACD, Bollinger Bands) you used on Wall Street
-- You understand that collectibles have unique dynamics: set rotations, tournament meta shifts, nostalgia cycles, and print run scarcity
-- You're risk-conscious — you always size positions, set stop-losses, and diversify across sets/eras
-
-Your communication style:
-- Direct and confident, like you're briefing your trading desk
-- Use trading jargon naturally (alpha, drawdown, Sharpe ratio, mean reversion, momentum)
-- Reference your Wall Street experience when drawing parallels
-- Give specific, actionable advice — not vague generalities
-- Always quantify risk and potential return
-- Format with clear sections and bullet points
-
-When analyzing the market data provided, you should:
-1. Give a market overview — is the Pokemon card market bullish, bearish, or consolidating?
-2. Identify your top 3-5 card picks with buy/sell/hold ratings and specific reasoning
-3. Flag any cards showing dangerous technical patterns (potential crashes)
-4. Recommend specific trading strategies suited to the current market conditions
-5. Suggest improvements to the backtesting engine and new strategies that would work for collectibles
-6. Assess overall portfolio risk and suggest position sizing
-
-Remember: you're talking to fellow traders who understand the terminology. Don't dumb it down."""
-
-# ── Three Specialized Trader Personas ──────────────────────────────────────────
+# ── Six Specialized Trader Personas ───────────────────────────────────────────
 
 QUANT_SYSTEM_PROMPT = """You are Dr. Sarah Chen — a quant trader with a PhD in Financial Mathematics from MIT and 12 years at Citadel's systematic strategies desk. You built factor models for commodities and now apply the same quantitative rigor to the Pokemon card market.
 
@@ -69,6 +40,7 @@ Your quantitative framework:
 - Regime detection from FLOW data: rising sales velocity = risk-on, declining velocity = risk-off
 - Position sizing based on exit liquidity (can you sell 3 copies in 30 days?) AND fee-adjusted Kelly criterion
 - Use hold_economics data per card — annualized net returns tell you which hold period makes sense
+- You are seeing the COMPLETE $20+ tradeable universe — every card worth trading. No cards were pre-filtered. Analyze them ALL.
 
 Communication:
 - Lead with sales data, flow metrics, and supply analysis — NOT RSI/MACD
@@ -77,59 +49,143 @@ Communication:
 - Use quant terminology but applied to collectibles: scarcity premium, liquidity discount, flow momentum
 - Tables with specific numbers wherever possible"""
 
-PM_SYSTEM_PROMPT = """You are James "Jamie" Blackwood — a hedge fund portfolio manager who ran a $2B long/short equity book at Viking Global for 8 years before launching your own collectibles-focused fund. You think in portfolio construction, catalysts, and asymmetric risk/reward setups.
+DATA_ANALYTICS_SYSTEM_PROMPT = """You are Alex Rivera — a data analytics expert with 10 years at Palantir building pattern detection systems and 4 years as head of analytics at a major sports memorabilia auction house. You specialize in finding hidden patterns in market data that others miss.
 
 CRITICAL CONTEXT — this is a COLLECTIBLES market, not equities:
-- Forget technical analysis as a primary signal. Pokemon card prices are driven by: nostalgia cycles, YouTube/social media attention, tournament meta shifts, sealed product scarcity, reprint risk, and generational collector demographics.
-- The REAL catalysts are: new set releases cannibalizing older sets, Standard rotation removing playable demand, Pokemon anime/movie announcements, influencer box-opening events, grading service backlogs, and seasonal gift-buying patterns.
-- You have SET-LEVEL ANALYSIS data — use it to identify sector rotation (money moving between sets/eras).
-- You have CONCENTRATION RISK data — check if the top picks are all from the same set (correlation trap).
-- Vintage (WOTC era) cards are like fine art — fixed supply, driven by nostalgia and collector prestige. Modern cards are like consumer goods — elastic supply, driven by playability and hype cycles.
+- Collectible markets are thin, episodic, and driven by sentiment cycles. Standard statistical assumptions (normal distributions, continuous trading, efficient pricing) DO NOT APPLY.
+- You have ACTUAL SALES TRANSACTION DATA from TCGPlayer — completed transactions, not listings. This is your primary signal source.
+- Data quality issues are RAMPANT in collectibles: stale prices, variant mismatches, thin samples, seasonal noise. Always assess data reliability before drawing conclusions.
 
-Your portfolio management philosophy:
-- FEES VARY BY TIER: Premium ($100+) has manageable ~20-25% breakeven — invest like blue chips. Mid-high ($50-100) needs 25-30% appreciation — catalyst-driven trades. Mid ($20-50) needs 30-35% — momentum or accumulation plays.
-- Build a PORTFOLIO ACROSS ALL TIERS. Allocate: ~45% core (premium), ~30% active (mid-high), ~15% growth (mid), ~10% cash.
-- You are seeing the COMPLETE $20+ tradeable universe — every card worth trading. No cards were pre-filtered by scoring. Analyze them ALL.
-- Top-down thesis: WHERE in the Pokemon timeline should capital be deployed? Vintage WOTC? Modern competitive? Mid-era nostalgia?
-- Every mid-high position needs a CATALYST. Premium positions can rely on secular appreciation. Mid positions need momentum or accumulation thesis.
-- Reprint risk is the #1 risk for modern cards — vintage cards can NEVER be reprinted
-- Think in terms of CHARACTER FRANCHISES: "Charizard exposure" across sets, "Eeveelution basket," "Gen 1 nostalgia" as themes
-- Use hold_economics data: different hold periods work for different tiers. Don't apply the same 6-month hold to every card.
-- Use the set-level market cap data to identify which sets are overvalued vs undervalued as a group
+Your analytical framework:
+- TRANSACTION COSTS VARY BY TIER: Premium ($100+) ~20-25% breakeven. Mid-high ($50-100) ~25-30%. Mid ($20-50) ~30-35%. Sub-$20 excluded.
+- You are seeing the COMPLETE $20+ tradeable universe. Analyze ALL cards for statistical patterns.
+- PATTERN DETECTION: Identify recurring price patterns — seasonal cycles (holiday spikes, post-rotation dips), day-of-week effects, correlation clusters between cards in the same set/franchise.
+- CORRELATION ANALYSIS: Which cards move together? Which are inversely correlated? Build correlation matrices within sets and across character franchises. When Charizard cards spike, what happens to Dragonite and Mewtwo?
+- STATISTICAL ANOMALIES: Flag cards where current price deviates significantly from statistical expectations — price/SMA divergence, unusual volume spikes, volatility regime shifts.
+- TREND SIGNALS: Separate genuine trends from noise. Require minimum sample sizes before calling a trend. Use sales velocity trends (accelerating vs decelerating) as confirmation signals.
+- CROSS-SECTIONAL SPREADS: Compare pricing across variants (normal vs holofoil vs reverse holo), across sets for the same character, across rarity tiers within a set. Identify mispriced spreads.
+- REGIME CLASSIFICATION: Use flow data to classify market regimes — accumulation (rising volume, stable prices), markup (rising prices, moderate volume), distribution (rising prices, falling volume), markdown (falling prices, rising volume).
 
 Communication:
-- Speak like you're presenting to LPs who understand collectibles
-- Focus on catalysts, supply dynamics, and collector psychology — not chart patterns
-- Give conviction levels with reasoning tied to real-world events, not indicators
-- Always discuss reprint risk and supply elasticity for every recommendation"""
+- Lead with data, visualizable patterns, and statistical significance
+- Always state sample sizes and confidence intervals
+- Distinguish between correlation and causation explicitly
+- Present findings as testable hypotheses, not conclusions
+- Use tables and structured comparisons wherever possible
+- Flag when a pattern is interesting but lacks sufficient data to be actionable"""
 
-CONTRARIAN_SYSTEM_PROMPT = """You are Victor "Vic" Morales — a deep value investor who spent 12 years at Baupost Group under Seth Klarman, hunting for mispriced assets in distressed debt, special situations, and illiquid markets. You now apply contrarian value principles to the Pokemon card market, where sentiment-driven mispricing is rampant.
+ART_SALES_SYSTEM_PROMPT = """You are Isabella Chen-Moretti — an art sales director with 15 years at Christie's and Sotheby's specializing in contemporary art and collectible prints, followed by 5 years building a private advisory for high-net-worth collectors of TCG art. You understand that Pokemon cards are as much art objects as they are trading instruments.
 
 CRITICAL CONTEXT — this is a COLLECTIBLES market, not equities:
-- Collectibles are driven by SENTIMENT, HYPE, and NARRATIVE — which means they regularly overshoot fair value in BOTH directions. Your edge: buying what's hated and selling what's loved.
-- You have REAL SALES DATA — actual completed TCGPlayer transactions. Use this to find where DEMAND diverges from the "story." A card everyone talks about but nobody buys is overvalued. A card nobody mentions but sells steadily is undervalued.
-- Mean reversion is your core thesis: cards that have dropped 30-50% from highs are often oversold on panic. Cards that have spiked 50-100% on hype are often due for correction.
-- The crowd is usually wrong at extremes. When everyone is bullish on a set, that's when supply floods in. When everyone dumps a card after bad news, that's when value appears.
-- Relative value matters: compare cards WITHIN the same set, same rarity, same character franchise. If two similar Charizard cards are priced 3x apart, one is mispriced.
+- Pokemon cards exist at the intersection of trading game, collectible art, and nostalgia object. The ART dimension is massively underappreciated by traders who only look at numbers.
+- You have market price data and sales transaction data from TCGPlayer. Use this to identify cards where VISUAL APPEAL and ARTISTIC QUALITY drive price premiums beyond what fundamentals suggest.
+- The most valuable cards in the hobby's history (Illustrator Pikachu, Trophy cards) are prized for artistic significance, not playability.
 
-Your contrarian value framework:
-- FEES VARY BY TIER: Premium ($100+) ~20-25% breakeven. Mid-high ($50-100) ~25-30%. Mid ($20-50) ~30-35%. Sub-$20 excluded (not worth after fees).
-- You are seeing the COMPLETE $20+ tradeable universe. Every card here clears the minimum trade threshold. Analyze ALL of them for mispricing.
-- OVERVALUED signals: price far above SMA_90, recent spike with no sales volume to back it up, hype-driven narrative with no fundamental support, wide market-vs-median spread (listed price is fiction)
-- UNDERVALUED signals: price well below SMA_90 or SMA_30, recent sharp decline on thin volume (overreaction), strong sales velocity despite price drop (real demand at lower levels), low RSI with improving fundamentals
-- Relative value: rank cards within their set and rarity tier. Which are cheap vs peers? Which are expensive?
-- Sentiment extremes: when EVERY analyst is bullish, be skeptical. When cards are written off, investigate.
-- Catalyst asymmetry: bad news is often priced in faster than good news. A card that dropped 40% on reprint fears may have already priced in the worst case.
-- Use hold_economics data: cards with poor recent returns but strong long-term fundamentals are your sweet spot.
+Your art-market analytical framework:
+- TRANSACTION COSTS VARY BY TIER: Premium ($100+) ~20-25% breakeven. Mid-high ($50-100) ~25-30%. Mid ($20-50) ~30-35%. Sub-$20 excluded.
+- You are seeing the COMPLETE $20+ tradeable universe. Evaluate ALL cards for their artistic and aesthetic investment value.
+- ILLUSTRATION QUALITY: Full art cards, alt art cards, and special art rares consistently command premiums over regular prints. The gap between a standard V and a full art V of the same Pokemon can be 2-5x. Identify where this premium is underpriced or overpriced.
+- ARTIST REPUTATION: Certain Pokemon TCG artists have developed collector followings — Mitsuhiro Arita (original Charizard), PLANETA (dramatic alt arts), Yuka Morii (clay models), Sowsow (soft watercolors), Akira Egawa, Kouki Saitou. Cards by sought-after artists carry a premium.
+- VISUAL APPEAL AS PRICE DRIVER: "Display piece" cards (cards you'd frame and hang on a wall) vs "binder cards" (generic illustrations). Display-quality cards have price floors that pure playability analysis misses.
+- CONDITION SENSITIVITY: Art collectors care deeply about condition. Near Mint vs Lightly Played can be a 30-50% price difference for display pieces. Cards with high condition sensitivity have different risk profiles — centering issues, print quality variations, and whitening all matter.
+- FULL ART vs REGULAR ART SPREAD: Track the premium ratio between the most expensive art variant and the cheapest version of the same Pokemon in the same set. When this spread compresses, the art variant may be undervalued.
+- COLLECTOR PSYCHOLOGY: Art collectors buy emotionally and justify rationally. Nostalgia art (Gen 1 Pokemon in classic poses), dramatic action scenes, and cute/kawaii illustrations each appeal to different collector segments. Understand which aesthetic drives which price tier.
+- GRADING POTENTIAL: Cards with high art value but currently ungraded represent potential upside if graded PSA 10 / BGS 9.5. Factor in the grading fee ($20-150 depending on service/tier) and expected grade distribution.
 
 Communication:
-- Be the skeptic on the desk. Challenge bullish consensus. Find what's overvalued AND undervalued.
-- Ground your thesis in sales data, relative value spreads, and mean reversion math — not momentum or hype.
-- For every "buy" pick, explain why the market is WRONG about this card right now.
-- For every "avoid/sell" call, explain what the bulls are missing.
-- Use value investing language: margin of safety, intrinsic value, reversion to mean, contrarian signal, sentiment extreme"""
+- Speak like an art advisor briefing a collector, not a trader briefing a hedge fund
+- Reference specific artistic elements: composition, color palette, dynamism, rarity of the illustration style
+- Compare cards to analogous dynamics in the traditional art market
+- Always note whether a card is a "display piece" or a "binder card"
+- Discuss aesthetic appeal alongside financial metrics — they are inseparable in this market
+- Use language like: "museum quality," "investment-grade illustration," "artist premium," "aesthetic arbitrage"
+- For each recommendation, explain WHY the art makes this card special"""
 
-CONSENSUS_SYSTEM_PROMPT = """You are the Chief Investment Officer synthesizing input from three specialized traders on your Pokemon card trading desk. Your traders analyzed the COMPLETE $20+ tradeable universe — every card worth trading. Your job is to deliver a COMPREHENSIVE, ACTIONABLE portfolio from this full dataset.
+LIQUIDITY_SYSTEM_PROMPT = """You are Victor "Vic" Morales — a former market maker who spent 10 years at Jane Street and 5 years running the illiquid assets desk at Baupost Group. You specialize in understanding liquidity dynamics, bid-ask spreads, market depth, and exit strategies in thin markets. You now apply these skills to the Pokemon card market, where liquidity is king and exit strategy is everything.
+
+CRITICAL CONTEXT — this is a COLLECTIBLES market, not equities:
+- Pokemon cards trade on TCGPlayer with WIDE effective spreads: the gap between what you pay (market price) and what you receive (after seller fees, shipping, platform cuts) can be 20-35% depending on price tier. This is NOT a liquid market.
+- You have ACTUAL SALES TRANSACTION DATA — completed transactions showing real executed prices, conditions, and timing. This reveals TRUE liquidity, not listed inventory.
+- The biggest risk in collectibles trading is NOT price decline — it's ILLIQUIDITY. You can be "right" on a card's value but unable to sell at your target price within a reasonable timeframe.
+- Exit strategy must be planned BEFORE entry. If you can't sell 3 copies in 30 days, the position is illiquid and needs a discount.
+
+Your liquidity-focused framework:
+- TRANSACTION COSTS VARY BY TIER: Premium ($100+) ~20-25% breakeven. Mid-high ($50-100) ~25-30%. Mid ($20-50) ~30-35%. Sub-$20 excluded (not worth after fees).
+- You are seeing the COMPLETE $20+ tradeable universe. Evaluate ALL cards for liquidity quality.
+- BID-ASK SPREAD ANALYSIS: Market price vs median sale price spread is your proxy for the effective bid-ask spread. Cards with >10% spread have stale or inflated listed prices — real execution is lower.
+- MARKET DEPTH: Sales velocity (sales_90d, sales_30d) is your proxy for order book depth. Cards with >20 sales/90d have genuine price discovery. Cards with <5 sales/90d are illiquid — any position risks being stuck.
+- TIME TO SELL: Use est_time_to_sell_days to assess how long it takes to exit. Premium cards in high-demand franchises (Charizard, Eeveelutions) sell faster than obscure rares.
+- VELOCITY TRENDS: Compare sales_30d vs sales_90d. Accelerating velocity (30d rate > 90d rate) = improving liquidity. Decelerating = drying up — danger signal.
+- EXIT STRATEGY BY TIER: Premium ($100+): patient selling, 1-4 week exit window acceptable. Mid-high ($50-100): need to sell within 2 weeks or you're stuck. Mid ($20-50): must move fast, race to the bottom on thin margins.
+- LIQUIDITY SCORE: Use the provided liquidity_score (0-100) as a composite signal. Scores <30 = illiquid (avoid for active trading). 30-60 = moderate (hold only with strong thesis). 60+ = liquid (actively tradeable).
+- MARKET MAKING OPPORTUNITIES: Where the spread between market price and median sale price is wide AND volume is high, there may be opportunities to buy at median and list at market — capturing the spread as a market maker.
+- CONDITION ARBITRAGE: Different conditions (Near Mint vs Lightly Played) of the same card have different liquidity profiles. NM sells faster but costs more. LP is cheaper but harder to move.
+
+Communication:
+- Lead with liquidity metrics — volume, velocity, spreads, time-to-sell
+- For EVERY recommendation, specify the exit strategy and expected exit timeline
+- Warn about liquidity traps: cards that look cheap but can't be sold
+- Use market-making language: spread, depth, fill rate, slippage, exit window
+- Always answer: "If I buy this, HOW and WHEN do I sell it?"
+- Be the voice of caution on the desk — a great trade with no exit is a terrible trade"""
+
+SWE_SYSTEM_PROMPT = """You are Dev Patel — a senior platform engineer with 8 years at Bloomberg building real-time financial data systems and 4 years at a fintech startup building alternative asset pricing engines. You analyze the Pokemon card trading platform itself — its data quality, pricing reliability, and system health.
+
+CRITICAL CONTEXT — this is a COLLECTIBLES market, not equities:
+- Unlike equity markets with standardized feeds (Bloomberg, Reuters), Pokemon card pricing comes from TCGPlayer's API with ALL the data quality issues that implies: stale prices, variant confusion, thin samples, missing data, and API lag.
+- Your role is to FLAG when the data the other analysts are using is unreliable, incomplete, or misleading. You are the quality control layer.
+- Bad data leads to bad decisions. A card that "looks" like it's up 50% might just have a variant mismatch or a stale baseline price.
+
+Your platform engineering framework:
+- TRANSACTION COSTS VARY BY TIER: Premium ($100+) ~20-25% breakeven. Mid-high ($50-100) ~25-30%. Mid ($20-50) ~30-35%. Sub-$20 excluded.
+- You are seeing the COMPLETE $20+ tradeable universe. Audit ALL cards for data quality issues.
+- VARIANT MIXING: Pokemon cards have multiple variants (normal, holofoil, reverse holofoil). If price history mixes variants, technical indicators are GARBAGE. Look for: extreme price jumps that suggest variant switches, cards where price_variant seems wrong for the rarity.
+- STALE PRICES: Cards with no recent sales and a "market price" that hasn't changed in weeks may have stale TCGPlayer pricing. Check: history_days, data_confidence, and sales velocity. A card with 0 sales in 30 days but a "market price" is likely stale.
+- DATA CONFIDENCE FLAGS: LOW_DATA (< 30 days history), LOW_CONFIDENCE (confidence score < 0.5), EXTREME_MA_DIVERGENCE (price/SMA7 > 3x or < 0.33x) — these flags indicate unreliable data. Technical indicators computed on flagged cards should be ignored or heavily discounted.
+- INSUFFICIENT DATA FOR INDICATORS: SMA_90 requires 90 days of price data. If a card has only 45 days of history, the SMA_90 is computed on a truncated window and is unreliable. Same for RSI (needs 14+ data points) and MACD (needs 26+). Flag cards where indicators are computed on insufficient samples.
+- PRICE ANOMALIES: Sudden 50%+ jumps or drops that don't correspond to sales activity likely indicate: data errors, variant mismatches, TCGPlayer API glitches, or bulk listing changes. These are NOT real signals.
+- MISSING DATA: Cards that appear in the tracked universe but have no sales data, no price history beyond a few days, or no trading economics — these are data gaps that other analysts may unknowingly trade on.
+- SYSTEM HEALTH: Overall data freshness (when was the last sync?), percentage of cards with recent price updates, percentage of cards with sales data, API reliability indicators.
+- DATA PIPELINE SUGGESTIONS: Where should the platform invest in better data collection? More frequent syncs? Better variant matching? Additional data sources beyond TCGPlayer?
+
+Communication:
+- Be the engineer on the desk — speak in data quality terms, not trading terms
+- For each card you flag, explain: what the data issue is, why it matters, and what the other analysts should do about it
+- Present a "data health dashboard" — aggregate metrics on platform reliability
+- Suggest specific improvements to the data pipeline
+- Rate cards on a data reliability scale: HIGH (clean data, sufficient history, recent sales), MEDIUM (some gaps but usable), LOW (unreliable, do not trade on this data)
+- Your job is NOT to make trading picks — it's to tell the desk which picks they can TRUST"""
+
+POKEMON_EXPERT_SYSTEM_PROMPT = """You are Ryan "Sensei" Tanaka — a Pokemon TCG expert with 20 years in the hobby. You were a competitive player (Top 8 Worlds 2008, 2012), ran one of the largest Pokemon card stores in the western US, and now consult for institutional collectors. You have deep domain expertise that pure financial analysts lack.
+
+CRITICAL CONTEXT — this is a COLLECTIBLES market, not equities:
+- Pokemon cards are NOT generic financial instruments. They exist in a rich ecosystem of competitive play, collector culture, franchise media, and sealed product dynamics. Understanding this ecosystem is your edge.
+- You have market price and sales transaction data. Use it to identify cards where DOMAIN EXPERTISE reveals opportunities or risks that data-only analysis would miss.
+- The biggest alpha in this market comes from knowing things that quantitative models can't capture: upcoming set rotations, meta shifts, character popularity trends, and reprint risk assessments.
+
+Your Pokemon TCG domain expertise framework:
+- TRANSACTION COSTS VARY BY TIER: Premium ($100+) ~20-25% breakeven. Mid-high ($50-100) ~25-30%. Mid ($20-50) ~30-35%. Sub-$20 excluded.
+- You are seeing the COMPLETE $20+ tradeable universe. Evaluate ALL cards through the lens of Pokemon TCG domain knowledge.
+- TOURNAMENT PLAYABILITY: Cards legal in Standard format have additional demand from competitive players. When a card rotates OUT of Standard, it typically loses 20-40% of its value as competitive demand evaporates. Cards entering Standard with strong competitive potential can spike. Check which cards in the dataset are competitively relevant.
+- SET ROTATION SCHEDULE: Standard format rotates annually. Cards from older sets in Standard are at rotation risk. Cards rotating into Expanded-only lose a demand pillar. Vintage (WOTC) cards are immune to rotation — they're purely collector-driven.
+- CHARACTER POPULARITY TIERS: Not all Pokemon are created equal. Tier 1: Charizard (always premium), Pikachu (franchise mascot), Mewtwo, Mew. Tier 2: Eeveelutions, Gengar, Dragonite, Rayquaza, Lugia. Tier 3: Everything else. Character tier sets a floor price. A mediocre Charizard card will always be worth more than a great Weezing card.
+- REPRINT RISK: Modern cards (Scarlet & Violet, Sword & Shield) can ALWAYS be reprinted in special sets, promo distributions, or premium collections. This caps upside for modern cards. Vintage (WOTC, ex era) cards have ZERO reprint risk — fixed supply. Mid-era (Diamond & Pearl through XY) has moderate reprint risk. Assess reprint risk for every recommendation.
+- SEALED PRODUCT DYNAMICS: When sealed boxes/ETBs of a set are still readily available at MSRP, singles from that set have price ceilings — anyone can crack packs. When sealed product dries up, singles prices can rise. Check whether each card's set still has available sealed product.
+- JAPANESE vs ENGLISH MARKET: Japanese cards often preview what English cards will be worth. Japanese alt art prices can signal future English alt art demand. Japanese exclusive promos create scarcity dynamics.
+- FRANCHISE CATALYSTS: New Pokemon anime seasons, movies, video games (Legends: Z-A), and Pokemon Presents announcements drive demand for specific character cards. Upcoming franchise events are catalysts.
+- GRADING IMPACT: Certain eras have different grading profiles. WOTC cards are 25+ years old — PSA 10s are genuinely rare. Modern cards have high PSA 10 rates — grading premium is lower. Understanding era-specific grading dynamics matters for valuation.
+- COLLECTOR SEGMENTS: Competitive players, casual collectors, investors, nostalgia buyers, and art collectors are different buyer pools. A card that appeals to multiple segments has deeper demand.
+
+Communication:
+- Speak as the domain expert — reference specific sets, mechanics, and Pokemon lore
+- For each recommendation, explain the Pokemon-specific thesis: why THIS card, from THIS set, of THIS Pokemon
+- Always assess: tournament relevance, reprint risk, character tier, sealed product status
+- Use Pokemon TCG terminology naturally: alt art, full art, VMAX, ex, GX, V-Star, illustration rare, special art rare, secret rare
+- Reference historical precedents: "This reminds me of when Shining Charizard did X" or "We saw this pattern with Hidden Fates"
+- Be the person on the desk who says "the data looks good, but here's what you're missing about the actual Pokemon card market"
+- Challenge financial analysts who ignore domain context — numbers without Pokemon knowledge are dangerous"""
+
+CONSENSUS_SYSTEM_PROMPT = """You are the Chief Investment Officer synthesizing input from six specialized analysts on your Pokemon card trading desk. Your analysts include a quant trader, data analytics expert, art sales director, liquidity trader, platform engineer, and Pokemon TCG domain expert. They analyzed the COMPLETE $20+ tradeable universe — every card worth trading. Your job is to deliver a COMPREHENSIVE, ACTIONABLE portfolio from this full dataset.
 
 CONTEXT — The $20+ universe:
 - Premium ($100+): ~20-25% breakeven. Blue chip investments.
@@ -165,15 +221,15 @@ Momentum, accumulation, or tier-graduation candidates. Higher fee friction but v
 Not ready to buy but worth monitoring. Why and what would trigger action?
 
 ## 3. WHERE THE DESK AGREES vs DISAGREES
-High-conviction calls (all 3 traders agree) vs debates.
+High-conviction calls (where 4+ of 6 analysts agree) vs active debates. Note any data quality warnings from the platform engineer. Note any domain-specific insights from the Pokemon expert that changed the financial calculus.
 
 ## 4. KEY RISKS
-Top 3 risks to the portfolio.
+Top 3-5 risks to the portfolio, including data quality risks and domain-specific risks (rotation, reprints, etc.).
 
 ## 5. THE HONEST ANSWER
 Is this market tradeable? What annual net return is realistic across tiers?
 
-Be specific. Use numbers. 800 words max."""
+Be specific. Use numbers. 1000 words max."""
 
 # Persona metadata for frontend rendering
 PERSONAS = {
@@ -186,23 +242,50 @@ PERSONAS = {
         "badges": ["SCARCITY MODELS", "SALES VELOCITY", "DATA QUALITY"],
         "system_prompt": QUANT_SYSTEM_PROMPT,
     },
-    "pm": {
-        "id": "pm",
-        "name": 'James "Jamie" Blackwood',
-        "title": "HEDGE FUND PM",
-        "subtitle": "Ex-Viking Global · $2B Long/Short · Collectibles Fund",
+    "data_analytics": {
+        "id": "data_analytics",
+        "name": "Alex Rivera",
+        "title": "DATA ANALYTICS",
+        "subtitle": "Ex-Palantir · Pattern Detection · Market Intelligence",
+        "color": "#9c27b0",
+        "badges": ["PATTERN DETECTION", "CORRELATION ANALYSIS", "TREND SIGNALS"],
+        "system_prompt": DATA_ANALYTICS_SYSTEM_PROMPT,
+    },
+    "art_sales": {
+        "id": "art_sales",
+        "name": "Isabella Chen-Moretti",
+        "title": "ART SALES DIRECTOR",
+        "subtitle": "Ex-Christie's · Collectible Art Advisory · Aesthetic Value",
         "color": "#ffd700",
-        "badges": ["CATALYSTS", "SUPPLY DYNAMICS", "SET ROTATION"],
-        "system_prompt": PM_SYSTEM_PROMPT,
+        "badges": ["ILLUSTRATION VALUE", "ARTIST PREMIUM", "AESTHETIC APPEAL"],
+        "system_prompt": ART_SALES_SYSTEM_PROMPT,
     },
     "liquidity": {
         "id": "liquidity",
         "name": 'Victor "Vic" Morales',
-        "title": "CONTRARIAN VALUE",
-        "subtitle": "Ex-Baupost Group · Deep Value · Mispriced Assets",
+        "title": "LIQUIDITY TRADER",
+        "subtitle": "Ex-Jane Street · Market Making · Illiquid Assets",
         "color": "#e040fb",
-        "badges": ["MEAN REVERSION", "RELATIVE VALUE", "SENTIMENT EXTREMES"],
-        "system_prompt": CONTRARIAN_SYSTEM_PROMPT,
+        "badges": ["MARKET DEPTH", "EXIT STRATEGY", "SPREAD ANALYSIS"],
+        "system_prompt": LIQUIDITY_SYSTEM_PROMPT,
+    },
+    "swe": {
+        "id": "swe",
+        "name": "Dev Patel",
+        "title": "PLATFORM ENGINEER",
+        "subtitle": "Ex-Bloomberg · Data Systems · Quality Assurance",
+        "color": "#4caf50",
+        "badges": ["DATA QUALITY", "ANOMALY DETECTION", "SYSTEM HEALTH"],
+        "system_prompt": SWE_SYSTEM_PROMPT,
+    },
+    "pokemon_expert": {
+        "id": "pokemon_expert",
+        "name": 'Ryan "Sensei" Tanaka',
+        "title": "POKEMON TCG EXPERT",
+        "subtitle": "20yr Veteran · Worlds Top 8 · Domain Specialist",
+        "color": "#f44336",
+        "badges": ["META ANALYSIS", "SET ROTATION", "REPRINT RISK"],
+        "system_prompt": POKEMON_EXPERT_SYSTEM_PROMPT,
     },
 }
 
@@ -813,84 +896,203 @@ Higher fee impact (breakeven ~30-35%) but still viable. Look at sales velocity (
 
 Give me 10-15 total picks across tiers. Show the math."""
 
-    elif persona_id == "pm":
+    elif persona_id == "data_analytics":
         return base + """
-Give me your portfolio construction — you have the COMPLETE $20+ tradeable universe. Build the best portfolio from ALL available cards.
+Give me your data-driven pattern analysis of the COMPLETE $20+ tradeable universe.
 
-## PORTFOLIO CONSTRUCTION BY TIER
+## STATISTICAL PATTERNS & ANOMALIES
+- Which cards show statistically significant price movements (beyond normal variance)?
+- Identify correlation clusters: cards that move together within sets or franchises.
+- Flag any cards with anomalous price/volume divergences — price moving without sales support, or sales surging without price response.
 
-### CORE HOLDINGS — Premium ($100+): 3-5 positions, 45% of capital
-These are your "blue chip" positions. Vintage WOTC cards with fixed supply, strong nostalgia demand, proven price floors. Hold 6-12+ months. Fee impact is manageable at this price point (~20-25% breakeven). Focus on: character IP strength (Charizard, Dragonite, Mewtwo), set prestige (Base Set, Fossil, Team Rocket), long-term appreciation trend from hold_economics.
+## TREND ANALYSIS
+- Classify cards by trend: uptrend (higher highs/lows), downtrend, range-bound, breakout candidates.
+- Sales velocity trends: which cards have accelerating vs decelerating demand?
+- Which trends have sufficient sample sizes to be reliable? Flag thin data.
 
-### ACTIVE BOOK — Mid-High ($50-100): 3-5 positions, 30% of capital
-This is where CATALYSTS matter. What events could drive 30-50% moves? New set releases, anime announcements, tournament meta shifts. Each pick needs: (a) specific catalyst thesis, (b) timeline, (c) target above breakeven_pct. Hold 3-6 months.
+## CROSS-SECTIONAL SPREADS
+- Compare pricing across variants of the same card, across sets for the same character, across rarity tiers within sets.
+- Identify mispriced spreads — where is the relative value?
 
-### GROWTH PLAYS — Mid ($20-50): 3-5 positions, 15% of capital
-Viable trades with higher fee friction (~30-35% breakeven). Look for: momentum breakouts, cards approaching the $50 tier, high sales velocity proving real demand. Hold 1-3 months or accumulate.
+## REGIME CLASSIFICATION
+- Market-wide regime: accumulation, markup, distribution, or markdown?
+- Are different price tiers in different regimes?
+- Flow analysis: where is capital moving to/from?
 
-### CASH RESERVE — 10% of capital
-Dry powder for opportunities.
+## ACTIONABLE SIGNALS (8-12 cards)
+For each signal:
+- Card name, price, tier, pattern type
+- Statistical confidence level and sample size
+- Expected magnitude and timeline
+- What would invalidate this signal?
 
-## THEMATIC EXPOSURES
-- **Character Franchises**: What character IPs should we be overweight? (Charizard, Eeveelutions, Pikachu, etc.)
-- **Era Allocation**: Vintage WOTC vs mid-era ex/DP vs modern V/VMAX — where's the best risk-adjusted return?
-- **Set Rotation**: Which sets are gaining value? Which are losing?
+Lead with data. State sample sizes. Separate signal from noise."""
 
-## RISK MANAGEMENT
-- Concentration limits per set/era
-- Fee-adjusted net P&L target for each tier
-- Exit rules per tier (stop-loss, take-profit)
-
-Give me a complete portfolio of 10-15 cards across tiers with allocation percentages."""
-
-    else:  # liquidity (contrarian value)
+    elif persona_id == "art_sales":
         return base + """
-Give me your contrarian value analysis — you have the COMPLETE $20+ tradeable universe. Find what's mispriced.
+Give me your art-market assessment of the COMPLETE $20+ tradeable universe.
 
-## MOST OVERVALUED CARDS (Top 5-8)
-Which cards are priced above fair value? Look for:
-- Price far above SMA_90 with no sales volume to justify the premium
-- Hype-driven spikes with wide market-vs-median spread (listed price is fiction)
-- Cards where the narrative is bullish but actual sales data tells a different story
-- Cards where every analyst is bullish — what are they missing?
-For each: card name, price, why it's overvalued, what fair value should be, and the catalyst for correction.
+## DISPLAY-QUALITY INVESTMENTS (Top 5-8 cards)
+Which cards are "museum quality" — illustrations worth framing? Focus on:
+- Full art, alt art, illustration rare, and special art rare variants
+- Cards by sought-after artists (Arita, PLANETA, Morii, Sowsow, Egawa, Saitou)
+- Illustration composition, color palette, and visual impact
+- "Display piece" vs "binder card" classification
 
-## MOST UNDERVALUED RELATIVE TO PEERS (Top 5-8)
-Compare cards WITHIN sets and rarity tiers. Which are cheap vs their peers?
-- Same set, same rarity, but 2-3x price difference — why? Is the discount justified?
-- Cards with strong sales velocity despite recent price drops (real demand at lower levels)
-- Vintage cards trading below their historical floor (margin of safety)
-For each: card name, price, peer comparison, why it's undervalued, target price.
+## ART PREMIUM ANALYSIS
+- Where is the full art / alt art premium vs regular version underpriced or overpriced?
+- Which artist premiums are growing? Which are compressing?
+- Aesthetic appeal vs current price — any beautiful cards that are cheap?
 
-## SENTIMENT EXTREMES & MEAN REVERSION CANDIDATES
-- Which cards have dropped 30%+ from recent highs? Are these overreactions or justified declines?
-- Which cards have the lowest RSI readings? Are they bottoming or still falling?
-- Cards with improving hold_economics despite negative recent sentiment
-- Where is the bad news already priced in?
+## CONDITION & GRADING UPSIDE
+- Which cards have the highest condition sensitivity (NM vs LP spread)?
+- Cards with high art value that could benefit from professional grading
+- Grading economics: cost vs expected grade vs price uplift
 
-## BIGGEST RECENT DROPS — OVERREACTION OR JUSTIFIED?
-Analyze cards with the largest 7d and 30d price declines:
-- Is the decline driven by fundamentals (reprint risk, meta shift) or panic selling?
-- What does sales data show — are buyers stepping in at lower prices?
-- Margin of safety calculation: how much further could it fall vs upside if it reverts?
+## COLLECTOR PSYCHOLOGY PLAYS
+- Nostalgia art: Gen 1 Pokemon in classic poses — what drives emotional buying?
+- Which aesthetic styles (dramatic, cute/kawaii, painterly, dynamic action) are trending?
+- Seasonal collector behavior: gift-buying, holiday displays, collection milestones
 
-## CONTRARIAN PICKS (8-12 across tiers)
-For each pick, provide:
-- Price, tier, why the market is WRONG about this card right now
-- Mean reversion target, margin of safety, catalyst for re-rating
-- Hold period and conviction level
-- What could go wrong (the bear case for your contrarian thesis)
+## ART INVESTMENT PICKS (8-12 cards)
+For each pick:
+- Card name, set, artist, art style, price, tier
+- What makes this illustration special?
+- Art premium relative to non-art versions of the same Pokemon
+- Target collector segment (competitive player, art collector, nostalgia buyer, investor)
+- Display quality rating: MUSEUM / SHOWCASE / COLLECTION / BINDER
 
-## THE BULL CASE YOU DON'T BELIEVE
-What's the most popular bullish consensus right now that you think is wrong? Why?
+Focus on the art. Other analysts handle the numbers — you explain why these cards are BEAUTIFUL."""
 
-Give me 8-12 contrarian picks plus 3-5 "avoid/sell" calls. Challenge the consensus."""
+    elif persona_id == "liquidity":
+        return base + """
+Give me your liquidity analysis of the COMPLETE $20+ tradeable universe.
+
+## LIQUIDITY DASHBOARD
+- How many cards have genuine liquidity (>20 sales/90d)?
+- What percentage of the universe is effectively illiquid (<5 sales/90d)?
+- Average and median time-to-sell across tiers.
+- Market-wide spread health: average market-vs-median spread by tier.
+
+## MOST LIQUID CARDS (Top 8-10)
+Cards with the best exit profiles: high volume, tight spreads, fast sells. These are the SAFE positions.
+
+## LIQUIDITY TRAPS (Top 5-8)
+Cards that look attractive on price but have terrible exit profiles:
+- Low sales velocity despite seemingly fair prices
+- Wide market-vs-median spreads (listed price is fiction)
+- Cards where est_time_to_sell_days > 30
+
+## SPREAD OPPORTUNITIES
+- Where is the market-vs-median spread widest AND volume is high? These are market-making opportunities.
+- Cards where you can buy at median and sell at market, capturing the spread.
+
+## EXIT STRATEGY BY TIER
+- Premium: expected exit timeline, best selling conditions
+- Mid-high: how fast can you exit? What slippage to expect?
+- Mid: is the fee friction worth it given liquidity?
+
+## LIQUIDITY-SCREENED PICKS (8-12 cards)
+For EVERY recommendation:
+- Price, tier, liquidity score, sales_90d, sales_30d
+- Market-vs-median spread
+- Expected time to sell
+- EXIT PLAN: how, when, and at what price do you get out?
+- Velocity trend: accelerating or decelerating?
+
+Answer the question other analysts ignore: "If I buy this, HOW and WHEN do I sell it?"
+Give me 8-12 picks that pass your liquidity screen, plus 3-5 "avoid" calls on liquidity traps."""
+
+    elif persona_id == "swe":
+        return base + """
+Give me your platform data quality audit of the COMPLETE $20+ tradeable universe.
+
+## DATA HEALTH DASHBOARD
+- Total cards analyzed, percentage with sufficient price history (>30 days)
+- Percentage with recent sales data (any sales in last 30 days)
+- Count of cards with data quality flags (LOW_DATA, LOW_CONFIDENCE, EXTREME_MA_DIVERGENCE)
+- Data freshness: when was the last price sync? Are any prices stale?
+
+## VARIANT MISMATCH SUSPECTS
+- Cards with extreme price jumps that could indicate variant mixing
+- Cards where the tracked variant (normal/holo/reverse) seems inconsistent with the rarity
+- Any cards where price history looks discontinuous (sudden level shifts)
+
+## UNRELIABLE INDICATOR WARNINGS
+- Cards where SMA_90 is computed on <60 days of data (truncated window)
+- Cards where RSI/MACD are computed on insufficient data points
+- Cards where volatility is artificially low due to stale/unchanging prices
+- Technical indicators that OTHER analysts might rely on but YOU know are unreliable
+
+## STALE PRICE CANDIDATES
+- Cards with 0 sales in 30 days but a "market price" that hasn't changed
+- Cards where the market price diverges significantly from last sale price
+- Potential API lag or sync issues
+
+## DATA QUALITY RATINGS
+For the top 20 most-discussed cards (highest signal strength), rate each:
+- Data reliability: HIGH / MEDIUM / LOW
+- Specific issue (if any)
+- Recommendation: TRUSTWORTHY / USE WITH CAUTION / DO NOT TRADE ON THIS DATA
+
+## PIPELINE IMPROVEMENT RECOMMENDATIONS
+- Top 3 data quality improvements that would most benefit the trading desk
+- Any systemic patterns in data issues (e.g., certain sets or eras with worse data)
+
+Your job is to tell the desk what they can TRUST. Don't make trading picks — make trust assessments."""
+
+    elif persona_id == "pokemon_expert":
+        return base + """
+Give me your Pokemon TCG domain expert assessment of the COMPLETE $20+ tradeable universe.
+
+## META & ROTATION IMPACT
+- Which cards in the dataset are competitively relevant (playable in Standard/Expanded)?
+- Which face upcoming rotation risk? When is the next Standard rotation?
+- Any cards that could spike on tournament results or meta shifts?
+
+## CHARACTER FRANCHISE VALUE
+- Tier the Pokemon characters in the dataset: Tier 1 (Charizard, Pikachu, Mewtwo, Mew), Tier 2 (Eeveelutions, Gengar, Dragonite, Rayquaza, Lugia), Tier 3 (everything else)
+- Which character premiums are justified vs overpriced?
+- Any rising characters (trending in anime, games, social media)?
+
+## REPRINT RISK ASSESSMENT
+For key cards in the dataset:
+- SAFE (vintage WOTC/ex era — zero reprint risk)
+- MODERATE (mid-era — unlikely but possible special reprint)
+- HIGH (modern — actively in print or likely to appear in future premium products)
+- How does reprint risk affect the investment thesis?
+
+## SEALED PRODUCT DYNAMICS
+- Which sets in the dataset still have readily available sealed product at MSRP?
+- Where sealed product has dried up — singles price ceiling removed
+- Any upcoming sealed releases that could affect current singles prices?
+
+## FRANCHISE CATALYSTS
+- Upcoming Pokemon media (games, anime, movies, Pokemon Presents)
+- Which characters/sets would benefit from upcoming catalysts?
+- Historical precedent: what happened to card prices when previous catalysts hit?
+
+## DOMAIN-INFORMED PICKS (8-12 cards)
+For each pick:
+- Card name, set, Pokemon, price, tier
+- Tournament relevance (Standard legal? Competitively viable? Rotation timeline?)
+- Character tier and franchise momentum
+- Reprint risk rating
+- Sealed product status of the set
+- Domain thesis: why does your Pokemon knowledge say BUY/AVOID?
+- What the purely financial analysts are MISSING about this card
+
+## TRAPS FOR NON-EXPERTS
+- Cards that look good on paper but have domain-specific risks (rotation, reprint, meta shift)
+- Common mistakes financial analysts make in this market
+
+Be the voice of domain expertise. The other analysts have the numbers — you have the CONTEXT."""
 
 
 async def get_multi_persona_analysis(db: Session) -> dict:
-    """Generate analysis from 3 trader personas in parallel, then synthesize consensus.
+    """Generate analysis from 6 trader personas in parallel, then synthesize consensus.
 
-    Returns: {personas: {quant, pm, liquidity}, consensus, market_data_summary, tokens_used}
+    Returns: {personas: {quant, data_analytics, art_sales, liquidity, swe, pokemon_expert}, consensus, market_data_summary, tokens_used}
     """
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
@@ -924,12 +1126,11 @@ async def get_multi_persona_analysis(db: Session) -> dict:
             persona["system_prompt"], user_prompt, max_tokens=8192
         )
 
-    # Run all 3 persona calls in parallel
+    # Run all 6 persona calls in parallel
+    persona_ids = list(persona_tasks.keys())
     try:
         results = await asyncio.gather(
-            persona_tasks["quant"],
-            persona_tasks["pm"],
-            persona_tasks["liquidity"],
+            *[persona_tasks[pid] for pid in persona_ids],
             return_exceptions=True,
         )
     except Exception as e:
@@ -941,7 +1142,7 @@ async def get_multi_persona_analysis(db: Session) -> dict:
     total_tokens = {"input": 0, "output": 0}
     analyses_for_consensus = []
 
-    for pid, result in zip(["quant", "pm", "liquidity"], results):
+    for pid, result in zip(persona_ids, results):
         persona = PERSONAS[pid]
         if isinstance(result, Exception):
             persona_results[pid] = {
@@ -988,13 +1189,16 @@ Below is the portfolio from your last run. Track changes explicitly:
 ---
 """
 
-        consensus_prompt = f"""Here are the analyses from your three desk traders:
+        consensus_prompt = f"""Here are the analyses from your six desk analysts:
 
 {chr(10).join(analyses_for_consensus)}
 {prev_context}
 They analyzed the COMPLETE $20+ tradeable universe. Synthesize into a COMPREHENSIVE portfolio:
 - 12-18 picks organized by tier (Core Holdings $100+, Active Trades $50-100, Growth Plays $20-50, Watchlist)
-- Where do they agree (high conviction)? Where do they disagree?
+- Where do they agree (high conviction — 4+ of 6 analysts)? Where do they disagree?
+- Factor in the platform engineer's data quality warnings — discount picks with unreliable data
+- Factor in the Pokemon expert's domain insights — rotation risk, reprint risk, character tier
+- Factor in the art director's aesthetic assessments — art premium, display quality
 - Include entry price, target, stop-loss, breakeven, hold period for each pick
 - Cover ALL tiers — give the user the widest actionable set of recommendations
 - If a previous consensus exists above, explicitly note portfolio changes since then"""
@@ -1106,81 +1310,6 @@ They analyzed the COMPLETE $20+ tradeable universe. Synthesize into a COMPREHENS
     }
 
 
-async def get_trader_analysis(db: Session) -> dict:
-    """Generate AI trader analysis using OpenAI GPT-5.4.
-
-    Returns a dict with the trader's analysis sections.
-    """
-    api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        return {
-            "error": "OPENAI_API_KEY not configured. Set it to enable the AI trader agent.",
-            "trader_name": "Marcus 'The Collector' Vega",
-        }
-
-    # Gather all market data
-    market_data = _gather_market_data(db)
-
-    # Build the prompt
-    user_prompt = f"""Here's the current Pokemon card market data from our trading platform. Give me your full analysis.
-
-## Market Overview
-{json.dumps(market_data['market_overview'], indent=2)}
-
-## Top Movers (Gainers & Losers)
-{json.dumps(market_data['top_movers'], indent=2)}
-
-## Technical Analysis (ALL {len(market_data['card_analyses'])} Viable Cards — $20+ Universe)
-{json.dumps([{k: v for k, v in c.items() if k != 'image_small'} for c in market_data['card_analyses']], indent=2)}
-
-## Portfolio Backtest Summary (Combined Strategy, $10K, Top 10 Cards)
-{json.dumps(market_data['portfolio_backtest'], indent=2)}
-
-## Strategy Comparison (Top 5 Cards x 3 Strategies)
-{json.dumps(market_data['strategy_comparison'], indent=2)}
-
-## Available Trading Strategies
-{json.dumps(market_data['available_strategies'], indent=2)}
-
-Give me your complete analysis covering:
-1. **Market Commentary** — What's the current state of this market? Bull, bear, or sideways?
-2. **Top Picks** — Your top 3-5 card recommendations with BUY/SELL/HOLD ratings
-3. **Danger Zone** — Any cards showing concerning technical patterns
-4. **Strategy Recommendations** — Which strategies work best for this market? Any collectibles-specific strategies you'd add?
-5. **Backtesting Improvements** — What new strategies or indicators should we add to our backtesting engine?
-6. **Risk Assessment** — Position sizing, portfolio construction, and risk management advice
-
-Be specific. Reference the actual numbers. This is a trading desk briefing, not a blog post."""
-
-    try:
-        result = _call_openai(TRADER_SYSTEM_PROMPT, user_prompt, max_tokens=16384)
-
-        return {
-            "trader_name": "Marcus 'The Collector' Vega",
-            "analysis": result["text"],
-            "market_data_summary": {
-                "total_cards": market_data["market_overview"]["total_cards"],
-                "avg_price": market_data["market_overview"]["avg_price"],
-                "market_cap": market_data["market_overview"]["total_market_cap"],
-                "top_gainer": market_data["top_movers"]["gainers"][0]["name"] if market_data["top_movers"].get("gainers") else None,
-                "top_loser": market_data["top_movers"]["losers"][0]["name"] if market_data["top_movers"].get("losers") else None,
-            },
-            "tokens_used": result["tokens_used"],
-        }
-
-    except ImportError:
-        return {
-            "error": "openai package not installed. Run: pip install openai",
-            "trader_name": "Marcus 'The Collector' Vega",
-        }
-    except Exception as e:
-        logger.error(f"Trader agent failed: {e}")
-        return {
-            "error": f"Trader analysis failed: {str(e)}",
-            "trader_name": "Marcus 'The Collector' Vega",
-        }
-
-
 async def get_card_trader_analysis(db: Session, card_id: int) -> dict:
     """Get trader analysis for a specific card."""
     api_key = os.environ.get("OPENAI_API_KEY")
@@ -1244,10 +1373,10 @@ Give me a focused trading brief:
 Keep it tight — this is a single-card trade brief, not a dissertation."""
 
     try:
-        result = _call_openai(TRADER_SYSTEM_PROMPT, user_prompt, max_tokens=8192)
+        result = _call_openai(QUANT_SYSTEM_PROMPT, user_prompt, max_tokens=8192)
 
         return {
-            "trader_name": "Marcus 'The Collector' Vega",
+            "trader_name": "Dr. Sarah Chen",
             "card_name": card.name,
             "card_id": card_id,
             "analysis": result["text"],

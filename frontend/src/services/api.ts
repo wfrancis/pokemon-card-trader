@@ -42,6 +42,7 @@ export interface Card {
   image_large: string;
   current_price: number | null;
   price_variant: string | null;
+  artist: string | null;
 }
 
 export interface PricePoint {

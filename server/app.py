@@ -1,7 +1,7 @@
 import logging
 import asyncio
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -11,22 +11,28 @@ import os
 from server.database import engine, Base, get_db
 from server.models import Card, PriceHistory, Sale
 from server.routes import cards, prices, analysis
-from server.routes import backtest
 from server.routes import trader
 from server.routes import sales
 from server.routes import agent
 from server.services.card_sync import sync_all_cards
 from server.services.price_collector import collect_prices_for_cards
-from server.services.seed_data import seed_database
 from server.services.tcgdex_sync import sync_tcgdex_cards, import_tcgdex_prices, sync_tcgdex_sets
 from server.services.poketrace_sync import sync_poketrace_prices
 from server.services.pricecharting_import import import_pricecharting_csv
-from server.services.tracking import rebuild_tracked_cards, get_tracked_stats, enforce_data_quality, refresh_current_prices
+from server.services.tracking import rebuild_tracked_cards, get_tracked_stats, enforce_data_quality, refresh_current_prices, backfill_prices_from_sales as _backfill_prices_from_sales
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 FRONTEND_BUILD = os.path.join(os.path.dirname(__file__), "..", "frontend", "build")
+
+ADMIN_API_KEY = os.environ.get("ADMIN_API_KEY")
+
+
+async def verify_admin_key(x_admin_key: str | None = Header(None)):
+    """Check X-Admin-Key header for admin endpoints. Skips check if ADMIN_API_KEY is not set."""
+    if ADMIN_API_KEY and x_admin_key != ADMIN_API_KEY:
+        raise HTTPException(status_code=403, detail="Invalid or missing X-Admin-Key header")
 
 
 @asynccontextmanager
@@ -69,6 +75,12 @@ async def lifespan(app: FastAPI):
             pass
         try:
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_cards_tcgplayer_product_id ON cards (tcgplayer_product_id)"))
+            conn.commit()
+        except Exception:
+            pass
+        # Add artist column if missing
+        try:
+            conn.execute(text("ALTER TABLE cards ADD COLUMN artist TEXT"))
             conn.commit()
         except Exception:
             pass
@@ -154,7 +166,19 @@ async def _background_price_sync():
                 db.close()
         except Exception as e:
             logger.error(f"Background sales collection failed: {e}")
-        # 5. Backfill prediction prices (update agent accuracy tracking)
+        # 5. Backfill price_history from sales data
+        try:
+            from server.services.tracking import backfill_prices_from_sales as _backfill_from_sales
+            db = SessionLocal()
+            try:
+                stats = _backfill_from_sales(db)
+                if stats["records_inserted"] > 0:
+                    logger.info(f"Background sales→price backfill: {stats}")
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Background sales→price backfill failed: {e}")
+        # 6. Backfill prediction prices (update agent accuracy tracking)
         try:
             from server.services.prediction_tracker import backfill_prediction_prices
             db = SessionLocal()
@@ -166,7 +190,7 @@ async def _background_price_sync():
                 db.close()
         except Exception as e:
             logger.error(f"Prediction backfill failed: {e}")
-        # 6. Autonomous agent scan
+        # 7. Autonomous agent scan
         try:
             await _autonomous_agent_scan()
         except Exception as e:
@@ -211,33 +235,37 @@ async def _autonomous_agent_scan():
         # Anomaly detection (pure SQL — zero AI cost)
         anomalies = []
 
-        # Find cards with >10% price change in last 24h
+        # Find cards with >25% price change vs 7-day average (same variant)
         try:
-            yesterday = (now - timedelta(days=1)).date()
-            two_days_ago = (now - timedelta(days=2)).date()
+            seven_days_ago = (now - timedelta(days=7)).date()
 
             big_movers = db.execute(text("""
-                SELECT c.id, c.name, c.current_price,
-                       ph_old.market_price as old_price,
-                       ((c.current_price - ph_old.market_price) / ph_old.market_price * 100) as change_pct
+                SELECT c.id, c.name, c.current_price, c.price_variant,
+                       AVG(ph_old.market_price) as avg_price,
+                       ((c.current_price - AVG(ph_old.market_price)) / AVG(ph_old.market_price) * 100) as change_pct
                 FROM cards c
                 JOIN price_history ph_old ON ph_old.card_id = c.id
+                  AND ph_old.variant = c.price_variant
                 WHERE c.is_viable = 1
-                  AND c.current_price > 0
-                  AND ph_old.market_price > 0
-                  AND ph_old.date = :two_days_ago
-                  AND ABS((c.current_price - ph_old.market_price) / ph_old.market_price) > 0.10
-                ORDER BY ABS((c.current_price - ph_old.market_price) / ph_old.market_price) DESC
+                  AND c.current_price > 5
+                  AND ph_old.market_price > 5
+                  AND ph_old.date >= :seven_days_ago
+                GROUP BY c.id
+                HAVING COUNT(ph_old.id) >= 2
+                  AND AVG(ph_old.market_price) > 5
+                  AND ABS((c.current_price - AVG(ph_old.market_price)) / AVG(ph_old.market_price)) > 0.25
+                ORDER BY ABS((c.current_price - AVG(ph_old.market_price)) / AVG(ph_old.market_price)) DESC
                 LIMIT 10
-            """), {"two_days_ago": two_days_ago}).fetchall()
+            """), {"seven_days_ago": seven_days_ago}).fetchall()
 
             for row in big_movers:
                 direction = "spiked" if row.change_pct > 0 else "dropped"
-                severity = "urgent" if abs(row.change_pct) > 20 else "notable"
+                severity = "urgent" if abs(row.change_pct) > 40 else "notable"
+                variant_label = row.price_variant or "normal"
                 anomalies.append({
                     "card_id": row.id,
-                    "title": f"{row.name} {direction} {abs(row.change_pct):.1f}%",
-                    "message": f"{row.name} {direction} from ${row.old_price:.2f} to ${row.current_price:.2f} ({row.change_pct:+.1f}%) in the last day.",
+                    "title": f"{row.name} ({variant_label}) {direction} {abs(row.change_pct):.1f}%",
+                    "message": f"{row.name} ({variant_label}) {direction} {abs(row.change_pct):.1f}% — 7d avg ${row.avg_price:.2f} → ${row.current_price:.2f}",
                     "type": "anomaly",
                     "severity": severity,
                 })
@@ -343,7 +371,6 @@ app.add_middleware(
 app.include_router(cards.router)
 app.include_router(prices.router)
 app.include_router(analysis.router)
-app.include_router(backtest.router)
 app.include_router(trader.router)
 app.include_router(sales.router)
 app.include_router(agent.router)
@@ -354,7 +381,7 @@ def health():
     return {"status": "ok"}
 
 
-@app.post("/api/sync/cards")
+@app.post("/api/sync/cards", dependencies=[Depends(verify_admin_key)])
 async def trigger_card_sync(
     pages: int = 100,
     db: Session = Depends(get_db),
@@ -368,7 +395,7 @@ async def trigger_card_sync(
         return {"status": "error", "message": str(e)}
 
 
-@app.post("/api/sync/prices")
+@app.post("/api/sync/prices", dependencies=[Depends(verify_admin_key)])
 async def trigger_price_sync(
     limit: int = 250,
     db: Session = Depends(get_db),
@@ -382,17 +409,7 @@ async def trigger_price_sync(
         return {"status": "error", "message": str(e)}
 
 
-@app.post("/api/seed")
-def seed_data(
-    days: int = 90,
-    db: Session = Depends(get_db),
-):
-    """Seed database with sample cards and simulated price history."""
-    stats = seed_database(db, days=days)
-    return {"status": "complete", **stats}
-
-
-@app.post("/api/sync/tcgdex/cards")
+@app.post("/api/sync/tcgdex/cards", dependencies=[Depends(verify_admin_key)])
 async def trigger_tcgdex_card_sync(
     max_cards: int = 25000,
     db: Session = Depends(get_db),
@@ -406,7 +423,7 @@ async def trigger_tcgdex_card_sync(
         return {"status": "error", "message": str(e)}
 
 
-@app.post("/api/sync/tcgdex/prices")
+@app.post("/api/sync/tcgdex/prices", dependencies=[Depends(verify_admin_key)])
 async def trigger_tcgdex_price_import(
     db: Session = Depends(get_db),
 ):
@@ -419,7 +436,7 @@ async def trigger_tcgdex_price_import(
         return {"status": "error", "message": str(e)}
 
 
-@app.post("/api/sync/poketrace")
+@app.post("/api/sync/poketrace", dependencies=[Depends(verify_admin_key)])
 async def trigger_poketrace_sync(
     tier: str = "tcgplayer",
     db: Session = Depends(get_db),
@@ -433,7 +450,7 @@ async def trigger_poketrace_sync(
         return {"status": "error", "message": str(e)}
 
 
-@app.post("/api/sync/tcgplayer")
+@app.post("/api/sync/tcgplayer", dependencies=[Depends(verify_admin_key)])
 async def trigger_tcgplayer_sync(
     limit: int = 500,
     db: Session = Depends(get_db),
@@ -448,7 +465,7 @@ async def trigger_tcgplayer_sync(
         return {"status": "error", "message": str(e)}
 
 
-@app.post("/api/sync/tcgplayer/history")
+@app.post("/api/sync/tcgplayer/history", dependencies=[Depends(verify_admin_key)])
 async def trigger_tcgplayer_history(
     limit: int = 500,
     db: Session = Depends(get_db),
@@ -463,7 +480,7 @@ async def trigger_tcgplayer_history(
         return {"status": "error", "message": str(e)}
 
 
-@app.post("/api/sync/tcgcsv/mapping")
+@app.post("/api/sync/tcgcsv/mapping", dependencies=[Depends(verify_admin_key)])
 async def trigger_tcgcsv_mapping(db: Session = Depends(get_db)):
     """Build productId mapping from TCGCSV products to our cards (one-time)."""
     from server.services.tcgcsv_sync import sync_tcgcsv_mapping
@@ -475,7 +492,7 @@ async def trigger_tcgcsv_mapping(db: Session = Depends(get_db)):
         return {"status": "error", "message": str(e)}
 
 
-@app.post("/api/sync/tcgcsv/prices")
+@app.post("/api/sync/tcgcsv/prices", dependencies=[Depends(verify_admin_key)])
 async def trigger_tcgcsv_prices(db: Session = Depends(get_db)):
     """Sync current prices from TCGCSV (daily bulk sync)."""
     from server.services.tcgcsv_sync import sync_tcgcsv_prices
@@ -487,7 +504,7 @@ async def trigger_tcgcsv_prices(db: Session = Depends(get_db)):
         return {"status": "error", "message": str(e)}
 
 
-@app.post("/api/fix/bad-prices")
+@app.post("/api/fix/bad-prices", dependencies=[Depends(verify_admin_key)])
 async def fix_bad_prices(db: Session = Depends(get_db)):
     """Remove price records that differ >3x from previous entry (likely variant mismatch)."""
     from sqlalchemy import text
@@ -527,7 +544,7 @@ async def fix_bad_prices(db: Session = Depends(get_db)):
     return {"status": "complete", "bad_prices_removed": deleted}
 
 
-@app.post("/api/import/pricecharting")
+@app.post("/api/import/pricecharting", dependencies=[Depends(verify_admin_key)])
 async def trigger_pricecharting_import(
     db: Session = Depends(get_db),
 ):
@@ -550,7 +567,7 @@ import threading
 _rebuild_status = {"running": False, "step": "", "stats": None, "error": None}
 
 
-@app.post("/api/rebuild")
+@app.post("/api/rebuild", dependencies=[Depends(verify_admin_key)])
 async def trigger_rebuild(db: Session = Depends(get_db)):
     """Full rebuild: sync sets → mark tracked → import prices for tracked cards."""
     if _rebuild_status["running"]:
@@ -614,26 +631,37 @@ def rebuild_status():
     return _rebuild_status
 
 
-@app.post("/api/tracked/enforce-quality")
+@app.post("/api/tracked/enforce-quality", dependencies=[Depends(verify_admin_key)])
 def enforce_quality(db: Session = Depends(get_db)):
     """Remove cards without complete market data from tracked universe."""
     stats = enforce_data_quality(db)
     return {"status": "complete", **stats}
 
 
-@app.post("/api/tracked/refresh-prices")
+@app.post("/api/tracked/refresh-prices", dependencies=[Depends(verify_admin_key)])
 def refresh_prices(db: Session = Depends(get_db)):
     """Update Card.current_price from latest PriceHistory for all tracked cards."""
     count = refresh_current_prices(db)
     return {"status": "complete", "cards_updated": count}
 
 
-@app.get("/api/tracked/stats")
+@app.get("/api/tracked/stats", dependencies=[Depends(verify_admin_key)])
 def tracked_stats(db: Session = Depends(get_db)):
     return get_tracked_stats(db)
 
 
-@app.post("/api/sync/sales")
+@app.post("/api/fix/backfill-from-sales", dependencies=[Depends(verify_admin_key)])
+async def backfill_from_sales_endpoint(db: Session = Depends(get_db)):
+    """Backfill price_history from sales data for cards with sparse history."""
+    try:
+        stats = _backfill_prices_from_sales(db)
+        return {"status": "complete", **stats}
+    except Exception as e:
+        logger.error(f"Backfill from sales failed: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/sync/sales", dependencies=[Depends(verify_admin_key)])
 async def trigger_sales_collection(
     limit: int = 500,
     db: Session = Depends(get_db),
@@ -648,7 +676,7 @@ async def trigger_sales_collection(
         return {"status": "error", "message": str(e)}
 
 
-@app.post("/api/sync/sales-history")
+@app.post("/api/sync/sales-history", dependencies=[Depends(verify_admin_key)])
 async def trigger_sales_history_sync(
     limit: int = 200,
     db: Session = Depends(get_db),
@@ -670,6 +698,10 @@ if os.path.isdir(FRONTEND_BUILD):
     @app.get("/{full_path:path}")
     async def serve_react(full_path: str):
         """Serve React app for all non-API routes (SPA catch-all)."""
+        # Never serve HTML for API routes — if we got here, the route doesn't exist
+        if full_path.startswith("api/") or full_path == "api":
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail=f"API route not found: /{full_path}")
         file_path = os.path.join(FRONTEND_BUILD, full_path)
         if os.path.isfile(file_path):
             return FileResponse(file_path)

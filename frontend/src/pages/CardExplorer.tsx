@@ -88,11 +88,11 @@ function HotCardsSection() {
                 />
                 <Chip
                   icon={card.signal === 'bullish' ? <TrendingUpIcon sx={{ fontSize: 12 }} /> : card.signal === 'bearish' ? <TrendingDownIcon sx={{ fontSize: 12 }} /> : undefined}
-                  label={card.signal === 'bullish' ? 'BULL' : card.signal === 'bearish' ? 'BEAR' : 'HOLD'}
+                  label={card.signal === 'bullish' ? 'BUY' : card.signal === 'bearish' ? 'AVOID' : 'HOLD'}
                   size="small"
                   sx={{
                     bgcolor: card.signal === 'bullish' ? '#0a3a0a' : card.signal === 'bearish' ? '#3a0a0a' : '#1a1a2a',
-                    color: card.signal === 'bullish' ? '#00ff41' : card.signal === 'bearish' ? '#ff1744' : '#00bcd4',
+                    color: card.signal === 'bullish' ? '#00e676' : card.signal === 'bearish' ? '#ff1744' : '#ffd740',
                     fontSize: '0.6rem',
                     height: 18,
                   }}

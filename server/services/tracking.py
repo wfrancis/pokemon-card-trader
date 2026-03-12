@@ -194,6 +194,141 @@ def refresh_current_prices(db: Session) -> int:
     return updated
 
 
+VARIANT_ALIAS = {
+    "1st Edition Holofoil": "holofoil",
+    "Reverse Holofoil": "reverseHolofoil",
+    "Holofoil": "holofoil",
+    "Normal": "normal",
+}
+
+
+def backfill_prices_from_sales(db: Session) -> dict:
+    """Backfill price_history from sales data for cards with sparse history.
+
+    For each card with sales but < 30 days of price_history:
+      - Group sales by ISO week
+      - For weeks with 2+ sales: insert median as market_price, min/max as low/high
+      - Only use sales whose variant matches the card's price_variant
+    After backfilling, update card.current_price to the latest price_history entry.
+    """
+    from server.models.sale import Sale
+    from statistics import median
+    from datetime import timedelta
+
+    stats = {"cards_checked": 0, "cards_backfilled": 0, "records_inserted": 0}
+
+    # Find cards that have sales but sparse price_history (< 30 distinct dates)
+    cards_with_sales = (
+        db.query(Card.id, Card.price_variant, func.count(Sale.id).label("sale_count"))
+        .join(Sale, Sale.card_id == Card.id)
+        .group_by(Card.id)
+        .having(func.count(Sale.id) >= 2)
+        .all()
+    )
+
+    for card_id, price_variant, sale_count in cards_with_sales:
+        stats["cards_checked"] += 1
+
+        # Check existing price_history coverage
+        existing_days = db.query(func.count(func.distinct(PriceHistory.date))).filter(
+            PriceHistory.card_id == card_id
+        ).scalar() or 0
+
+        if existing_days >= 30:
+            continue
+
+        variant = price_variant or "normal"
+
+        # Build list of sale variants to match against
+        match_variants = {variant}
+        # Add aliases: "1st Edition Holofoil" sales should match "holofoil" cards
+        for alias, canonical in VARIANT_ALIAS.items():
+            if canonical == variant:
+                match_variants.add(alias)
+
+        # Fetch matching sales ordered by date
+        sales = (
+            db.query(Sale)
+            .filter(
+                Sale.card_id == card_id,
+                Sale.variant.in_(match_variants),
+                Sale.purchase_price > 0,
+            )
+            .order_by(Sale.order_date)
+            .all()
+        )
+
+        if len(sales) < 2:
+            continue
+
+        # Group sales by ISO week (Monday-based)
+        weekly: dict[date, list[float]] = {}
+        for sale in sales:
+            order_dt = sale.order_date
+            if hasattr(order_dt, 'date'):
+                order_d = order_dt.date()
+            else:
+                order_d = order_dt
+            # Use Monday of the ISO week as the representative date
+            week_start = order_d - timedelta(days=order_d.weekday())
+            weekly.setdefault(week_start, []).append(sale.purchase_price)
+
+        # Get existing dates to avoid duplicates
+        existing_dates = set(
+            row[0] for row in db.query(PriceHistory.date).filter(
+                PriceHistory.card_id == card_id,
+                PriceHistory.variant == variant,
+            ).all()
+        )
+
+        inserted = 0
+        for week_date, prices in sorted(weekly.items()):
+            if len(prices) < 2:
+                continue
+            if week_date in existing_dates:
+                continue
+
+            med_price = median(prices)
+            low = min(prices)
+            high = max(prices)
+
+            ph = PriceHistory(
+                card_id=card_id,
+                date=week_date,
+                variant=variant,
+                market_price=round(med_price, 2),
+                low_price=round(low, 2),
+                mid_price=round(med_price, 2),
+                high_price=round(high, 2),
+            )
+            db.add(ph)
+            inserted += 1
+
+        if inserted > 0:
+            stats["cards_backfilled"] += 1
+            stats["records_inserted"] += inserted
+
+    db.commit()
+
+    # Update current_price for backfilled cards from latest price_history
+    if stats["cards_backfilled"] > 0:
+        from sqlalchemy import text
+        db.execute(text("""
+            UPDATE cards SET current_price = (
+                SELECT ph.market_price FROM price_history ph
+                WHERE ph.card_id = cards.id AND ph.market_price IS NOT NULL
+                ORDER BY ph.date DESC LIMIT 1
+            )
+            WHERE id IN (
+                SELECT DISTINCT card_id FROM price_history
+            ) AND (current_price IS NULL OR current_price = 0)
+        """))
+        db.commit()
+
+    logger.info(f"Backfill from sales: {stats}")
+    return stats
+
+
 def get_tracked_stats(db: Session) -> dict:
     """Get summary of current tracking state."""
     total_tracked = db.query(Card).filter(Card.is_tracked == True).count()
