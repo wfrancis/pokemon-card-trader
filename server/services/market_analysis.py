@@ -666,13 +666,15 @@ def _generate_signal(analysis: AnalysisResult, prices: list[float]) -> tuple[str
     strength = max(-1.0, min(1.0, weighted_score / total_weight))
 
     # Collectibles-appropriate signal names
-    if strength > 0.4:
+    # Thresholds calibrated for weighted averaging that pulls toward zero:
+    # Most cards will have conflicting indicators, so use lower thresholds
+    if strength > 0.3:
         return "buy", strength
-    elif strength > 0.15:
+    elif strength > 0.08:
         return "accumulate", strength
-    elif strength < -0.4:
+    elif strength < -0.3:
         return "avoid", strength
-    elif strength < -0.15:
+    elif strength < -0.08:
         return "reduce", strength
     return "hold", strength
 
