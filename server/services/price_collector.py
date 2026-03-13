@@ -76,6 +76,7 @@ async def collect_prices_for_cards(db: Session, card_ids: list[int] | None = Non
                             card_id=card.id,
                             date=today,
                             variant=variant,
+                            condition="Near Mint",
                             market_price=price_data.get("market"),
                             low_price=price_data.get("low"),
                             mid_price=price_data.get("mid"),
@@ -88,5 +89,11 @@ async def collect_prices_for_cards(db: Session, card_ids: list[int] | None = Non
                 stats["errors"] += 1
 
     db.commit()
+    # Reconcile current_price with latest price_history
+    try:
+        from server.services.tracking import refresh_current_prices
+        refresh_current_prices(db)
+    except Exception as e:
+        logger.warning(f"Price reconciliation after collection failed: {e}")
     logger.info(f"Price collection complete: {stats}")
     return stats

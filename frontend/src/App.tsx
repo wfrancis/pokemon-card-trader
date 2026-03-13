@@ -22,11 +22,13 @@ import ShowChartIcon from '@mui/icons-material/ShowChart';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import ViewModuleIcon from '@mui/icons-material/ViewModule';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
+import BookmarkIcon from '@mui/icons-material/Bookmark';
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const CardExplorer = lazy(() => import('./pages/CardExplorer'));
 const CardDetail = lazy(() => import('./pages/CardDetail'));
 const Trader = lazy(() => import('./pages/Trader'));
+const Watchlist = lazy(() => import('./pages/Watchlist'));
 
 function NavBar() {
   const location = useLocation();
@@ -39,6 +41,7 @@ function NavBar() {
     { label: 'Dashboard', path: '/', icon: <DashboardIcon /> },
     { label: 'Explorer', path: '/explore', icon: <ViewModuleIcon /> },
     { label: 'AI Trader', path: '/trader', icon: <SmartToyIcon /> },
+    { label: 'Watchlist', path: '/watchlist', icon: <BookmarkIcon /> },
   ];
 
   return (
@@ -100,6 +103,19 @@ function NavBar() {
                 }}
               >
                 AI Trader
+              </Button>
+              <Button
+                component={Link}
+                to="/watchlist"
+                startIcon={<BookmarkIcon />}
+                size="small"
+                sx={{
+                  color: isActive('/watchlist') ? '#ffd700' : '#666',
+                  textTransform: 'none',
+                  ml: 1,
+                }}
+              >
+                Watchlist
               </Button>
             </>
           ) : (
@@ -172,6 +188,7 @@ export default function App() {
             <Route path="/explore" element={<CardExplorer />} />
             <Route path="/card/:id" element={<CardDetail />} />
             <Route path="/trader" element={<Trader />} />
+            <Route path="/watchlist" element={<Watchlist />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>

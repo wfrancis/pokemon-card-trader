@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(~/.fly/bin/flyctl auth:*)",
+      "Bash(~/.fly/bin/flyctl orgs:*)",
+      "Bash(~/.fly/bin/flyctl secrets:*)",
+      "Bash(~/.fly/bin/flyctl apps:*)",
+      "Bash(~/.fly/bin/flyctl config:*)",
+      "Bash(git status:*)",
+      "Bash(git add:*)"
+    ]
+  }
+}

@@ -95,6 +95,34 @@ async def lifespan(app: FastAPI):
             conn.commit()
         except Exception:
             pass
+        # Add condition column to price_history (default Near Mint for existing data)
+        try:
+            conn.execute(text("ALTER TABLE price_history ADD COLUMN condition TEXT DEFAULT 'Near Mint'"))
+            conn.commit()
+        except Exception:
+            pass
+        try:
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_price_history_card_date_variant_condition "
+                "ON price_history (card_id, date, variant, condition)"
+            ))
+            conn.commit()
+        except Exception:
+            pass
+        # Add price_condition column to cards
+        try:
+            conn.execute(text("ALTER TABLE cards ADD COLUMN price_condition TEXT DEFAULT 'Near Mint'"))
+            conn.commit()
+        except Exception:
+            pass
+        # One-time cleanup: clear false anomaly insights from variant mixing
+        try:
+            conn.execute(text(
+                "DELETE FROM agent_insights WHERE type = 'anomaly' AND created_at < '2026-03-13'"
+            ))
+            conn.commit()
+        except Exception:
+            pass
     logger.info("Database tables created")
 
     # Background price sync: runs TCGPlayer sync every 6 hours
@@ -110,11 +138,48 @@ async def _background_price_sync():
     Falls back to TCGPlayer per-card sync if TCGCSV fails.
     Always collects individual sales regardless.
     """
-    SYNC_INTERVAL = 6 * 60 * 60  # 6 hours in seconds
+    SYNC_INTERVAL = 48 * 60 * 60  # 48 hours
+    DISCOVERY_INTERVAL = 48 * 60 * 60  # 48 hours
+    _last_discovery = 0.0
     # Wait 60s after startup before first sync (let app fully initialize)
     await asyncio.sleep(60)
     while True:
         from server.database import SessionLocal
+        import time as _time
+
+        # 0.5. Daily card discovery from TCGCSV (find new $10+ cards)
+        if _time.time() - _last_discovery > DISCOVERY_INTERVAL:
+            try:
+                from server.services.tcgcsv_sync import discover_tcgcsv_cards
+                db = SessionLocal()
+                try:
+                    logger.info("Background discovery: scanning TCGCSV for $10+ cards...")
+                    dstats = await discover_tcgcsv_cards(db)
+                    logger.info(f"Background discovery complete: {dstats}")
+                    _last_discovery = _time.time()
+                    # Create insight if notable new cards discovered (dedup: 1 per day)
+                    if dstats.get("cards_created", 0) > 0:
+                        from server.models.agent_insight import AgentInsight
+                        from datetime import datetime, timedelta, timezone
+                        recent = db.query(AgentInsight).filter(
+                            AgentInsight.type == "milestone",
+                            AgentInsight.title.like("Discovered%new $10+%"),
+                            AgentInsight.created_at >= datetime.now(timezone.utc) - timedelta(hours=24),
+                        ).first()
+                        if not recent:
+                            insight = AgentInsight(
+                                type="milestone",
+                                severity="notable",
+                                title=f"Discovered {dstats['cards_created']} new $10+ cards",
+                                message=f"TCGCSV scan found {dstats['cards_created']} new cards and updated {dstats.get('cards_updated', 0)} existing cards above $10 threshold.",
+                            )
+                            db.add(insight)
+                            db.commit()
+                finally:
+                    db.close()
+            except Exception as e:
+                logger.error(f"Background discovery failed: {e}")
+
         # 1. Try TCGCSV bulk price sync (fast: ~30s for all cards)
         tcgcsv_success = False
         try:
@@ -178,6 +243,17 @@ async def _background_price_sync():
                 db.close()
         except Exception as e:
             logger.error(f"Background sales→price backfill failed: {e}")
+        # 5.5. Reconcile current_price with latest price_history
+        try:
+            db = SessionLocal()
+            try:
+                count = refresh_current_prices(db)
+                if count > 0:
+                    logger.info(f"Background price reconciliation: {count} cards updated")
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Background price reconciliation failed: {e}")
         # 6. Backfill prediction prices (update agent accuracy tracking)
         try:
             from server.services.prediction_tracker import backfill_prediction_prices
@@ -190,6 +266,42 @@ async def _background_price_sync():
                 db.close()
         except Exception as e:
             logger.error(f"Prediction backfill failed: {e}")
+        # 6.5. Auto-populate predictions from signal engine
+        try:
+            from server.services.market_analysis import get_hot_cards as _get_hot_cards
+            from server.models.agent_prediction import AgentPrediction
+            from datetime import datetime, timezone
+            db = SessionLocal()
+            try:
+                hot = _get_hot_cards(db, limit=20)
+                created = 0
+                for card_data in hot:
+                    sig = card_data.get("signal", "hold")
+                    if sig == "hold":
+                        continue
+                    # Skip if pending prediction already exists
+                    existing = db.query(AgentPrediction).filter_by(
+                        card_id=card_data["card_id"],
+                        outcome="pending",
+                    ).first()
+                    if existing:
+                        continue
+                    pred = AgentPrediction(
+                        card_id=card_data["card_id"],
+                        signal=sig,
+                        persona_source="signal_engine",
+                        entry_price=card_data["current_price"],
+                        predicted_at=datetime.now(timezone.utc),
+                    )
+                    db.add(pred)
+                    created += 1
+                if created > 0:
+                    db.commit()
+                    logger.info(f"Signal engine auto-predictions: {created} created")
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Signal prediction auto-population failed: {e}")
         # 7. Autonomous agent scan
         try:
             await _autonomous_agent_scan()
@@ -235,10 +347,11 @@ async def _autonomous_agent_scan():
         # Anomaly detection (pure SQL — zero AI cost)
         anomalies = []
 
-        # Find cards with >25% price change vs 7-day average (same variant)
+        # Find cards with >25% price change vs 7-day average (same variant + NM condition)
         try:
             seven_days_ago = (now - timedelta(days=7)).date()
 
+            # Detect spikes (15%+ gain) and crashes (25%+ drop) across all tracked $10+ cards
             big_movers = db.execute(text("""
                 SELECT c.id, c.name, c.current_price, c.price_variant,
                        AVG(ph_old.market_price) as avg_price,
@@ -246,27 +359,36 @@ async def _autonomous_agent_scan():
                 FROM cards c
                 JOIN price_history ph_old ON ph_old.card_id = c.id
                   AND ph_old.variant = c.price_variant
-                WHERE c.is_viable = 1
-                  AND c.current_price > 5
+                  AND (ph_old.condition = 'Near Mint' OR ph_old.condition IS NULL)
+                WHERE c.is_tracked = 1
+                  AND c.current_price >= 10
                   AND ph_old.market_price > 5
                   AND ph_old.date >= :seven_days_ago
                 GROUP BY c.id
                 HAVING COUNT(ph_old.id) >= 2
                   AND AVG(ph_old.market_price) > 5
-                  AND ABS((c.current_price - AVG(ph_old.market_price)) / AVG(ph_old.market_price)) > 0.25
+                  AND (
+                    (c.current_price - AVG(ph_old.market_price)) / AVG(ph_old.market_price) > 0.15
+                    OR (c.current_price - AVG(ph_old.market_price)) / AVG(ph_old.market_price) < -0.25
+                  )
                 ORDER BY ABS((c.current_price - AVG(ph_old.market_price)) / AVG(ph_old.market_price)) DESC
-                LIMIT 10
+                LIMIT 20
             """), {"seven_days_ago": seven_days_ago}).fetchall()
 
             for row in big_movers:
                 direction = "spiked" if row.change_pct > 0 else "dropped"
-                severity = "urgent" if abs(row.change_pct) > 40 else "notable"
+                if row.change_pct > 0:
+                    severity = "urgent" if row.change_pct > 30 else "notable"
+                    alert_type = "opportunity"
+                else:
+                    severity = "urgent" if row.change_pct < -40 else "notable"
+                    alert_type = "warning"
                 variant_label = row.price_variant or "normal"
                 anomalies.append({
                     "card_id": row.id,
-                    "title": f"{row.name} ({variant_label}) {direction} {abs(row.change_pct):.1f}%",
+                    "title": f"{row.name} {direction} {abs(row.change_pct):.1f}%",
                     "message": f"{row.name} ({variant_label}) {direction} {abs(row.change_pct):.1f}% — 7d avg ${row.avg_price:.2f} → ${row.current_price:.2f}",
-                    "type": "anomaly",
+                    "type": alert_type,
                     "severity": severity,
                 })
         except Exception as e:
@@ -299,22 +421,39 @@ async def _autonomous_agent_scan():
         except Exception as e:
             logger.warning(f"Prediction check failed: {e}")
 
-        # Record anomaly insights
+        # Record anomaly insights (with dedup: skip if same card+type exists in last 24h)
+        twenty_four_h_ago = now - timedelta(hours=24)
+        recorded = 0
         for anomaly in anomalies:
+            card_id = anomaly.get("card_id")
+            # Check for recent duplicate
+            existing = db.query(AgentInsight).filter(
+                AgentInsight.card_id == card_id,
+                AgentInsight.type == anomaly["type"],
+                AgentInsight.created_at >= twenty_four_h_ago,
+                AgentInsight.acknowledged == False,
+            ).first()
+            if existing:
+                # Update the existing insight with latest data instead of creating duplicate
+                existing.title = anomaly["title"]
+                existing.message = anomaly["message"]
+                existing.severity = anomaly["severity"]
+                continue
             insight = AgentInsight(
                 type=anomaly["type"],
                 severity=anomaly["severity"],
-                card_id=anomaly.get("card_id"),
+                card_id=card_id,
                 title=anomaly["title"],
                 message=anomaly["message"],
             )
             db.add(insight)
+            recorded += 1
         if anomalies:
             db.commit()
-            logger.info(f"Agent scan: recorded {len(anomalies)} anomaly insights")
+            logger.info(f"Agent scan: {recorded} new + {len(anomalies) - recorded} updated insights")
 
         # Daily full analysis (GPT-5) — run if >20 hours since last analysis
-        if hours_since_last > 20:
+        if hours_since_last > 168:  # Weekly (7 days)
             logger.info("Agent scan: running daily full analysis (GPT-5)...")
             try:
                 from server.services.trader_agent import run_agent_analysis
@@ -393,10 +532,11 @@ async def trigger_card_sync(
     """Sync ALL English cards from Pokemon TCG API (price >= $2)."""
     try:
         stats = await sync_all_cards(db, max_pages=pages)
+        refresh_current_prices(db)
         return {"status": "complete", **stats}
     except Exception as e:
         logger.error(f"Card sync failed: {e}")
-        return {"status": "error", "message": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/api/sync/prices", dependencies=[Depends(verify_admin_key)])
@@ -410,7 +550,7 @@ async def trigger_price_sync(
         return {"status": "complete", **stats}
     except Exception as e:
         logger.error(f"Price sync failed: {e}")
-        return {"status": "error", "message": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/api/sync/tcgdex/cards", dependencies=[Depends(verify_admin_key)])
@@ -424,7 +564,7 @@ async def trigger_tcgdex_card_sync(
         return {"status": "complete", "source": "tcgdex", **stats}
     except Exception as e:
         logger.error(f"TCGdex card sync failed: {e}")
-        return {"status": "error", "message": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/api/sync/tcgdex/prices", dependencies=[Depends(verify_admin_key)])
@@ -437,7 +577,7 @@ async def trigger_tcgdex_price_import(
         return {"status": "complete", "source": "tcgdex", **stats}
     except Exception as e:
         logger.error(f"TCGdex price import failed: {e}")
-        return {"status": "error", "message": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/api/sync/poketrace", dependencies=[Depends(verify_admin_key)])
@@ -451,7 +591,7 @@ async def trigger_poketrace_sync(
         return {"status": "complete", "source": "poketrace", **stats}
     except Exception as e:
         logger.error(f"PokeTrace sync failed: {e}")
-        return {"status": "error", "message": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/api/sync/tcgplayer", dependencies=[Depends(verify_admin_key)])
@@ -466,7 +606,7 @@ async def trigger_tcgplayer_sync(
         return {"status": "complete", "source": "tcgplayer", **stats}
     except Exception as e:
         logger.error(f"TCGPlayer sync failed: {e}")
-        return {"status": "error", "message": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/api/sync/tcgplayer/history", dependencies=[Depends(verify_admin_key)])
@@ -481,7 +621,7 @@ async def trigger_tcgplayer_history(
         return {"status": "complete", "source": "tcgplayer_history", **stats}
     except Exception as e:
         logger.error(f"TCGPlayer history backfill failed: {e}")
-        return {"status": "error", "message": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/api/sync/tcgcsv/mapping", dependencies=[Depends(verify_admin_key)])
@@ -493,7 +633,7 @@ async def trigger_tcgcsv_mapping(db: Session = Depends(get_db)):
         return {"status": "complete", "source": "tcgcsv_mapping", **stats}
     except Exception as e:
         logger.error(f"TCGCSV mapping failed: {e}")
-        return {"status": "error", "message": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/api/sync/tcgcsv/prices", dependencies=[Depends(verify_admin_key)])
@@ -505,7 +645,22 @@ async def trigger_tcgcsv_prices(db: Session = Depends(get_db)):
         return {"status": "complete", "source": "tcgcsv", **stats}
     except Exception as e:
         logger.error(f"TCGCSV price sync failed: {e}")
-        return {"status": "error", "message": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/sync/tcgcsv/discover", dependencies=[Depends(verify_admin_key)])
+async def trigger_tcgcsv_discovery(
+    min_price: float = 10.0,
+    db: Session = Depends(get_db),
+):
+    """Discover and import ALL cards with market price >= $min_price from TCGCSV."""
+    from server.services.tcgcsv_sync import discover_tcgcsv_cards
+    try:
+        stats = await discover_tcgcsv_cards(db, min_price=min_price)
+        return {"status": "complete", "source": "tcgcsv_discovery", **stats}
+    except Exception as e:
+        logger.error(f"TCGCSV discovery failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/api/fix/bad-prices", dependencies=[Depends(verify_admin_key)])
@@ -563,7 +718,7 @@ async def trigger_pricecharting_import(
         return {"status": "complete", "source": "pricecharting", **stats}
     except Exception as e:
         logger.error(f"PriceCharting import failed: {e}")
-        return {"status": "error", "message": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 import threading
@@ -654,6 +809,57 @@ def tracked_stats(db: Session = Depends(get_db)):
     return get_tracked_stats(db)
 
 
+@app.post("/api/fix/backfill-artists", dependencies=[Depends(verify_admin_key)])
+async def backfill_artists(db: Session = Depends(get_db)):
+    """Re-fetch artist data from Pokemon TCG API for cards with null artist."""
+    import httpx
+    cards = db.query(Card).filter(Card.artist.is_(None), Card.is_tracked == True).all()
+    if not cards:
+        return {"status": "complete", "updated": 0, "message": "No cards with missing artist"}
+    updated = 0
+    tcg_ids = [c.tcg_id for c in cards]
+    async with httpx.AsyncClient(timeout=120.0, headers={"User-Agent": "PokemonCardTrader/1.0"}) as client:
+        for i in range(0, len(tcg_ids), 25):
+            batch = tcg_ids[i:i + 25]
+            query = " OR ".join([f'id:"{tid}"' for tid in batch])
+            try:
+                resp = await client.get(f"https://api.pokemontcg.io/v2/cards", params={"q": query, "pageSize": 250})
+                resp.raise_for_status()
+                api_cards = {c["id"]: c for c in resp.json().get("data", [])}
+                for card in cards:
+                    if card.tcg_id in api_cards and api_cards[card.tcg_id].get("artist"):
+                        card.artist = api_cards[card.tcg_id]["artist"]
+                        updated += 1
+            except Exception as e:
+                logger.warning(f"Failed to fetch artists for batch: {e}")
+            import asyncio
+            await asyncio.sleep(1)
+    db.commit()
+    return {"status": "complete", "updated": updated, "total_missing": len(cards)}
+
+
+@app.post("/api/fix/card-image/{card_id}", dependencies=[Depends(verify_admin_key)])
+async def fix_card_image(card_id: int, image_url: str = "", db: Session = Depends(get_db)):
+    """Override image_small and image_large for a specific card."""
+    card = db.query(Card).filter(Card.id == card_id).first()
+    if not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+    if image_url:
+        card.image_small = image_url
+        card.image_large = image_url
+    else:
+        # Re-fetch from Pokemon TCG API
+        import httpx
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(f"https://api.pokemontcg.io/v2/cards/{card.tcg_id}")
+            resp.raise_for_status()
+            data = resp.json().get("data", {})
+            card.image_small = data.get("images", {}).get("small", card.image_small)
+            card.image_large = data.get("images", {}).get("large", card.image_large)
+    db.commit()
+    return {"status": "complete", "card_id": card_id, "image_small": card.image_small, "image_large": card.image_large}
+
+
 @app.post("/api/fix/backfill-from-sales", dependencies=[Depends(verify_admin_key)])
 async def backfill_from_sales_endpoint(db: Session = Depends(get_db)):
     """Backfill price_history from sales data for cards with sparse history."""
@@ -662,7 +868,7 @@ async def backfill_from_sales_endpoint(db: Session = Depends(get_db)):
         return {"status": "complete", **stats}
     except Exception as e:
         logger.error(f"Backfill from sales failed: {e}")
-        return {"status": "error", "message": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/api/sync/sales", dependencies=[Depends(verify_admin_key)])
@@ -677,7 +883,7 @@ async def trigger_sales_collection(
         return {"status": "complete", "source": "tcgplayer_sales", **stats}
     except Exception as e:
         logger.error(f"Sales collection failed: {e}")
-        return {"status": "error", "message": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/api/sync/sales-history", dependencies=[Depends(verify_admin_key)])
@@ -692,7 +898,7 @@ async def trigger_sales_history_sync(
         return {"status": "complete", "source": "tcgplayer_history", **stats}
     except Exception as e:
         logger.error(f"Sales history sync failed: {e}")
-        return {"status": "error", "message": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # Serve React frontend — must be AFTER all API routes

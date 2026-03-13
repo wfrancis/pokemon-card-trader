@@ -412,22 +412,37 @@ def _filter_dominant_variant(records: list) -> list:
     return filtered
 
 
-def analyze_card(db: Session, card_id: int) -> AnalysisResult:
-    """Run full technical analysis on a card's price history."""
+def analyze_card(db: Session, card_id: int, condition: str = "Near Mint") -> AnalysisResult:
+    """Run full technical analysis on a card's price history.
+
+    Args:
+        condition: Filter to this condition (Near Mint, Lightly Played, etc.)
+    """
     from server.models.card import Card as CardModel
     card = db.query(CardModel).filter_by(id=card_id).first()
 
-    # If card has a known variant, filter to only that variant's prices
+    # If card has a known variant, filter to only that variant's prices + condition
     query = (
         db.query(PriceHistory)
         .filter(PriceHistory.card_id == card_id, PriceHistory.market_price.isnot(None))
+        .filter((PriceHistory.condition == condition) | (PriceHistory.condition.is_(None)))
     )
     if card and card.price_variant:
         query = query.filter(PriceHistory.variant == card.price_variant)
     records = query.order_by(asc(PriceHistory.date)).all()
 
     if not records:
-        # Fallback: try all variants if card variant filter returned nothing
+        # Fallback: try all conditions for this variant
+        query = (
+            db.query(PriceHistory)
+            .filter(PriceHistory.card_id == card_id, PriceHistory.market_price.isnot(None))
+        )
+        if card and card.price_variant:
+            query = query.filter(PriceHistory.variant == card.price_variant)
+        records = query.order_by(asc(PriceHistory.date)).all()
+
+    if not records:
+        # Last fallback: try all variants and conditions
         records = (
             db.query(PriceHistory)
             .filter(PriceHistory.card_id == card_id, PriceHistory.market_price.isnot(None))

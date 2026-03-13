@@ -1,11 +1,23 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Box, Paper, Typography, Grid, Chip, Stack, ToggleButton, ToggleButtonGroup } from '@mui/material';
-import { api, Card, PricePoint, Analysis, SaleRecord } from '../services/api';
+import { Box, Paper, Typography, Grid, Chip, Stack, ToggleButton, ToggleButtonGroup, Button, IconButton, Tooltip } from '@mui/material';
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import BookmarkBorderIcon from '@mui/icons-material/BookmarkBorder';
+import BookmarkIcon from '@mui/icons-material/Bookmark';
+import { api, Card, PricePoint, SaleRecord } from '../services/api';
 import PriceChart from '../components/PriceChart';
 import SalesChart from '../components/SalesChart';
-import IndicatorPanel from '../components/IndicatorPanel';
-import PredictionBadge from '../components/PredictionBadge';
+
+function formatVariant(variant: string): string {
+  const map: Record<string, string> = {
+    holofoil: 'Holo',
+    reverseHolofoil: 'Reverse Holo',
+    '1stEditionHolofoil': '1st Ed. Holo',
+    '1stEditionNormal': '1st Ed.',
+    normal: 'Normal',
+  };
+  return map[variant] || variant.replace(/([A-Z])/g, ' $1').trim();
+}
 
 type ChartView = 'sales' | 'history';
 
@@ -13,12 +25,46 @@ export default function CardDetail() {
   const { id } = useParams<{ id: string }>();
   const [card, setCard] = useState<Card | null>(null);
   const [prices, setPrices] = useState<PricePoint[]>([]);
-  const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [sales, setSales] = useState<SaleRecord[]>([]);
   const [medianPrice, setMedianPrice] = useState<number | null>(null);
   const [chartView, setChartView] = useState<ChartView>('sales');
+  const [condition, setCondition] = useState<string>('Near Mint');
+  const [availableConditions, setAvailableConditions] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isWatchlisted, setIsWatchlisted] = useState(false);
+
+  // Set page title
+  useEffect(() => {
+    document.title = card ? `${card.name} | PKMN Trader` : 'PKMN Trader';
+    return () => { document.title = 'PKMN Trader — Pokemon Card Market'; };
+  }, [card]);
+
+  // Check watchlist status
+  useEffect(() => {
+    if (!id) return;
+    const watchlist = JSON.parse(localStorage.getItem('pkmn_watchlist') || '[]');
+    setIsWatchlisted(watchlist.some((w: any) => w.cardId === parseInt(id)));
+  }, [id]);
+
+  const toggleWatchlist = () => {
+    if (!card) return;
+    const watchlist = JSON.parse(localStorage.getItem('pkmn_watchlist') || '[]');
+    if (isWatchlisted) {
+      const updated = watchlist.filter((w: any) => w.cardId !== card.id);
+      localStorage.setItem('pkmn_watchlist', JSON.stringify(updated));
+      setIsWatchlisted(false);
+    } else {
+      const costBasis = prompt('Enter cost basis (optional, press Cancel to skip):');
+      watchlist.push({
+        cardId: card.id,
+        costBasis: costBasis ? parseFloat(costBasis) : null,
+        addedAt: new Date().toISOString(),
+      });
+      localStorage.setItem('pkmn_watchlist', JSON.stringify(watchlist));
+      setIsWatchlisted(true);
+    }
+  };
 
   useEffect(() => {
     if (!id) return;
@@ -34,13 +80,25 @@ export default function CardDetail() {
       .then(setCard)
       .catch(() => setError('Card not found'))
       .finally(() => setLoading(false));
-    api.getCardPrices(cardId).then(data => setPrices(data.data)).catch(() => {});
-    api.getCardAnalysis(cardId).then(data => setAnalysis(data.analysis)).catch(() => {});
+    api.getCardPrices(cardId).then(data => {
+      setPrices(data.data);
+      if (data.available_conditions?.length > 0) {
+        setAvailableConditions(data.available_conditions);
+      }
+    }).catch(() => {});
     api.getCardSales(cardId).then(data => {
       setSales(data.sales);
       setMedianPrice(data.median_price);
     }).catch(() => {});
   }, [id]);
+
+  // Re-fetch prices when condition changes
+  useEffect(() => {
+    if (!id) return;
+    const cardId = parseInt(id);
+    if (isNaN(cardId)) return;
+    api.getCardPrices(cardId, condition).then(data => setPrices(data.data)).catch(() => {});
+  }, [id, condition]);
 
   if (loading) {
     return (
@@ -87,7 +145,13 @@ export default function CardDetail() {
               </Box>
             )}
             <Typography variant="h2" sx={{ mt: 2 }}>{card.name}</Typography>
-            <Typography variant="body2" sx={{ color: '#666' }}>{card.set_name} #{card.number}</Typography>
+            <Typography variant="body2" sx={{ color: '#666' }}>
+              {card.set_name} #{card.number}
+              {card.set_total_cards != null && ` of ${card.set_total_cards}`}
+              {card.set_total_cards != null && card.number && parseInt(card.number) > card.set_total_cards && (
+                <Chip label="Secret Rare" size="small" sx={{ ml: 0.5, height: 16, fontSize: '0.55rem', bgcolor: '#ffd70033', color: '#ffd700' }} />
+              )}
+            </Typography>
 
             <Stack direction="row" spacing={0.5} sx={{ mt: 1, justifyContent: 'center', flexWrap: 'wrap' }}>
               {card.rarity && card.rarity !== 'None' && <Chip label={card.rarity} size="small" variant="outlined" />}
@@ -103,15 +167,21 @@ export default function CardDetail() {
               </Typography>
             )}
 
-            {card.current_price != null && (
+            {/* Price: use median sale price when available, fall back to API price */}
+            {(medianPrice != null || card.current_price != null) && (
               <Typography variant="h4" sx={{ mt: 2, color: '#00ff41', fontFamily: '"JetBrains Mono", monospace', fontWeight: 700 }}>
-                ${card.current_price.toFixed(2)}
+                ${(medianPrice ?? card.current_price!).toFixed(2)}
+              </Typography>
+            )}
+            {medianPrice != null && (
+              <Typography variant="body2" sx={{ color: '#888', fontSize: '0.65rem', fontFamily: 'monospace' }}>
+                median sale price
               </Typography>
             )}
 
             {card.price_variant && (
               <Chip
-                label={card.price_variant.toUpperCase()}
+                label={formatVariant(card.price_variant)}
                 size="small"
                 sx={{
                   mt: 1,
@@ -125,40 +195,30 @@ export default function CardDetail() {
               />
             )}
 
-            {/* Prediction Badge */}
-            {analysis && (
-              <Box sx={{ mt: 2 }}>
-                <PredictionBadge signal={analysis.signal} strength={analysis.signal_strength} />
-              </Box>
-            )}
+            {/* Action Buttons */}
+            <Stack direction="row" spacing={1} sx={{ mt: 2, justifyContent: 'center' }}>
+              {card.tcgplayer_product_id && (
+                <Button
+                  variant="outlined"
+                  size="small"
+                  startIcon={<OpenInNewIcon sx={{ fontSize: 14 }} />}
+                  href={`https://www.tcgplayer.com/product/${card.tcgplayer_product_id}`}
+                  target="_blank"
+                  sx={{
+                    color: '#00bcd4', borderColor: '#00bcd433', fontSize: '0.65rem',
+                    '&:hover': { borderColor: '#00bcd4', bgcolor: '#00bcd410' },
+                  }}
+                >
+                  TCGPlayer
+                </Button>
+              )}
+              <Tooltip title={isWatchlisted ? 'Remove from Watchlist' : 'Add to Watchlist'}>
+                <IconButton onClick={toggleWatchlist} size="small" sx={{ color: isWatchlisted ? '#ffd700' : '#666' }}>
+                  {isWatchlisted ? <BookmarkIcon /> : <BookmarkBorderIcon />}
+                </IconButton>
+              </Tooltip>
+            </Stack>
 
-            {/* Price Change Stats */}
-            {analysis && (
-              <Box sx={{ mt: 2 }}>
-                {analysis.price_change_pct_7d !== null && (
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-                    <Typography variant="body2" sx={{ color: '#666' }}>7D Change</Typography>
-                    <Typography variant="body2" sx={{
-                      fontWeight: 700,
-                      color: analysis.price_change_pct_7d >= 0 ? '#00ff41' : '#ff1744',
-                    }}>
-                      {analysis.price_change_pct_7d >= 0 ? '+' : ''}{analysis.price_change_pct_7d.toFixed(1)}%
-                    </Typography>
-                  </Box>
-                )}
-                {analysis.price_change_pct_30d !== null && (
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <Typography variant="body2" sx={{ color: '#666' }}>30D Change</Typography>
-                    <Typography variant="body2" sx={{
-                      fontWeight: 700,
-                      color: analysis.price_change_pct_30d >= 0 ? '#00ff41' : '#ff1744',
-                    }}>
-                      {analysis.price_change_pct_30d >= 0 ? '+' : ''}{analysis.price_change_pct_30d.toFixed(1)}%
-                    </Typography>
-                  </Box>
-                )}
-              </Box>
-            )}
 
             {/* Condition Pricing */}
             {sales.length > 0 && (() => {
@@ -271,8 +331,8 @@ export default function CardDetail() {
         {/* Right: Charts + Analysis */}
         <Grid size={{ xs: 12, md: 9 }}>
           <Paper sx={{ p: 2, mb: 2 }}>
-            {/* Chart view toggle */}
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 1, md: 2 }, mb: 1 }}>
+            {/* Chart view + condition toggles */}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 1, md: 2 }, mb: 1, flexWrap: 'wrap' }}>
               <ToggleButtonGroup
                 value={chartView}
                 exclusive
@@ -289,6 +349,27 @@ export default function CardDetail() {
                 <ToggleButton value="sales">SALES</ToggleButton>
                 <ToggleButton value="history">PRICE HISTORY</ToggleButton>
               </ToggleButtonGroup>
+              {availableConditions.length > 1 && (
+                <ToggleButtonGroup
+                  value={condition}
+                  exclusive
+                  onChange={(_, v) => v && setCondition(v)}
+                  size="small"
+                  sx={{
+                    '& .MuiToggleButton-root': {
+                      color: '#888', border: '1px solid #333', px: { xs: 1, md: 1.5 }, py: { xs: 0.5, md: 0.3 },
+                      fontSize: '0.65rem', fontWeight: 700, fontFamily: 'monospace',
+                      '&.Mui-selected': { color: '#ffd740', bgcolor: 'rgba(255,215,64,0.1)', borderColor: '#ffd740' },
+                    },
+                  }}
+                >
+                  {availableConditions.map(c => (
+                    <ToggleButton key={c} value={c}>
+                      {c === 'Near Mint' ? 'NM' : c === 'Lightly Played' ? 'LP' : c === 'Moderately Played' ? 'MP' : c === 'Heavily Played' ? 'HP' : c === 'Damaged' ? 'DMG' : c}
+                    </ToggleButton>
+                  ))}
+                </ToggleButtonGroup>
+              )}
               {chartView === 'sales' && sales.length === 0 && (
                 <Typography variant="body2" sx={{ color: '#ff9800', fontFamily: 'monospace', fontSize: '0.7rem' }}>
                   No sales collected yet — run /api/sync/sales
@@ -303,26 +384,11 @@ export default function CardDetail() {
                 <Typography variant="h3" sx={{ mb: 1, color: '#00bcd4' }}>
                   PRICE HISTORY
                 </Typography>
-                <PriceChart priceData={prices} analysis={analysis || undefined} />
+                <PriceChart priceData={prices} />
               </>
             )}
           </Paper>
 
-          {analysis && (
-            <Box>
-              <Typography variant="h3" sx={{ mb: 1, color: '#00bcd4' }}>
-                TECHNICAL INDICATORS
-              </Typography>
-              <Typography sx={{
-                color: '#ff9800', fontSize: '0.7rem', mb: 1.5, px: 1, py: 0.5,
-                bgcolor: '#ff980010', borderRadius: 1, border: '1px solid #ff980033',
-                fontFamily: '"JetBrains Mono", monospace', lineHeight: 1.6,
-              }}>
-                Technical indicators have limited value for collectibles — card prices trade sporadically, not continuously like stocks. Use sales velocity and comparable cards instead.
-              </Typography>
-              <IndicatorPanel analysis={analysis} />
-            </Box>
-          )}
         </Grid>
       </Grid>
     </Box>

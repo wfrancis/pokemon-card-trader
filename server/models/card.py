@@ -23,6 +23,7 @@ class Card(Base):
     # Current price snapshot (latest sync)
     current_price = Column(Float)
     price_variant = Column(String)  # normal, holofoil, reverseHolofoil
+    price_condition = Column(String, default="Near Mint")  # Near Mint, Lightly Played, etc.
     is_tracked = Column(Boolean, default=False, nullable=False, index=True)
     is_viable = Column(Boolean, default=False, nullable=False, index=True)  # Sticky: True once price >= $20
     artist = Column(String, nullable=True)  # Card illustrator/artist

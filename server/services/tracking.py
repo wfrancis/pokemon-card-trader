@@ -5,7 +5,7 @@ We track ~1500 cards total: blue chips + any card with a chase/collectible rarit
 from sets released in the last 5 years, plus any card valued >$2 from recent sets.
 """
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from server.models.card import Card
@@ -123,6 +123,16 @@ def rebuild_tracked_cards(db: Session) -> dict:
         stats["price_marked"] = price_count
         logger.info(f"Marked {price_count} additional cards with price >${MIN_RECENT_PRICE}")
 
+    # Step 5: Mark ANY card with current_price >= $10 as tracked (regardless of set age)
+    price_threshold_count = db.query(Card).filter(
+        Card.current_price >= 10.0,
+        Card.is_tracked == False,
+    ).update({Card.is_tracked: True}, synchronize_session=False)
+    db.commit()
+    stats["price_threshold_marked"] = price_threshold_count
+    if price_threshold_count:
+        logger.info(f"Marked {price_threshold_count} cards with price >= $10")
+
     # Final count
     stats["total_tracked"] = db.query(Card).filter(Card.is_tracked == True).count()
     logger.info(f"Tracking rebuilt: {stats}")
@@ -144,8 +154,13 @@ def enforce_data_quality(db: Session) -> dict:
     cutoff_date = date.today() - timedelta(days=MAX_STALE_DAYS)
 
     tracked_cards = db.query(Card).filter(Card.is_tracked == True).all()
+    grace_cutoff = datetime.now(timezone.utc) - timedelta(days=30)
 
     for card in tracked_cards:
+        # Grace period: skip newly created cards (< 30 days old)
+        if card.created_at and card.created_at > grace_cutoff:
+            continue
+
         history_count = db.query(func.count(PriceHistory.id)).filter(
             PriceHistory.card_id == card.id
         ).scalar()
@@ -174,15 +189,17 @@ def refresh_current_prices(db: Session) -> int:
     """Update Card.current_price from latest PriceHistory for all tracked cards.
 
     Fixes staleness where Card.current_price diverges from actual price history.
+    Uses Near Mint condition by default to avoid mixing conditions.
     """
     from sqlalchemy import text
-    # First: update cards that have a known price_variant — filter to same variant
+    # First: update cards that have a known price_variant — filter to same variant + NM condition
     result = db.execute(text("""
         UPDATE cards SET current_price = (
             SELECT ph.market_price FROM price_history ph
             WHERE ph.card_id = cards.id
               AND ph.market_price IS NOT NULL
               AND ph.variant = cards.price_variant
+              AND (ph.condition = 'Near Mint' OR ph.condition IS NULL)
             ORDER BY ph.date DESC LIMIT 1
         )
         WHERE is_tracked = 1
@@ -192,14 +209,17 @@ def refresh_current_prices(db: Session) -> int:
             WHERE ph.card_id = cards.id
               AND ph.market_price IS NOT NULL
               AND ph.variant = cards.price_variant
+              AND (ph.condition = 'Near Mint' OR ph.condition IS NULL)
             ORDER BY ph.date DESC LIMIT 1
           ) IS NOT NULL
     """))
-    # Second: update cards without a price_variant — use any variant
+    # Second: update cards without a price_variant — use any variant, NM condition
     result2 = db.execute(text("""
         UPDATE cards SET current_price = (
             SELECT ph.market_price FROM price_history ph
-            WHERE ph.card_id = cards.id AND ph.market_price IS NOT NULL
+            WHERE ph.card_id = cards.id
+              AND ph.market_price IS NOT NULL
+              AND (ph.condition = 'Near Mint' OR ph.condition IS NULL)
             ORDER BY ph.date DESC LIMIT 1
         )
         WHERE is_tracked = 1
@@ -207,7 +227,9 @@ def refresh_current_prices(db: Session) -> int:
           AND current_price IS NULL
           AND (
             SELECT ph.market_price FROM price_history ph
-            WHERE ph.card_id = cards.id AND ph.market_price IS NOT NULL
+            WHERE ph.card_id = cards.id
+              AND ph.market_price IS NOT NULL
+              AND (ph.condition = 'Near Mint' OR ph.condition IS NULL)
             ORDER BY ph.date DESC LIMIT 1
           ) IS NOT NULL
     """))
@@ -229,10 +251,10 @@ def backfill_prices_from_sales(db: Session) -> dict:
     """Backfill price_history from sales data for cards with sparse history.
 
     For each card with sales but < 30 days of price_history:
-      - Group sales by ISO week
-      - For weeks with 2+ sales: insert median as market_price, min/max as low/high
+      - Group sales by (ISO week, condition)
+      - For weeks with 2+ sales per condition: insert median as market_price
       - Only use sales whose variant matches the card's price_variant
-    After backfilling, update card.current_price to the latest price_history entry.
+    Creates separate PriceHistory rows per condition (Near Mint, LP, MP, etc.).
     """
     from server.models.sale import Sale
     from statistics import median
@@ -284,31 +306,33 @@ def backfill_prices_from_sales(db: Session) -> dict:
         if len(sales) < 2:
             continue
 
-        # Group sales by ISO week (Monday-based)
-        weekly: dict[date, list[float]] = {}
+        # Group sales by (ISO week, condition)
+        weekly: dict[tuple[date, str], list[float]] = {}
         for sale in sales:
             order_dt = sale.order_date
             if hasattr(order_dt, 'date'):
                 order_d = order_dt.date()
             else:
                 order_d = order_dt
-            # Use Monday of the ISO week as the representative date
+            condition = sale.condition or "Near Mint"
             week_start = order_d - timedelta(days=order_d.weekday())
-            weekly.setdefault(week_start, []).append(sale.purchase_price)
+            weekly.setdefault((week_start, condition), []).append(sale.purchase_price)
 
-        # Get existing dates to avoid duplicates
-        existing_dates = set(
-            row[0] for row in db.query(PriceHistory.date).filter(
+        # Get existing (date, condition) pairs to avoid duplicates
+        existing_pairs = set(
+            (row[0], row[1] or "Near Mint") for row in db.query(
+                PriceHistory.date, PriceHistory.condition
+            ).filter(
                 PriceHistory.card_id == card_id,
                 PriceHistory.variant == variant,
             ).all()
         )
 
         inserted = 0
-        for week_date, prices in sorted(weekly.items()):
+        for (week_date, condition), prices in sorted(weekly.items()):
             if len(prices) < 2:
                 continue
-            if week_date in existing_dates:
+            if (week_date, condition) in existing_pairs:
                 continue
 
             med_price = median(prices)
@@ -319,6 +343,7 @@ def backfill_prices_from_sales(db: Session) -> dict:
                 card_id=card_id,
                 date=week_date,
                 variant=variant,
+                condition=condition,
                 market_price=round(med_price, 2),
                 low_price=round(low, 2),
                 mid_price=round(med_price, 2),
@@ -333,13 +358,15 @@ def backfill_prices_from_sales(db: Session) -> dict:
 
     db.commit()
 
-    # Update current_price for backfilled cards from latest price_history
+    # Update current_price for backfilled cards from latest NM price_history
     if stats["cards_backfilled"] > 0:
         from sqlalchemy import text
         db.execute(text("""
             UPDATE cards SET current_price = (
                 SELECT ph.market_price FROM price_history ph
-                WHERE ph.card_id = cards.id AND ph.market_price IS NOT NULL
+                WHERE ph.card_id = cards.id
+                  AND ph.market_price IS NOT NULL
+                  AND (ph.condition = 'Near Mint' OR ph.condition IS NULL)
                 ORDER BY ph.date DESC LIMIT 1
             )
             WHERE id IN (

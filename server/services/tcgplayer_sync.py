@@ -251,11 +251,13 @@ async def sync_tcgplayer_prices(db: Session, limit: int = 500) -> dict:
                 card.updated_at = datetime.now(timezone.utc)
                 stats["prices_updated"] += 1
 
-                # Record price history (avoid duplicates)
+                # Record price history (avoid duplicates — dedup by card+date+variant+condition)
                 variant = card.price_variant or "normal"
                 existing = db.query(PriceHistory).filter(
                     PriceHistory.card_id == card.id,
                     PriceHistory.date == today,
+                    PriceHistory.variant == variant,
+                    PriceHistory.condition == "Near Mint",
                 ).first()
 
                 if not existing:
@@ -263,6 +265,7 @@ async def sync_tcgplayer_prices(db: Session, limit: int = 500) -> dict:
                         card_id=card.id,
                         date=today,
                         variant=variant,
+                        condition="Near Mint",
                         market_price=round(market_price, 2),
                         low_price=None,
                         mid_price=None,
@@ -409,10 +412,12 @@ async def backfill_tcgplayer_history(db: Session, limit: int = 500) -> dict:
                 for entry in history:
                     entry_date = date.fromisoformat(entry["date"])
 
-                    # Skip if record already exists for this card+date
+                    # Skip if record already exists for this card+date+variant+condition
                     existing = db.query(PriceHistory.id).filter(
                         PriceHistory.card_id == card.id,
                         PriceHistory.date == entry_date,
+                        PriceHistory.variant == variant,
+                        PriceHistory.condition == "Near Mint",
                     ).first()
 
                     if existing:
@@ -423,6 +428,7 @@ async def backfill_tcgplayer_history(db: Session, limit: int = 500) -> dict:
                         card_id=card.id,
                         date=entry_date,
                         variant=variant,
+                        condition="Near Mint",
                         market_price=round(entry["market_price"], 2),
                         low_price=round(entry["low_price"], 2) if entry["low_price"] else None,
                         mid_price=None,

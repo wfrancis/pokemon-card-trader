@@ -65,6 +65,15 @@ def _process_card_data(db: Session, card_data: dict, today: date, min_price: flo
 
     existing = db.query(Card).filter(Card.tcg_id == tcg_id).first()
     if existing:
+        # Only update images if card name matches (prevent mismatch from API data issues)
+        api_name = card_data.get("name", "")
+        if api_name.lower() == existing.name.lower():
+            new_img_small = card_data.get("images", {}).get("small")
+            new_img_large = card_data.get("images", {}).get("large")
+            if new_img_small:
+                existing.image_small = new_img_small
+            if new_img_large:
+                existing.image_large = new_img_large
         existing.name = card_data.get("name", existing.name)
         existing.current_price = market_price
         existing.price_variant = variant or existing.price_variant
@@ -106,6 +115,7 @@ def _process_card_data(db: Session, card_data: dict, today: date, min_price: flo
                 card_id=card_obj.id,
                 date=today,
                 variant=variant,
+                condition="Near Mint",
                 market_price=price_data.get("market"),
                 low_price=price_data.get("low"),
                 mid_price=price_data.get("mid"),

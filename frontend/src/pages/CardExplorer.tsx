@@ -6,8 +6,6 @@ import {
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import WhatshotIcon from '@mui/icons-material/Whatshot';
-import TrendingUpIcon from '@mui/icons-material/TrendingUp';
-import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import { useNavigate } from 'react-router-dom';
 import { api, Card, HotCard } from '../services/api';
 
@@ -83,17 +81,6 @@ function HotCardsSection() {
                     color: '#fff',
                     fontWeight: 700,
                     fontSize: '0.65rem',
-                    height: 18,
-                  }}
-                />
-                <Chip
-                  icon={card.signal === 'bullish' ? <TrendingUpIcon sx={{ fontSize: 12 }} /> : card.signal === 'bearish' ? <TrendingDownIcon sx={{ fontSize: 12 }} /> : undefined}
-                  label={card.signal === 'bullish' ? 'BUY' : card.signal === 'bearish' ? 'AVOID' : 'HOLD'}
-                  size="small"
-                  sx={{
-                    bgcolor: card.signal === 'bullish' ? '#0a3a0a' : card.signal === 'bearish' ? '#3a0a0a' : '#1a1a2a',
-                    color: card.signal === 'bullish' ? '#00e676' : card.signal === 'bearish' ? '#ff1744' : '#ffd740',
-                    fontSize: '0.6rem',
                     height: 18,
                   }}
                 />
@@ -182,6 +169,11 @@ export default function CardExplorer() {
   const [sortBy, setSortBy] = useState('current_price');
   const [sortDir, setSortDir] = useState('desc');
   const navigate = useNavigate();
+
+  useEffect(() => {
+    document.title = 'Explorer | PKMN Trader';
+    return () => { document.title = 'PKMN Trader — Pokemon Card Market'; };
+  }, []);
 
   const fetchCards = useCallback(async () => {
     try {

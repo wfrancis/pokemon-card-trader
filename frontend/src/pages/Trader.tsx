@@ -531,6 +531,12 @@ export default function Trader() {
   const [accuracy, setAccuracy] = useState<AccuracyReport | null>(null);
   const [activeTab, setActiveTab] = useState<'desk' | 'predictions'>('desk');
 
+  // Set page title
+  useEffect(() => {
+    document.title = 'AI Trader | PKMN Trader';
+    return () => { document.title = 'PKMN Trader — Pokemon Card Market'; };
+  }, []);
+
   // Load latest saved analysis + history list on mount
   useEffect(() => {
     Promise.all([

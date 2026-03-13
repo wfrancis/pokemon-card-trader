@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from server.database import get_db
 from server.models.card import Card
+from server.models.card_set import CardSet
 
 router = APIRouter(prefix="/api/cards", tags=["cards"])
 
@@ -48,7 +49,7 @@ def list_cards(
     cards = query.offset((page - 1) * page_size).limit(page_size).all()
 
     return {
-        "data": [_card_to_dict(c) for c in cards],
+        "data": [_card_to_dict(c, db) for c in cards],
         "total": total,
         "page": page,
         "page_size": page_size,
@@ -62,10 +63,15 @@ def get_card(card_id: int, db: Session = Depends(get_db)):
     if not card:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Card not found")
-    return _card_to_dict(card)
+    return _card_to_dict(card, db)
 
 
-def _card_to_dict(card: Card) -> dict:
+def _card_to_dict(card: Card, db: Session = None) -> dict:
+    set_total = None
+    if db and card.set_id:
+        card_set = db.query(CardSet).filter(CardSet.id == card.set_id).first()
+        if card_set:
+            set_total = card_set.card_count
     return {
         "id": card.id,
         "tcg_id": card.tcg_id,
@@ -83,4 +89,6 @@ def _card_to_dict(card: Card) -> dict:
         "current_price": card.current_price,
         "price_variant": card.price_variant,
         "artist": card.artist,
+        "tcgplayer_product_id": card.tcgplayer_product_id,
+        "set_total_cards": set_total,
     }

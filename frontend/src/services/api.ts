@@ -43,6 +43,8 @@ export interface Card {
   current_price: number | null;
   price_variant: string | null;
   artist: string | null;
+  tcgplayer_product_id: number | null;
+  set_total_cards: number | null;
 }
 
 export interface PricePoint {
@@ -73,6 +75,8 @@ export interface Analysis {
   resistance: number | null;
   signal: string;
   signal_strength: number;
+  total_history_days: number | null;
+  liquidity_score: number | null;
 }
 
 export interface Mover {
@@ -97,21 +101,21 @@ export const api = {
 
   getCard: (id: number) => fetchApi<Card>(`/api/cards/${id}`),
 
-  getCardPrices: (id: number) =>
-    fetchApi<{ card_id: number; card_name: string; data: PricePoint[] }>(
-      `/api/cards/${id}/prices`
+  getCardPrices: (id: number, condition?: string) =>
+    fetchApi<{ card_id: number; card_name: string; condition: string; available_conditions: string[]; data: PricePoint[] }>(
+      `/api/cards/${id}/prices${condition ? `?condition=${encodeURIComponent(condition)}` : ''}`
     ),
 
-  getCardAnalysis: (id: number) =>
+  getCardAnalysis: (id: number, condition?: string) =>
     fetchApi<{ card_id: number; card_name: string; current_price: number; analysis: Analysis }>(
-      `/api/cards/${id}/analysis`
+      `/api/cards/${id}/analysis${condition ? `?condition=${encodeURIComponent(condition)}` : ''}`
     ),
 
   getMovers: (limit = 10) =>
     fetchApi<{ gainers: Mover[]; losers: Mover[] }>(`/api/market/movers?limit=${limit}`),
 
   getMarketIndex: () =>
-    fetchApi<{ avg_price: number; total_cards: number; total_market_cap: number }>(
+    fetchApi<{ avg_price: number; total_cards: number; total_market_cap: number; last_sync_at: string | null }>(
       '/api/market/index'
     ),
 

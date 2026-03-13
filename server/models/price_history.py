@@ -11,6 +11,7 @@ class PriceHistory(Base):
     card_id = Column(Integer, ForeignKey("cards.id"), nullable=False, index=True)
     date = Column(Date, nullable=False, index=True)
     variant = Column(String, nullable=False)  # normal, holofoil, reverseHolofoil
+    condition = Column(String, nullable=True, default="Near Mint")  # Near Mint, Lightly Played, etc.
     market_price = Column(Float)
     low_price = Column(Float)
     mid_price = Column(Float)
@@ -21,4 +22,5 @@ class PriceHistory(Base):
 
     __table_args__ = (
         Index("ix_price_history_card_date", "card_id", "date"),
+        Index("ix_price_history_card_date_variant_condition", "card_id", "date", "variant", "condition"),
     )

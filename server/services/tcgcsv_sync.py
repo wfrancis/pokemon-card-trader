@@ -274,6 +274,217 @@ async def sync_tcgcsv_mapping(db: Session) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Card discovery: find ALL $10+ cards across TCGCSV
+# ---------------------------------------------------------------------------
+
+DISCOVERY_MIN_PRICE = 10.0
+
+
+async def discover_tcgcsv_cards(
+    db: Session, min_price: float = DISCOVERY_MIN_PRICE
+) -> dict:
+    """Discover and import ALL Pokemon cards with market price >= min_price.
+
+    Fetches every group from TCGCSV, checks all products + prices,
+    and creates Card records for high-value cards not already in the DB.
+    """
+    stats = {
+        "groups_fetched": 0,
+        "products_scanned": 0,
+        "above_threshold": 0,
+        "cards_created": 0,
+        "cards_updated": 0,
+        "already_tracked": 0,
+        "errors": 0,
+    }
+
+    async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
+        groups = await _fetch_groups(client)
+        stats["groups_fetched"] = len(groups)
+        if not groups:
+            return stats
+
+        # Pre-load existing tcgplayer_product_ids for fast lookup
+        existing_product_ids = set(
+            row[0]
+            for row in db.query(Card.tcgplayer_product_id)
+            .filter(Card.tcgplayer_product_id.isnot(None))
+            .all()
+        )
+        # Pre-load existing tcg_ids for dedup of synthetic IDs
+        existing_tcg_ids = set(
+            row[0] for row in db.query(Card.tcg_id).all()
+        )
+
+        sem = asyncio.Semaphore(5)
+
+        async def process_group(group: dict):
+            group_id = group["groupId"]
+            group_name = group.get("name", "")
+            set_name = _normalize_set_name(group_name)
+            # Use abbreviation as set_id, fallback to synthetic
+            set_id = (group.get("abbreviation") or f"tcgcsv-g{group_id}").lower()
+
+            async with sem:
+                try:
+                    prod_resp, price_resp = await asyncio.gather(
+                        client.get(
+                            f"{TCGCSV_BASE}/{group_id}/products",
+                            headers=HEADERS,
+                        ),
+                        client.get(
+                            f"{TCGCSV_BASE}/{group_id}/prices",
+                            headers=HEADERS,
+                        ),
+                    )
+                    prod_resp.raise_for_status()
+                    price_resp.raise_for_status()
+                    products = prod_resp.json().get("results", [])
+                    prices_raw = price_resp.json().get("results", [])
+                except Exception as e:
+                    logger.error(f"Discovery: failed group {group_id} ({group_name}): {e}")
+                    stats["errors"] += 1
+                    return
+
+            # Build productId → price entries
+            price_map: dict[int, list[dict]] = {}
+            for p in prices_raw:
+                pid = p.get("productId")
+                if pid:
+                    price_map.setdefault(pid, []).append(p)
+
+            for product in products:
+                ext_data = {
+                    e["name"]: e["value"]
+                    for e in (product.get("extendedData") or [])
+                }
+                tcgcsv_number = ext_data.get("Number")
+                if not tcgcsv_number:
+                    continue  # Sealed product
+
+                product_id = product["productId"]
+                stats["products_scanned"] += 1
+
+                # Get best price for this product
+                entries = price_map.get(product_id, [])
+                best = _pick_best_price(entries, None)
+                if not best:
+                    continue
+                market_price = best.get("marketPrice") or best.get("midPrice")
+                if not market_price or market_price < min_price:
+                    continue
+
+                stats["above_threshold"] += 1
+                variant = VARIANT_MAP.get(best.get("subTypeName", ""), "normal")
+
+                # Already in DB?
+                if product_id in existing_product_ids:
+                    # Update tracking if needed
+                    card = (
+                        db.query(Card)
+                        .filter(Card.tcgplayer_product_id == product_id)
+                        .first()
+                    )
+                    if card and not card.is_tracked:
+                        card.is_tracked = True
+                        card.is_viable = True
+                        card.current_price = round(market_price, 2)
+                        stats["cards_updated"] += 1
+                    else:
+                        stats["already_tracked"] += 1
+                    continue
+
+                # Check synthetic tcg_id
+                synthetic_id = f"tcgcsv-{product_id}"
+                if synthetic_id in existing_tcg_ids:
+                    stats["already_tracked"] += 1
+                    continue
+
+                # Try matching by set_name + number to existing card
+                normalized_num = _normalize_card_number(tcgcsv_number)
+                existing = (
+                    db.query(Card)
+                    .filter(
+                        Card.set_name.ilike(f"%{set_name}%"),
+                        Card.number == normalized_num,
+                    )
+                    .first()
+                )
+                if existing:
+                    # Map the existing card
+                    if not existing.tcgplayer_product_id:
+                        existing.tcgplayer_product_id = product_id
+                    if not existing.is_tracked:
+                        existing.is_tracked = True
+                        existing.is_viable = True
+                    existing.current_price = round(market_price, 2)
+                    existing_product_ids.add(product_id)
+                    stats["cards_updated"] += 1
+                    continue
+
+                # Create new card
+                clean_name = re.sub(r"\s*-\s*\d+/\d+$", "", product.get("name", "")).strip()
+                # Capitalize set_name for display
+                display_set = set_name.title() if set_name else group_name
+
+                card = Card(
+                    tcg_id=synthetic_id,
+                    name=clean_name,
+                    set_name=display_set,
+                    set_id=set_id,
+                    number=normalized_num,
+                    rarity=ext_data.get("Rarity"),
+                    supertype="Pokémon",
+                    image_small=f"https://tcgplayer-cdn.tcgplayer.com/product/{product_id}_200w.jpg",
+                    image_large=f"https://tcgplayer-cdn.tcgplayer.com/product/{product_id}_200w.jpg",
+                    current_price=round(market_price, 2),
+                    price_variant=variant,
+                    tcgplayer_product_id=product_id,
+                    is_tracked=True,
+                    is_viable=True,
+                )
+                db.add(card)
+                existing_product_ids.add(product_id)
+                existing_tcg_ids.add(synthetic_id)
+                stats["cards_created"] += 1
+
+                # Create initial PriceHistory
+                today = date.today()
+                ph = PriceHistory(
+                    card=card,
+                    date=today,
+                    price=round(market_price, 2),
+                    source="tcgcsv",
+                    variant=variant,
+                    condition="Near Mint",
+                )
+                db.add(ph)
+
+        # Process all groups in batches
+        batch_size = 10
+        for i in range(0, len(groups), batch_size):
+            batch = groups[i : i + batch_size]
+            await asyncio.gather(
+                *[process_group(g) for g in batch],
+                return_exceptions=True,
+            )
+            try:
+                db.commit()
+                logger.info(
+                    f"Discovery progress: {i + len(batch)}/{len(groups)} groups, "
+                    f"{stats['cards_created']} created, {stats['above_threshold']} above ${min_price}"
+                )
+            except Exception as e:
+                logger.error(f"Discovery commit error: {e}")
+                db.rollback()
+                stats["errors"] += 1
+            await asyncio.sleep(0.2)
+
+    logger.info(f"TCGCSV discovery complete: {stats}")
+    return stats
+
+
+# ---------------------------------------------------------------------------
 # Daily price sync: fetch bulk prices for all mapped cards
 # ---------------------------------------------------------------------------
 
@@ -399,17 +610,23 @@ async def sync_tcgcsv_prices(db: Session) -> dict:
                 stats["skipped_sanity"] += 1
                 continue
 
-        # Update card
+        # Update card — only if variant matches to prevent variant mixing
         variant = VARIANT_MAP.get(best_entry.get("subTypeName", ""), "normal")
-        card.current_price = round(market_price, 2)
-        card.price_variant = variant
-        card.updated_at = datetime.now(timezone.utc)
-        stats["prices_updated"] += 1
+        if card.price_variant is None or variant == card.price_variant:
+            card.current_price = round(market_price, 2)
+            card.price_variant = variant
+            card.updated_at = datetime.now(timezone.utc)
+            stats["prices_updated"] += 1
 
-        # Record price history (dedup by card_id + date)
+        # Record price history (dedup by card_id + date + variant + condition)
         existing = (
             db.query(PriceHistory)
-            .filter(PriceHistory.card_id == card.id, PriceHistory.date == today)
+            .filter(
+                PriceHistory.card_id == card.id,
+                PriceHistory.date == today,
+                PriceHistory.variant == variant,
+                PriceHistory.condition == "Near Mint",
+            )
             .first()
         )
 
@@ -422,6 +639,7 @@ async def sync_tcgcsv_prices(db: Session) -> dict:
                     card_id=card.id,
                     date=today,
                     variant=variant,
+                    condition="Near Mint",
                     market_price=round(market_price, 2),
                     low_price=round(low, 2) if low else None,
                     mid_price=round(mid, 2) if mid else None,

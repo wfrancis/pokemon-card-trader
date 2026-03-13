@@ -1,59 +1,41 @@
 import { useEffect, useState } from 'react';
-import { Box, Paper, Typography, Grid, Button, CircularProgress, Snackbar, Alert, Chip } from '@mui/material';
-import SyncIcon from '@mui/icons-material/Sync';
+import { Box, Paper, Typography, Grid } from '@mui/material';
 import ShowChartIcon from '@mui/icons-material/ShowChart';
-import SmartToyIcon from '@mui/icons-material/SmartToy';
+import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
 import MarketTicker from '../components/MarketTicker';
 import TopMovers from '../components/TopMovers';
 import AgentFeed from '../components/AgentFeed';
 import { api } from '../services/api';
-import type { AgentStatus } from '../services/api';
+import type { AgentInsight } from '../services/api';
 
 interface MarketIndex {
   avg_price: number;
   total_cards: number;
   total_market_cap: number;
+  last_sync_at: string | null;
 }
 
-function getTimeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
+function formatSyncTime(dateStr: string): string {
+  const d = new Date(dateStr + 'T00:00:00');
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 export default function Dashboard() {
   const [index, setIndex] = useState<MarketIndex | null>(null);
-  const [agentStatus, setAgentStatus] = useState<AgentStatus | null>(null);
-  const [syncing, setSyncing] = useState(false);
-  const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
-    open: false, message: '', severity: 'success',
-  });
+  const [hasAlerts, setHasAlerts] = useState(false);
+
+  useEffect(() => {
+    document.title = 'Dashboard | PKMN Trader';
+    return () => { document.title = 'PKMN Trader — Pokemon Card Market'; };
+  }, []);
 
   useEffect(() => {
     api.getMarketIndex().then(setIndex).catch(console.error);
-    api.getAgentStatus().then(setAgentStatus).catch(() => {});
+    // Check if there are unread alerts
+    api.getAgentInsights({ acknowledged: false, limit: 1 })
+      .then((insights: AgentInsight[]) => setHasAlerts(insights.length > 0))
+      .catch(() => {});
   }, []);
-
-  const handleSync = async () => {
-    setSyncing(true);
-    try {
-      const result = await api.syncCards(2);
-      setSnackbar({
-        open: true,
-        message: `Synced! ${result.total_created} new, ${result.total_updated} updated, ${result.total_prices} prices`,
-        severity: 'success',
-      });
-      // Refresh index
-      api.getMarketIndex().then(setIndex).catch(console.error);
-    } catch (err) {
-      setSnackbar({ open: true, message: `Sync failed: ${err}`, severity: 'error' });
-    } finally {
-      setSyncing(false);
-    }
-  };
 
   return (
     <Box>
@@ -68,42 +50,15 @@ export default function Dashboard() {
               PKMN MARKET
             </Typography>
           </Box>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            {agentStatus?.last_analysis_at && (
-              <Chip
-                label={`Data: ${getTimeAgo(agentStatus.last_analysis_at)}`}
-                size="small"
-                sx={{
-                  fontFamily: '"JetBrains Mono", monospace',
-                  fontSize: '0.6rem',
-                  height: 22,
-                  bgcolor: (() => {
-                    const hrs = (Date.now() - new Date(agentStatus.last_analysis_at).getTime()) / 3600000;
-                    return hrs < 12 ? '#0a3a0a' : hrs < 48 ? '#2a2a0a' : '#3a0a0a';
-                  })(),
-                  color: (() => {
-                    const hrs = (Date.now() - new Date(agentStatus.last_analysis_at).getTime()) / 3600000;
-                    return hrs < 12 ? '#00e676' : hrs < 48 ? '#ffd740' : '#ff1744';
-                  })(),
-                  border: '1px solid',
-                  borderColor: (() => {
-                    const hrs = (Date.now() - new Date(agentStatus.last_analysis_at).getTime()) / 3600000;
-                    return hrs < 12 ? '#00e67633' : hrs < 48 ? '#ffd74033' : '#ff174433';
-                  })(),
-                }}
-              />
-            )}
-            <Button
-              variant="text"
-              startIcon={syncing ? <CircularProgress size={14} /> : <SyncIcon sx={{ fontSize: 14 }} />}
-              onClick={handleSync}
-              disabled={syncing}
-              size="small"
-              sx={{ minWidth: 'auto', color: '#666', fontSize: '0.65rem', '&:hover': { color: '#00bcd4' } }}
-            >
-              {syncing ? '...' : 'Sync'}
-            </Button>
-          </Box>
+          {index?.last_sync_at && (
+            <Typography sx={{
+              fontFamily: '"JetBrains Mono", monospace',
+              fontSize: '0.65rem',
+              color: '#666',
+            }}>
+              Last synced: {formatSyncTime(index.last_sync_at)}
+            </Typography>
+          )}
         </Box>
 
         {/* Market Index Cards */}
@@ -140,77 +95,25 @@ export default function Dashboard() {
           </Grid>
         </Grid>
 
-        {/* Agent Status Bar */}
-        <Paper sx={{
-          p: 1, mb: 2, bgcolor: '#0a0a0a',
-          border: '1px solid #00bcd422',
-          display: 'flex', alignItems: 'center', gap: 1.5,
-          flexWrap: 'wrap',
-        }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            <SmartToyIcon sx={{ color: '#00bcd4', fontSize: 16 }} />
-            <Typography sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.65rem', color: '#00bcd4', fontWeight: 700 }}>
-              AGENT
-            </Typography>
+        {/* Price Alerts */}
+        {hasAlerts && (
+          <Box sx={{ mb: 2 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+              <NotificationsActiveIcon sx={{ color: '#ff9800', fontSize: 16 }} />
+              <Typography sx={{
+                fontFamily: '"JetBrains Mono", monospace', fontSize: '0.7rem',
+                color: '#ff9800', textTransform: 'uppercase', letterSpacing: 1, fontWeight: 700,
+              }}>
+                Price Alerts
+              </Typography>
+            </Box>
+            <AgentFeed limit={5} />
           </Box>
-          {agentStatus && (
-            <>
-              <Chip
-                label={`Last: ${agentStatus.last_analysis_at ? getTimeAgo(agentStatus.last_analysis_at) : 'never'}`}
-                size="small"
-                sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.55rem', height: 20, bgcolor: '#1a1a1a', color: '#888' }}
-              />
-              <Chip
-                label={`${agentStatus.active_predictions} active predictions`}
-                size="small"
-                sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.55rem', height: 20, bgcolor: '#1a1a1a', color: '#00ff41' }}
-              />
-              {agentStatus.overall_hit_rate !== null && (
-                <Chip
-                  label={`${agentStatus.overall_hit_rate}% accuracy (${agentStatus.resolved_predictions} resolved)`}
-                  size="small"
-                  sx={{
-                    fontFamily: '"JetBrains Mono", monospace', fontSize: '0.55rem', height: 20,
-                    bgcolor: '#1a1a1a',
-                    color: agentStatus.overall_hit_rate >= 60 ? '#00ff41' : agentStatus.overall_hit_rate >= 50 ? '#ffd700' : '#ff1744',
-                  }}
-                />
-              )}
-              {agentStatus.unread_insights > 0 && (
-                <Chip
-                  label={`${agentStatus.unread_insights} new insights`}
-                  size="small"
-                  sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.55rem', height: 20, bgcolor: '#ffd70015', color: '#ffd700' }}
-                />
-              )}
-            </>
-          )}
-        </Paper>
-
-        {/* Agent Insights Feed */}
-        <Box sx={{ mb: 2 }}>
-          <Typography sx={{
-            fontFamily: '"JetBrains Mono", monospace', fontSize: '0.7rem',
-            color: '#555', textTransform: 'uppercase', mb: 0.5, letterSpacing: 1,
-          }}>
-            Agent Insights
-          </Typography>
-          <AgentFeed limit={5} />
-        </Box>
+        )}
 
         {/* Top Movers */}
         <TopMovers />
       </Box>
-
-      <Snackbar
-        open={snackbar.open}
-        autoHideDuration={5000}
-        onClose={() => setSnackbar({ ...snackbar, open: false })}
-      >
-        <Alert severity={snackbar.severity} onClose={() => setSnackbar({ ...snackbar, open: false })}>
-          {snackbar.message}
-        </Alert>
-      </Snackbar>
     </Box>
   );
 }
