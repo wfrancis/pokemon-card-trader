@@ -403,13 +403,14 @@ def get_investment_candidates(
             breakeven_adjusted_slope = round(card.appreciation_slope - breakeven_daily_continuous, 4)
 
         # Days to breakeven: how many days at current slope to cover fees
+        # appreciation_slope is discrete daily % (from exp(continuous_slope)-1)*100)
+        # so ln(1 + slope/100) recovers the continuous daily rate for compounding
         days_to_breakeven = None
         if card.appreciation_slope is not None and card.appreciation_slope > 0 and breakeven is not None:
-            # Solve: (1 + slope/100)^days = (1 + BE/100)
-            # days = ln(1 + BE/100) / ln(1 + slope/100)
-            slope_daily = card.appreciation_slope / 100
-            if slope_daily > 0:
-                days_to_breakeven = round(math.log(1 + breakeven / 100) / math.log(1 + slope_daily))
+            # ln(1 + discrete%) = continuous_rate; use for both sides
+            continuous_daily = math.log(1 + card.appreciation_slope / 100)
+            if continuous_daily > 0:
+                days_to_breakeven = round(math.log(1 + breakeven / 100) / continuous_daily)
 
         # Time to sell estimate
         time_to_sell = None
