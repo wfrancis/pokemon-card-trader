@@ -208,15 +208,22 @@ def batch_compute_investment_metrics(db: Session) -> dict:
                 Sale.order_date >= d90
             ).scalar() or 0
 
-            # Spread: market vs median sale
+            # Spread: market vs true median sale price
+            # Use actual median (not mean) to avoid skew from outlier sales
             spread_pct = None
             if sales_90d > 0:
-                median_sale = db.query(func.avg(Sale.purchase_price)).filter(
-                    Sale.card_id == card.id,
-                    Sale.order_date >= d90
-                ).scalar()
-                if median_sale and card.current_price and median_sale > 0:
-                    spread_pct = abs(card.current_price - median_sale) / median_sale * 100
+                sale_prices = [
+                    row[0] for row in
+                    db.query(Sale.purchase_price)
+                    .filter(Sale.card_id == card.id, Sale.order_date >= d90, Sale.purchase_price > 0)
+                    .order_by(Sale.purchase_price.asc())
+                    .all()
+                ]
+                if sale_prices:
+                    n = len(sale_prices)
+                    median_sale = (sale_prices[n // 2] + sale_prices[(n - 1) // 2]) / 2
+                    if card.current_price and median_sale > 0:
+                        spread_pct = abs(card.current_price - median_sale) / median_sale * 100
 
             liq_score = calc_liquidity_score(
                 sales_90d=sales_90d,
