@@ -28,6 +28,15 @@ class Card(Base):
     is_viable = Column(Boolean, default=False, nullable=False, index=True)  # Sticky: True once price >= $20
     artist = Column(String, nullable=True)  # Card illustrator/artist
     tcgplayer_product_id = Column(Integer, nullable=True, index=True)  # TCGCSV/TCGPlayer productId
+    # Cached investment metrics (batch-computed by investment_screener service)
+    liquidity_score = Column(Integer, nullable=True)  # 0-100
+    appreciation_slope = Column(Float, nullable=True)  # Daily % appreciation from linear regression
+    appreciation_consistency = Column(Float, nullable=True)  # R² of trend (0-1, higher = steadier)
+    appreciation_win_rate = Column(Float, nullable=True)  # % of days with positive return
+    appreciation_score = Column(Float, nullable=True)  # Composite 0-100 score
+    cached_regime = Column(String, nullable=True)  # accumulation, markup, distribution, markdown
+    cached_adx = Column(Float, nullable=True)  # Trend strength 0-100
+    liquidity_updated_at = Column(DateTime, nullable=True)  # When metrics were last computed
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 

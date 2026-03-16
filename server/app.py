@@ -14,6 +14,7 @@ from server.routes import cards, prices, analysis
 from server.routes import trader
 from server.routes import sales
 from server.routes import agent
+from server.routes import screener
 from server.services.card_sync import sync_all_cards
 from server.services.price_collector import collect_prices_for_cards
 from server.services.tcgdex_sync import sync_tcgdex_cards, import_tcgdex_prices, sync_tcgdex_sets
@@ -112,6 +113,43 @@ async def lifespan(app: FastAPI):
         # Add price_condition column to cards
         try:
             conn.execute(text("ALTER TABLE cards ADD COLUMN price_condition TEXT DEFAULT 'Near Mint'"))
+            conn.commit()
+        except Exception:
+            pass
+        # Add investment screener columns to cards
+        for col_name, col_type, col_default in [
+            ("liquidity_score", "INTEGER", None),
+            ("appreciation_slope", "REAL", None),
+            ("appreciation_consistency", "REAL", None),
+            ("appreciation_win_rate", "REAL", None),
+            ("appreciation_score", "REAL", None),
+            ("cached_regime", "TEXT", None),
+            ("cached_adx", "REAL", None),
+            ("liquidity_updated_at", "TIMESTAMP", None),
+        ]:
+            try:
+                default_clause = f" DEFAULT {col_default}" if col_default is not None else ""
+                conn.execute(text(f"ALTER TABLE cards ADD COLUMN {col_name} {col_type}{default_clause}"))
+                conn.commit()
+            except Exception:
+                pass
+        # Create liquidity_history table if not exists
+        try:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS liquidity_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    card_id INTEGER NOT NULL REFERENCES cards(id),
+                    date DATE NOT NULL,
+                    liquidity_score INTEGER NOT NULL,
+                    sales_30d INTEGER DEFAULT 0,
+                    sales_90d INTEGER DEFAULT 0,
+                    spread_pct REAL
+                )
+            """))
+            conn.execute(text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ix_liquidity_history_card_date "
+                "ON liquidity_history (card_id, date)"
+            ))
             conn.commit()
         except Exception:
             pass
@@ -254,6 +292,18 @@ async def _background_price_sync():
                 db.close()
         except Exception as e:
             logger.error(f"Background price reconciliation failed: {e}")
+        # 5.7. Batch compute investment metrics (liquidity + appreciation)
+        try:
+            from server.services.investment_screener import batch_compute_investment_metrics
+            db = SessionLocal()
+            try:
+                logger.info("Background sync: computing investment metrics...")
+                inv_stats = batch_compute_investment_metrics(db)
+                logger.info(f"Investment metrics complete: {inv_stats}")
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Investment metrics computation failed: {e}")
         # 6. Backfill prediction prices (update agent accuracy tracking)
         try:
             from server.services.prediction_tracker import backfill_prediction_prices
@@ -517,6 +567,7 @@ app.include_router(analysis.router)
 app.include_router(trader.router)
 app.include_router(sales.router)
 app.include_router(agent.router)
+app.include_router(screener.router)
 
 
 @app.get("/health")
@@ -660,6 +711,18 @@ async def trigger_tcgcsv_discovery(
         return {"status": "complete", "source": "tcgcsv_discovery", **stats}
     except Exception as e:
         logger.error(f"TCGCSV discovery failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/sync/investment-metrics", dependencies=[Depends(verify_admin_key)])
+async def trigger_investment_metrics(db: Session = Depends(get_db)):
+    """Batch compute investment metrics (liquidity + appreciation) for all tracked cards."""
+    from server.services.investment_screener import batch_compute_investment_metrics
+    try:
+        stats = batch_compute_investment_metrics(db)
+        return {"status": "complete", **stats}
+    except Exception as e:
+        logger.error(f"Investment metrics failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
