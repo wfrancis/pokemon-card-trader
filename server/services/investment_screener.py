@@ -45,12 +45,31 @@ RARITY_SCORES: dict[str, int] = {
     "Radiant Rare": 60,
 }
 
-BLUE_CHIP_POKEMON = {
-    "Charizard", "Pikachu", "Mewtwo", "Mew", "Umbreon", "Rayquaza",
-    "Lugia", "Gengar", "Eevee", "Blastoise", "Venusaur", "Dragonite",
-    "Gyarados", "Alakazam", "Espeon", "Sylveon", "Gardevoir", "Arceus",
-    "Giratina", "Palkia", "Dialga", "Ho-Oh", "Suicune", "Celebi",
+# Blue-chip Pokemon tiers (higher tier = more universal collector demand)
+BLUE_CHIP_TIER1 = {  # Universal demand, trophy cards
+    "Charizard", "Pikachu", "Mewtwo", "Mew",
 }
+BLUE_CHIP_TIER2 = {  # Strong collector demand
+    "Umbreon", "Rayquaza", "Lugia", "Gengar", "Eevee", "Blastoise",
+    "Venusaur", "Dragonite", "Espeon", "Sylveon",
+}
+BLUE_CHIP_TIER3 = {  # Solid niche demand
+    "Gyarados", "Alakazam", "Gardevoir", "Arceus", "Giratina", "Palkia",
+    "Dialga", "Ho-Oh", "Suicune", "Celebi", "Articuno", "Zapdos",
+    "Moltres", "Garchomp", "Tyranitar", "Snorlax", "Jolteon", "Flareon",
+    "Vaporeon", "Salamence",
+}
+BLUE_CHIP_POKEMON = BLUE_CHIP_TIER1 | BLUE_CHIP_TIER2 | BLUE_CHIP_TIER3
+
+def _blue_chip_bonus(pokemon_name: str) -> int:
+    """Tiered blue-chip bonus: Tier1=20, Tier2=12, Tier3=6."""
+    if pokemon_name in BLUE_CHIP_TIER1:
+        return 20
+    if pokemon_name in BLUE_CHIP_TIER2:
+        return 12
+    if pokemon_name in BLUE_CHIP_TIER3:
+        return 6
+    return 0
 
 
 def calc_steady_appreciation(prices: list[float], dates: list[date_type]) -> dict:
@@ -62,7 +81,7 @@ def calc_steady_appreciation(prices: list[float], dates: list[date_type]) -> dic
         win_rate: % of days with positive return (0-100)
         appreciation_score: Composite score combining slope, consistency, and win rate (0-100)
     """
-    if len(prices) < 14 or len(dates) < 14:
+    if len(prices) < 30 or len(dates) < 30:
         return {
             "slope_pct_per_day": None,
             "r_squared": None,
@@ -78,7 +97,7 @@ def calc_steady_appreciation(prices: list[float], dates: list[date_type]) -> dic
             log_prices.append(math.log(p))
             valid_indices.append(i)
 
-    if len(log_prices) < 14:
+    if len(log_prices) < 30:
         return {"slope_pct_per_day": None, "r_squared": None, "win_rate": None, "appreciation_score": None}
 
     # Convert dates to day numbers from start
@@ -121,23 +140,27 @@ def calc_steady_appreciation(prices: list[float], dates: list[date_type]) -> dic
     win_rate = (positive_days / total_days * 100) if total_days > 0 else 0
 
     # Composite appreciation score (0-100)
-    # Weights: slope direction & magnitude (40%), consistency R² (35%), win rate (25%)
+    # Consistency-first model: R² gates everything, then slope and win rate
+    # Weights: consistency R² (40%), slope magnitude (35%), win rate (25%)
     score = 0.0
 
-    # Slope component (0-40): only positive slopes earn points
-    # A declining card should score near zero on slope
+    # R² component (0-40): consistency gates the signal
+    # Below 0.3 = noise (0 points), 0.3-0.5 = partial credit, 0.5+ = full scaling
+    if r_squared >= 0.5:
+        score += r_squared * 40  # e.g. R²=0.8 → 32 points
+    elif r_squared >= 0.3:
+        # Partial credit: scale linearly from 0 to half max
+        score += ((r_squared - 0.3) / 0.2) * 20  # 0-20 points
+    # Below 0.3 = trend indistinguishable from noise, 0 points
+
+    # Slope component (0-35): only positive slopes earn points
     if slope_pct_per_day > 0:
-        slope_score = min(40, slope_pct_per_day * 200)  # 0.2%/day = max
+        slope_score = min(35, slope_pct_per_day * 175)  # 0.2%/day = max
     else:
         slope_score = 0  # depreciating cards get zero slope credit
     score += slope_score
 
-    # R² component (0-35): floor at 0.3 — below that, the trend is noise
-    if r_squared >= 0.3:
-        score += r_squared * 35
-    # Below 0.3 R² = no consistency credit (trend is not statistically meaningful)
-
-    # Win rate component (0-25): > 55% = good
+    # Win rate component (0-25): > 55% = good (historical win rate)
     if win_rate >= 55:
         score += min(25, (win_rate - 50) * 2.5)
     elif win_rate >= 45:
@@ -333,15 +356,16 @@ def get_investment_candidates(
         "name": Card.name,
     }
 
-    # Investment score as SQL expression: gate model
-    # If liquidity < 15: score = 0 (uninvestable)
-    # Otherwise: appreciation * min(1.0, 0.5 + liquidity/120)
+    # Investment score SQL approximation for sorting
+    # Soft gate: use piecewise linear approximation of sigmoid(liq-30)
+    # liq<10 → 0.1, liq 10-30 → linear 0.1-0.5, liq 30-60 → linear 0.5-0.95, liq>60 → 1.0
+    liq_col = func.coalesce(Card.liquidity_score, literal(0))
+    app_col = func.coalesce(Card.appreciation_score, literal(0))
     investment_score_expr = case(
-        (Card.liquidity_score < 15, literal(0)),
-        else_=(
-            func.coalesce(Card.appreciation_score, literal(0))
-            * func.min(literal(1.0), literal(0.5) + func.coalesce(Card.liquidity_score, literal(0)) / literal(120.0))
-        ),
+        (liq_col < 10, app_col * literal(0.1)),
+        (liq_col < 30, app_col * (literal(0.1) + (liq_col - literal(10)) * literal(0.02))),
+        (liq_col < 60, app_col * (literal(0.5) + (liq_col - literal(30)) * literal(0.015))),
+        else_=app_col,
     )
 
     if sort_by == "investment_score":
@@ -362,24 +386,30 @@ def get_investment_candidates(
     for card in cards:
         breakeven = calc_breakeven_appreciation(card.current_price) if card.current_price else None
 
-        # Rarity premium score (0-100)
+        # Rarity premium score (0-100) with tiered blue-chip bonus
         rarity_score = RARITY_SCORES.get(card.rarity, 10) if card.rarity else 10
-        # Blue-chip Pokemon bonus (+15 points, capped at 100)
         card_name_first = (card.name or "").split(" ")[0]
         is_blue_chip = card_name_first in BLUE_CHIP_POKEMON
-        if is_blue_chip:
-            rarity_score = min(100, rarity_score + 15)
+        bc_bonus = _blue_chip_bonus(card_name_first)
+        rarity_score = min(100, rarity_score + bc_bonus)
 
-        # Breakeven-adjusted slope: net of hurdle rate
+        # Breakeven-adjusted slope: convert breakeven % to daily continuous rate
+        # so units match appreciation_slope (both in %/day continuous compounding)
         breakeven_adjusted_slope = None
         if card.appreciation_slope is not None and breakeven is not None:
-            hurdle_per_day = breakeven / 365  # annualize to daily
-            breakeven_adjusted_slope = round(card.appreciation_slope - hurdle_per_day, 4)
+            # Convert breakeven % to daily continuous rate: ln(1 + BE/100) / holding_period
+            # Use 365 days as assumed holding period for daily hurdle
+            breakeven_daily_continuous = (math.log(1 + breakeven / 100) / 365) * 100
+            breakeven_adjusted_slope = round(card.appreciation_slope - breakeven_daily_continuous, 4)
 
-        # Days to breakeven
+        # Days to breakeven: how many days at current slope to cover fees
         days_to_breakeven = None
         if card.appreciation_slope is not None and card.appreciation_slope > 0 and breakeven is not None:
-            days_to_breakeven = round(breakeven / card.appreciation_slope)
+            # Solve: (1 + slope/100)^days = (1 + BE/100)
+            # days = ln(1 + BE/100) / ln(1 + slope/100)
+            slope_daily = card.appreciation_slope / 100
+            if slope_daily > 0:
+                days_to_breakeven = round(math.log(1 + breakeven / 100) / math.log(1 + slope_daily))
 
         # Time to sell estimate
         time_to_sell = None
@@ -397,19 +427,19 @@ def get_investment_candidates(
             tts = estimate_time_to_sell(card.current_price, s90, s30)
             time_to_sell = tts
 
-        # Investment score: multiplicative gate model
-        # Liquidity is a prerequisite — below floor, card is uninvestable
+        # Investment score: soft gate model
+        # Liquidity scales smoothly from 0→1.0 using sigmoid-like curve
+        # Very low liquidity (<10) heavily penalizes but doesn't zero out
         inv_score = None
         liq = card.liquidity_score or 0
         app = card.appreciation_score or 0
-        if liq < 15:
-            inv_score = 0  # Uninvestable — cannot exit position
-        elif card.appreciation_score is not None:
-            # Liquidity modifier: diminishing returns above 50
-            liq_modifier = min(1.0, 0.5 + 0.5 * (liq / 60))
-            # Rarity bonus: 0-15 points
+        if card.appreciation_score is not None:
+            # Soft liquidity gate: sigmoid curve centered at 30, steepness 0.1
+            # liq=0 → ~0.05, liq=15 → ~0.18, liq=30 → ~0.5, liq=50 → ~0.88, liq=60+ → ~0.95+
+            liq_modifier = 1.0 / (1.0 + math.exp(-0.1 * (liq - 30)))
+            # Rarity bonus: 0-15 points (scaled by rarity_score 0-100)
             rarity_bonus = rarity_score * 0.15
-            # Base = appreciation * liquidity gate + rarity bonus
+            # Base = appreciation * liquidity modifier + rarity bonus
             inv_score = round(min(100, app * liq_modifier + rarity_bonus), 1)
 
         results.append({

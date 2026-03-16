@@ -533,7 +533,7 @@ export interface ScreenerCard {
   artist: string | null;
   // Liquidity
   liquidity_score: number | null;
-  time_to_sell: string | null;
+  time_to_sell: { estimated_days: number; confidence: string; price_tier: string; sales_90d: number; sales_30d: number } | null;
   // Appreciation
   appreciation_slope: number | null;
   appreciation_consistency: number | null;

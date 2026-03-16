@@ -135,15 +135,22 @@ function ScoreBar({ value, maxValue = 100, color, label }: {
   );
 }
 
-function TimeToSellBadge({ value }: { value: string | null }) {
+function TimeToSellBadge({ value }: { value: { estimated_days: number; confidence: string; sales_90d: number } | null }) {
   if (!value) return null;
-  const isGood = value.includes('< 1') || value.includes('1-3');
-  const isWarn = value.includes('3-7') || value.includes('1-2 week');
-  const color = isGood ? '#00ff41' : isWarn ? '#ff9800' : '#ff1744';
+  const days = value.estimated_days;
+  let label: string;
+  if (days <= 1) label = '< 1 day';
+  else if (days <= 3) label = `${days}d`;
+  else if (days <= 7) label = `~${days}d`;
+  else if (days <= 21) label = `~${Math.round(days / 7)}wk`;
+  else label = `~${Math.round(days / 30)}mo`;
+
+  const color = days <= 3 ? '#00ff41' : days <= 14 ? '#ff9800' : '#ff1744';
+  const confLabel = value.confidence === 'high' ? '' : value.confidence === 'medium' ? ' ~' : ' ?';
   return (
-    <Tooltip title="Estimated time to sell at market price">
+    <Tooltip title={`Est. ${days}d to sell (${value.confidence} confidence, ${value.sales_90d} sales/90d)`}>
       <Chip
-        label={`⏱ ${value}`}
+        label={`${label}${confLabel}`}
         size="small"
         sx={{
           bgcolor: 'transparent',
@@ -252,9 +259,15 @@ function CardTile({ card, rank }: { card: ScreenerCard; rank: number }) {
       {/* Time to sell */}
       <TimeToSellBadge value={card.time_to_sell} />
 
-      {/* Investment Score (big number) */}
+      {/* Investment Score (big number) with breakdown tooltip */}
       {card.investment_score !== null && (
-        <Tooltip title="Combined investment score (liquidity × appreciation + rarity)">
+        <Tooltip title={
+          `Score: ${card.investment_score.toFixed(1)} = ` +
+          `App(${card.appreciation_score?.toFixed(0) ?? '?'}) × ` +
+          `Liq modifier(${card.liquidity_score ?? '?'}) + ` +
+          `Rarity(${card.rarity_score ?? '?'}/100)` +
+          (card.appreciation_consistency !== null ? ` | R²=${card.appreciation_consistency.toFixed(2)}` : '')
+        }>
           <Box sx={{ textAlign: 'center', mt: 0.5, mb: 0.3 }}>
             <Typography variant="body2" sx={{ fontSize: '0.5rem', color: '#888', textTransform: 'uppercase' }}>
               Invest Score
@@ -328,17 +341,19 @@ function CardTable({ cards, page, onSort, sortBy, sortDir }: {
   const columns: { id: string; label: string; width?: number }[] = [
     { id: 'rank', label: '#', width: 40 },
     { id: 'name', label: 'Card' },
-    { id: 'current_price', label: 'Price', width: 80 },
-    { id: 'investment_score', label: 'Score', width: 70 },
-    { id: 'liquidity_score', label: 'Liq', width: 60 },
-    { id: 'appreciation_score', label: 'App', width: 60 },
-    { id: 'appreciation_slope', label: '%/Day', width: 70 },
-    { id: 'time_to_sell', label: 'TTS', width: 80 },
-    { id: 'days_to_breakeven', label: 'BE Days', width: 70 },
-    { id: 'regime', label: 'Regime', width: 90 },
+    { id: 'current_price', label: 'Price', width: 75 },
+    { id: 'investment_score', label: 'Score', width: 60 },
+    { id: 'liquidity_score', label: 'Liq', width: 50 },
+    { id: 'appreciation_score', label: 'App', width: 50 },
+    { id: 'appreciation_consistency', label: 'R²', width: 50 },
+    { id: 'appreciation_slope', label: '%/Day', width: 65 },
+    { id: 'breakeven_pct', label: 'BE%', width: 55 },
+    { id: 'days_to_breakeven', label: 'BE Days', width: 60 },
+    { id: 'time_to_sell', label: 'TTS', width: 75 },
+    { id: 'regime', label: 'Regime', width: 85 },
   ];
 
-  const sortable = ['name', 'current_price', 'investment_score', 'liquidity_score', 'appreciation_score', 'appreciation_slope'];
+  const sortable = ['name', 'current_price', 'investment_score', 'liquidity_score', 'appreciation_score', 'appreciation_consistency', 'appreciation_slope'];
 
   return (
     <TableContainer component={Paper} sx={{ bgcolor: '#0a0a0a', border: '1px solid #1a1a1a' }}>
@@ -409,10 +424,24 @@ function CardTable({ cards, page, onSort, sortBy, sortDir }: {
                   {card.appreciation_score !== null ? card.appreciation_score.toFixed(0) : '--'}
                 </TableCell>
                 <TableCell sx={{
+                  fontFamily: 'monospace', fontSize: '0.65rem',
+                  color: card.appreciation_consistency !== null
+                    ? (card.appreciation_consistency >= 0.5 ? '#00ff41' : card.appreciation_consistency >= 0.3 ? '#ff9800' : '#ff1744')
+                    : '#444',
+                }}>
+                  {card.appreciation_consistency !== null ? card.appreciation_consistency.toFixed(2) : '--'}
+                </TableCell>
+                <TableCell sx={{
                   color: card.appreciation_slope !== null ? (card.appreciation_slope >= 0 ? '#00ff41' : '#ff1744') : '#444',
                   fontSize: '0.65rem', fontFamily: 'monospace',
                 }}>
                   {card.appreciation_slope !== null ? `${card.appreciation_slope >= 0 ? '+' : ''}${card.appreciation_slope.toFixed(3)}%` : '--'}
+                </TableCell>
+                <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.65rem', color: '#888' }}>
+                  {card.breakeven_pct !== null ? `+${card.breakeven_pct.toFixed(1)}%` : '--'}
+                </TableCell>
+                <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.65rem', color: card.days_to_breakeven !== null ? (card.days_to_breakeven <= 90 ? '#00ff41' : card.days_to_breakeven <= 365 ? '#ff9800' : '#ff1744') : '#444' }}>
+                  {card.days_to_breakeven !== null ? `${card.days_to_breakeven}d` : '--'}
                 </TableCell>
                 <TableCell>
                   {card.time_to_sell ? (
@@ -420,9 +449,6 @@ function CardTable({ cards, page, onSort, sortBy, sortDir }: {
                   ) : (
                     <Typography variant="body2" sx={{ color: '#444', fontSize: '0.6rem' }}>--</Typography>
                   )}
-                </TableCell>
-                <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.65rem', color: card.days_to_breakeven !== null ? (card.days_to_breakeven <= 90 ? '#00ff41' : card.days_to_breakeven <= 365 ? '#ff9800' : '#ff1744') : '#444' }}>
-                  {card.days_to_breakeven !== null ? `${card.days_to_breakeven}d` : '--'}
                 </TableCell>
                 <TableCell>
                   {card.regime && (
@@ -466,6 +492,7 @@ export default function Screener() {
   const [sortBy, setSortBy] = useState('investment_score');
   const [sortDir, setSortDir] = useState('desc');
   const [search, setSearch] = useState('');
+  const [investmentGradeOnly, setInvestmentGradeOnly] = useState(false);
 
   useEffect(() => {
     document.title = 'Screener | PKMN Trader';
@@ -483,8 +510,14 @@ export default function Screener() {
         sort_dir: sortDir,
         min_price: String(minPrice),
       };
-      if (minLiquidity > 0) params.min_liquidity = String(minLiquidity);
-      if (minAppreciation > 0) params.min_appreciation = String(minAppreciation);
+      // Investment Grade preset overrides individual liquidity/appreciation filters
+      if (investmentGradeOnly) {
+        params.min_liquidity = '30';
+        params.min_appreciation = '40';
+      } else {
+        if (minLiquidity > 0) params.min_liquidity = String(minLiquidity);
+        if (minAppreciation > 0) params.min_appreciation = String(minAppreciation);
+      }
       if (regime) params.regime = regime;
       if (maxPrice !== '' && Number(maxPrice) > 0) params.max_price = maxPrice;
       if (search) params.q = search;
@@ -498,7 +531,7 @@ export default function Screener() {
     } finally {
       setLoading(false);
     }
-  }, [page, sortBy, sortDir, minLiquidity, minAppreciation, regime, minPrice, maxPrice, search]);
+  }, [page, sortBy, sortDir, minLiquidity, minAppreciation, regime, minPrice, maxPrice, search, investmentGradeOnly]);
 
   useEffect(() => {
     fetchCards();
@@ -548,6 +581,20 @@ export default function Screener() {
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
           <FilterListIcon sx={{ color: '#666', fontSize: 18 }} />
           <Typography variant="body2" sx={{ color: '#888', fontWeight: 600 }}>FILTERS</Typography>
+          <Chip
+            label="Investment Grade"
+            size="small"
+            onClick={() => { setInvestmentGradeOnly(!investmentGradeOnly); setPage(1); }}
+            sx={{
+              bgcolor: investmentGradeOnly ? '#00ff41' : 'transparent',
+              color: investmentGradeOnly ? '#000' : '#00ff41',
+              border: '1px solid #00ff41',
+              fontWeight: 600,
+              fontSize: '0.6rem',
+              height: 24,
+              cursor: 'pointer',
+            }}
+          />
         </Box>
         <Grid container spacing={2} alignItems="center">
           {/* Search */}
@@ -627,6 +674,7 @@ export default function Screener() {
                 <MenuItem value="investment_score">Investment Score</MenuItem>
                 <MenuItem value="liquidity_score">Liquidity</MenuItem>
                 <MenuItem value="appreciation_score">Appreciation</MenuItem>
+                <MenuItem value="appreciation_consistency">Consistency (R²)</MenuItem>
                 <MenuItem value="appreciation_slope">Daily Growth</MenuItem>
                 <MenuItem value="current_price">Price</MenuItem>
               </Select>
