@@ -101,6 +101,7 @@ STRATEGIES = {
     "momentum_breakout": "Momentum Breakout",
     "mean_reversion_bands": "Mean Reversion + Bands",
     "trend_rider": "Trend Rider (EMA Stack)",
+    "steady_gainer": "Steady Gainer (Liquid + Appreciating)",
 }
 
 
@@ -346,6 +347,94 @@ def _trend_rider_signal(indicators: dict, prev_indicators: dict | None) -> str |
     return None
 
 
+def _steady_gainer_signal(
+    indicators: dict,
+    prev_indicators: dict | None,
+    prices: list[float],
+) -> str | None:
+    """Steady Gainer: buy when regime is bullish with strong trend + consistent appreciation.
+
+    Collectibles-specific: identifies cards with sustained, steady price increases
+    (not volatile spikes) and holds them long-term. Sells when the trend breaks down.
+
+    Entry conditions (all must be true):
+    - SMA7 > SMA30 (short-term uptrend)
+    - RSI between 40-65 (not overbought, steady momentum)
+    - Price above Bollinger middle band (healthy trend)
+    - Linear regression of last 30 prices shows positive slope with R² > 0.3
+
+    Exit conditions (any triggers sell):
+    - SMA7 crosses below SMA30 (trend reversal)
+    - RSI > 75 (overbought, take profit)
+    - Price drops below Bollinger lower band (breakdown)
+    """
+    sma_7 = indicators.get("sma_7")
+    sma_30 = indicators.get("sma_30")
+    rsi = indicators.get("rsi_14")
+    upper, middle, lower = indicators.get("bollinger", (None, None, None))
+
+    if any(v is None for v in [sma_7, sma_30, rsi]) or middle is None or lower is None:
+        return None
+
+    current = prices[-1]
+
+    # Quick linear regression on last 30 prices for slope & consistency
+    window = prices[-30:] if len(prices) >= 30 else prices[-14:]
+    if len(window) < 14:
+        return None
+
+    import math
+    log_prices = [math.log(p) for p in window if p > 0]
+    if len(log_prices) < 14:
+        return None
+
+    n = len(log_prices)
+    x = list(range(n))
+    sum_x = sum(x)
+    sum_y = sum(log_prices)
+    sum_xy = sum(xi * yi for xi, yi in zip(x, log_prices))
+    sum_x2 = sum(xi * xi for xi in x)
+    denom = n * sum_x2 - sum_x * sum_x
+    if denom == 0:
+        return None
+
+    slope = (n * sum_xy - sum_x * sum_y) / denom
+    intercept = (sum_y - slope * sum_x) / n
+    y_mean = sum_y / n
+    ss_tot = sum((yi - y_mean) ** 2 for yi in log_prices)
+    ss_res = sum((yi - (slope * xi + intercept)) ** 2 for xi, yi in zip(x, log_prices))
+    r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+
+    slope_positive = slope > 0.001  # Minimum upward slope
+    consistent = r_squared > 0.3  # Reasonably consistent trend
+
+    # BUY: steady uptrend confirmed by multiple factors
+    if (sma_7 > sma_30 and
+            40 <= rsi <= 65 and
+            current > middle and
+            slope_positive and consistent):
+        return "buy"
+
+    # SELL: trend breakdown
+    if prev_indicators:
+        prev_sma_7 = prev_indicators.get("sma_7")
+        prev_sma_30 = prev_indicators.get("sma_30")
+        # SMA death cross
+        if prev_sma_7 is not None and prev_sma_30 is not None:
+            if prev_sma_7 >= prev_sma_30 and sma_7 < sma_30:
+                return "sell"
+
+    # Take profit on overbought
+    if rsi > 75:
+        return "sell"
+
+    # Breakdown below lower band
+    if current < lower:
+        return "sell"
+
+    return None
+
+
 def run_backtest(
     db: Session,
     card_id: int,
@@ -460,6 +549,8 @@ def run_backtest(
             signal = _mean_reversion_bands_signal(indicators, current_price)
         elif strategy == "trend_rider":
             signal = _trend_rider_signal(indicators, prev_indicators)
+        elif strategy == "steady_gainer":
+            signal = _steady_gainer_signal(indicators, prev_indicators, price_slice)
 
         # Execute trades
         if signal == "buy" and cash > 0 and holdings == 0:

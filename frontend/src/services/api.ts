@@ -206,6 +206,18 @@ export const api = {
 
   runAgentAnalysis: (model = 'gpt-5') =>
     fetchApi<AgentAnalysisResult>(`/api/trader/agent?model=${model}`, { timeoutMs: 300_000 }),
+
+  // Investment Screener
+  getScreenerCards: (params?: Record<string, string>) => {
+    const qs = params ? '?' + new URLSearchParams(params).toString() : '';
+    return fetchApi<ScreenerResponse>(`/api/market/screener${qs}`);
+  },
+
+  getScreenerStats: () =>
+    fetchApi<ScreenerStats>('/api/market/screener/stats'),
+
+  getLiquidityTrend: (cardId: number, days = 90) =>
+    fetchApi<LiquidityTrendPoint[]>(`/api/market/screener/liquidity-trend/${cardId}?days=${days}`),
 };
 
 export interface BacktestTrade {
@@ -505,6 +517,66 @@ export interface AgentStatus {
   unread_insights: number;
   overall_hit_rate: number | null;
   resolved_predictions: number;
+}
+
+// ── Investment Screener Types ────────────────────────────────────────────────
+
+export interface ScreenerCard {
+  id: number;
+  tcg_id: string;
+  name: string;
+  set_name: string;
+  rarity: string;
+  image_small: string;
+  current_price: number;
+  price_variant: string | null;
+  artist: string | null;
+  // Liquidity
+  liquidity_score: number | null;
+  time_to_sell: { estimated_days: number; confidence: string; price_tier: string; sales_90d: number; sales_30d: number } | null;
+  // Appreciation
+  appreciation_slope: number | null;
+  appreciation_consistency: number | null;
+  appreciation_win_rate: number | null;
+  appreciation_score: number | null;
+  breakeven_adjusted_slope: number | null;
+  days_to_breakeven: number | null;
+  // Collectibility
+  rarity_score: number | null;
+  is_blue_chip: boolean;
+  // Regime
+  regime: string | null;
+  adx: number | null;
+  // Computed
+  investment_score: number | null;
+  breakeven_pct: number | null;
+}
+
+export interface ScreenerResponse {
+  data: ScreenerCard[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}
+
+export interface ScreenerStats {
+  total_tracked: number;
+  with_liquidity_data: number;
+  with_appreciation_data: number;
+  investment_grade_count: number;
+  regime_breakdown: Record<string, number>;
+  avg_liquidity_score: number | null;
+  avg_appreciation_score: number | null;
+  last_computed_at: string | null;
+}
+
+export interface LiquidityTrendPoint {
+  date: string;
+  liquidity_score: number;
+  sales_30d: number;
+  sales_90d: number;
+  spread_pct: number | null;
 }
 
 export interface AgentAnalysisResult {
