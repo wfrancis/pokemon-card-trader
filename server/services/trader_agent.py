@@ -730,6 +730,25 @@ def _gather_market_data(db: Session) -> dict:
         data["set_analysis"] = []
         data["concentration_risk"] = {"error": str(e)}
 
+    # 8. TCGPlayer market intelligence articles
+    try:
+        import asyncio
+        from server.services.article_scraper import fetch_tcgplayer_articles, format_articles_for_prompt
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                articles = pool.submit(
+                    lambda: asyncio.run(fetch_tcgplayer_articles(max_articles=4))
+                ).result(timeout=60)
+        else:
+            articles = asyncio.run(fetch_tcgplayer_articles(max_articles=4))
+        data["tcgplayer_articles"] = format_articles_for_prompt(articles)
+        logger.info(f"Fetched {len(articles)} TCGPlayer articles for agent context")
+    except Exception as e:
+        logger.warning(f"TCGPlayer article fetch failed: {e}")
+        data["tcgplayer_articles"] = ""
+
     return data
 
 
@@ -855,6 +874,14 @@ NOTE: This is EVERY card with price >= $20 — the complete tradeable universe. 
 
 ## Concentration Risk
 {json.dumps(market_data.get('concentration_risk', {}), indent=2)}
+"""
+
+    # Inject TCGPlayer articles as market intelligence
+    articles_text = market_data.get("tcgplayer_articles", "")
+    if articles_text:
+        base += f"""
+
+{articles_text}
 """
 
     # Inject previous consensus for temporal context

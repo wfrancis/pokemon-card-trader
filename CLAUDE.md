@@ -106,6 +106,43 @@ frontend/        # React app
 - **NEVER add `Co-Authored-By: Claude` or any Claude attribution line to commits**
 - All commits are authored by William Francis <wbfranci@gmail.com> only
 
+## Persona-Driven Development
+
+All feature work is prioritized by 4 user personas who evaluate the live site via Chrome MCP after each sprint. Track scores in `tasks/scoring.md`, sprint plan in `tasks/sprint.md`.
+
+| Persona | Type | What They Care About |
+|---------|------|---------------------|
+| Jake (P1) | Card Flipper | Spreads, velocity, fee-adjusted profit, actionable signals |
+| Maria (P2) | Collector/Investor | Portfolio tracking, long-term trends, condition pricing |
+| Alex (P3) | Content Creator | Charts, data stories, exportable visuals, fresh analysis |
+| Sam (P4) | Casual Newcomer | "Are my cards worth anything?", simple UX, no jargon |
+
+**Baseline scores (2026-03-16): avg 3.75/10** — all 4 reported broken scroll-snap navigation as #1 dealbreaker.
+
+### Sprint Execution Loop
+
+Every sprint follows this loop until all personas are satisfied:
+
+```
+1. IMPLEMENT → Deploy AI software expert agents to implement sprint tasks
+2. QA/TEST   → Deploy AI QA/tester agents to find bugs on the live site
+3. FIX       → Loop between software experts and QA until zero bugs remain
+4. DEPLOY    → Deploy to Fly.io
+5. PERSONA   → Deploy all 4 persona agents to retest via Chrome MCP
+6. EVALUATE  → If personas flag unresolved concerns for THIS sprint:
+               → Extract new requirements
+               → Go back to step 1
+7. SCORE     → Record final persona scores in tasks/scoring.md
+8. NEXT      → Move to next sprint only after all personas are satisfied
+```
+
+**Constraints:**
+- All persona tests MUST be done on the live Fly.io deployment using Chrome MCP browser tools — never localhost
+- All QA tests MUST be done on the live Fly.io deployment using Chrome MCP browser tools — never localhost
+- Never skip the persona verification step
+- Never start the next sprint until current sprint personas are satisfied
+- Record every persona re-test score, not just the final one
+
 ## Core Principles
 
 - **Simplicity First**: Make every change as simple as possible. Impact minimal code.
