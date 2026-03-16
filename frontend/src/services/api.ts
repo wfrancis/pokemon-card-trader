@@ -530,13 +530,24 @@ export interface ScreenerCard {
   image_small: string;
   current_price: number;
   price_variant: string | null;
+  artist: string | null;
+  // Liquidity
   liquidity_score: number | null;
+  time_to_sell: string | null;
+  // Appreciation
   appreciation_slope: number | null;
   appreciation_consistency: number | null;
   appreciation_win_rate: number | null;
   appreciation_score: number | null;
+  breakeven_adjusted_slope: number | null;
+  days_to_breakeven: number | null;
+  // Collectibility
+  rarity_score: number | null;
+  is_blue_chip: boolean;
+  // Regime
   regime: string | null;
   adx: number | null;
+  // Computed
   investment_score: number | null;
   breakeven_pct: number | null;
 }

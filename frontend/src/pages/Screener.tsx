@@ -2,12 +2,17 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   Box, Paper, Typography, Grid, Avatar, Chip, LinearProgress,
   Pagination, Select, MenuItem, FormControl, InputLabel, Slider,
-  Tooltip, Skeleton, TextField, InputAdornment,
+  Tooltip, Skeleton, TextField, InputAdornment, ToggleButtonGroup, ToggleButton,
+  Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TableSortLabel,
 } from '@mui/material';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import WaterDropIcon from '@mui/icons-material/WaterDrop';
 import FilterListIcon from '@mui/icons-material/FilterList';
 import SearchIcon from '@mui/icons-material/Search';
+import ViewModuleIcon from '@mui/icons-material/ViewModule';
+import ViewListIcon from '@mui/icons-material/ViewList';
+import DiamondIcon from '@mui/icons-material/Diamond';
+import StarIcon from '@mui/icons-material/Star';
 import { useNavigate } from 'react-router-dom';
 import { api, ScreenerCard, ScreenerStats } from '../services/api';
 
@@ -130,10 +135,38 @@ function ScoreBar({ value, maxValue = 100, color, label }: {
   );
 }
 
+function TimeToSellBadge({ value }: { value: string | null }) {
+  if (!value) return null;
+  const isGood = value.includes('< 1') || value.includes('1-3');
+  const isWarn = value.includes('3-7') || value.includes('1-2 week');
+  const color = isGood ? '#00ff41' : isWarn ? '#ff9800' : '#ff1744';
+  return (
+    <Tooltip title="Estimated time to sell at market price">
+      <Chip
+        label={`⏱ ${value}`}
+        size="small"
+        sx={{
+          bgcolor: 'transparent',
+          border: `1px solid ${color}`,
+          color,
+          fontSize: '0.5rem',
+          height: 18,
+          mt: 0.3,
+        }}
+      />
+    </Tooltip>
+  );
+}
+
 function CardTile({ card, rank }: { card: ScreenerCard; rank: number }) {
   const navigate = useNavigate();
   const regimeColor = REGIME_COLORS[card.regime || 'unknown'] || '#666';
   const isTopTier = (card.investment_score || 0) >= 50;
+
+  // Breakeven color: green if adjusted slope is positive, red if negative
+  const beColor = card.breakeven_adjusted_slope !== null
+    ? (card.breakeven_adjusted_slope > 0 ? '#00ff41' : '#ff1744')
+    : '#666';
 
   return (
     <Paper
@@ -151,32 +184,46 @@ function CardTile({ card, rank }: { card: ScreenerCard; rank: number }) {
       }}
       onClick={() => navigate(`/card/${card.id}`)}
     >
-      {/* Rank + Regime badge */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
-        <Chip
-          label={`#${rank}`}
-          size="small"
-          sx={{
-            bgcolor: rank <= 3 ? '#00ff41' : rank <= 10 ? '#00bcd4' : '#333',
-            color: rank <= 3 ? '#000' : '#fff',
-            fontWeight: 700,
-            fontSize: '0.6rem',
-            height: 18,
-          }}
-        />
-        {card.regime && (
+      {/* Rank + Regime + Blue Chip badges */}
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5, flexWrap: 'wrap', gap: 0.3 }}>
+        <Box sx={{ display: 'flex', gap: 0.3, alignItems: 'center' }}>
           <Chip
-            label={REGIME_LABELS[card.regime] || card.regime}
+            label={`#${rank}`}
             size="small"
             sx={{
-              bgcolor: 'transparent',
-              border: `1px solid ${regimeColor}`,
-              color: regimeColor,
-              fontSize: '0.5rem',
-              height: 16,
+              bgcolor: rank <= 3 ? '#00ff41' : rank <= 10 ? '#00bcd4' : '#333',
+              color: rank <= 3 ? '#000' : '#fff',
+              fontWeight: 700,
+              fontSize: '0.6rem',
+              height: 18,
             }}
           />
-        )}
+          {card.is_blue_chip && (
+            <Tooltip title="Blue-chip Pokemon — high collector demand">
+              <StarIcon sx={{ color: '#ffd700', fontSize: 14 }} />
+            </Tooltip>
+          )}
+        </Box>
+        <Box sx={{ display: 'flex', gap: 0.3, alignItems: 'center' }}>
+          {card.rarity_score !== null && card.rarity_score >= 60 && (
+            <Tooltip title={`Rarity: ${card.rarity} (${card.rarity_score}/100)`}>
+              <DiamondIcon sx={{ color: '#e040fb', fontSize: 13 }} />
+            </Tooltip>
+          )}
+          {card.regime && (
+            <Chip
+              label={REGIME_LABELS[card.regime] || card.regime}
+              size="small"
+              sx={{
+                bgcolor: 'transparent',
+                border: `1px solid ${regimeColor}`,
+                color: regimeColor,
+                fontSize: '0.5rem',
+                height: 16,
+              }}
+            />
+          )}
+        </Box>
       </Box>
 
       {/* Card image */}
@@ -202,9 +249,12 @@ function CardTile({ card, rank }: { card: ScreenerCard; rank: number }) {
         ${card.current_price.toFixed(2)}
       </Typography>
 
+      {/* Time to sell */}
+      <TimeToSellBadge value={card.time_to_sell} />
+
       {/* Investment Score (big number) */}
       {card.investment_score !== null && (
-        <Tooltip title="Combined investment score (liquidity + appreciation)">
+        <Tooltip title="Combined investment score (liquidity × appreciation + rarity)">
           <Box sx={{ textAlign: 'center', mt: 0.5, mb: 0.3 }}>
             <Typography variant="body2" sx={{ fontSize: '0.5rem', color: '#888', textTransform: 'uppercase' }}>
               Invest Score
@@ -250,15 +300,151 @@ function CardTile({ card, rank }: { card: ScreenerCard; rank: number }) {
         )}
       </Box>
 
-      {/* Breakeven */}
-      {card.breakeven_pct !== null && (
-        <Tooltip title="Minimum price increase needed to break even after TCGPlayer fees">
-          <Typography variant="body2" sx={{ fontSize: '0.5rem', color: '#666', mt: 0.3, textAlign: 'center' }}>
-            BE: +{card.breakeven_pct.toFixed(1)}%
-          </Typography>
-        </Tooltip>
-      )}
+      {/* Breakeven — color-coded and prominent */}
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.3, gap: 0.5 }}>
+        {card.breakeven_pct !== null && (
+          <Tooltip title={`Breakeven: +${card.breakeven_pct.toFixed(1)}% needed after fees${card.days_to_breakeven ? ` (~${card.days_to_breakeven}d at current pace)` : ''}`}>
+            <Typography variant="body2" sx={{ fontSize: '0.5rem', color: beColor, fontWeight: 600 }}>
+              BE: +{card.breakeven_pct.toFixed(1)}%
+              {card.days_to_breakeven !== null && (
+                <span style={{ color: '#888', fontWeight: 400 }}> ({card.days_to_breakeven}d)</span>
+              )}
+            </Typography>
+          </Tooltip>
+        )}
+      </Box>
     </Paper>
+  );
+}
+
+function CardTable({ cards, page, onSort, sortBy, sortDir }: {
+  cards: ScreenerCard[];
+  page: number;
+  onSort: (col: string) => void;
+  sortBy: string;
+  sortDir: string;
+}) {
+  const navigate = useNavigate();
+  const columns: { id: string; label: string; width?: number }[] = [
+    { id: 'rank', label: '#', width: 40 },
+    { id: 'name', label: 'Card' },
+    { id: 'current_price', label: 'Price', width: 80 },
+    { id: 'investment_score', label: 'Score', width: 70 },
+    { id: 'liquidity_score', label: 'Liq', width: 60 },
+    { id: 'appreciation_score', label: 'App', width: 60 },
+    { id: 'appreciation_slope', label: '%/Day', width: 70 },
+    { id: 'time_to_sell', label: 'TTS', width: 80 },
+    { id: 'days_to_breakeven', label: 'BE Days', width: 70 },
+    { id: 'regime', label: 'Regime', width: 90 },
+  ];
+
+  const sortable = ['name', 'current_price', 'investment_score', 'liquidity_score', 'appreciation_score', 'appreciation_slope'];
+
+  return (
+    <TableContainer component={Paper} sx={{ bgcolor: '#0a0a0a', border: '1px solid #1a1a1a' }}>
+      <Table size="small" sx={{ '& td, & th': { borderColor: '#1a1a1a', py: 0.5 } }}>
+        <TableHead>
+          <TableRow>
+            {columns.map((col) => (
+              <TableCell
+                key={col.id}
+                sx={{ color: '#888', fontSize: '0.65rem', fontWeight: 600, width: col.width }}
+              >
+                {sortable.includes(col.id) ? (
+                  <TableSortLabel
+                    active={sortBy === col.id}
+                    direction={sortBy === col.id ? (sortDir as 'asc' | 'desc') : 'desc'}
+                    onClick={() => onSort(col.id)}
+                    sx={{ color: '#888 !important', '& .MuiTableSortLabel-icon': { color: '#666 !important' } }}
+                  >
+                    {col.label}
+                  </TableSortLabel>
+                ) : col.label}
+              </TableCell>
+            ))}
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {cards.map((card, idx) => {
+            const rank = (page - 1) * 48 + idx + 1;
+            const regimeColor = REGIME_COLORS[card.regime || 'unknown'] || '#666';
+            const scoreColor = (card.investment_score || 0) >= 50 ? '#00ff41' : (card.investment_score || 0) >= 30 ? '#ff9800' : '#ff1744';
+            return (
+              <TableRow
+                key={card.id}
+                hover
+                sx={{ cursor: 'pointer', '&:hover': { bgcolor: '#111' } }}
+                onClick={() => navigate(`/card/${card.id}`)}
+              >
+                <TableCell sx={{ color: rank <= 3 ? '#00ff41' : '#888', fontWeight: 700, fontSize: '0.7rem' }}>
+                  {rank}
+                </TableCell>
+                <TableCell>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Avatar src={card.image_small} variant="rounded" sx={{ width: 28, height: 38 }} imgProps={{ loading: 'lazy' }} />
+                    <Box sx={{ minWidth: 0 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.7rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {card.name}
+                        </Typography>
+                        {card.is_blue_chip && <StarIcon sx={{ color: '#ffd700', fontSize: 12 }} />}
+                        {card.rarity_score !== null && card.rarity_score >= 60 && <DiamondIcon sx={{ color: '#e040fb', fontSize: 11 }} />}
+                      </Box>
+                      <Typography variant="body2" sx={{ color: '#555', fontSize: '0.55rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {card.set_name}
+                      </Typography>
+                    </Box>
+                  </Box>
+                </TableCell>
+                <TableCell sx={{ color: '#00ff41', fontWeight: 700, fontSize: '0.75rem', fontFamily: 'monospace' }}>
+                  ${card.current_price.toFixed(2)}
+                </TableCell>
+                <TableCell sx={{ color: scoreColor, fontWeight: 800, fontSize: '0.8rem', fontFamily: 'monospace' }}>
+                  {card.investment_score !== null ? card.investment_score.toFixed(0) : '--'}
+                </TableCell>
+                <TableCell sx={{ color: '#00bcd4', fontSize: '0.7rem', fontFamily: 'monospace' }}>
+                  {card.liquidity_score ?? '--'}
+                </TableCell>
+                <TableCell sx={{ color: '#ff9800', fontSize: '0.7rem', fontFamily: 'monospace' }}>
+                  {card.appreciation_score !== null ? card.appreciation_score.toFixed(0) : '--'}
+                </TableCell>
+                <TableCell sx={{
+                  color: card.appreciation_slope !== null ? (card.appreciation_slope >= 0 ? '#00ff41' : '#ff1744') : '#444',
+                  fontSize: '0.65rem', fontFamily: 'monospace',
+                }}>
+                  {card.appreciation_slope !== null ? `${card.appreciation_slope >= 0 ? '+' : ''}${card.appreciation_slope.toFixed(3)}%` : '--'}
+                </TableCell>
+                <TableCell>
+                  {card.time_to_sell ? (
+                    <TimeToSellBadge value={card.time_to_sell} />
+                  ) : (
+                    <Typography variant="body2" sx={{ color: '#444', fontSize: '0.6rem' }}>--</Typography>
+                  )}
+                </TableCell>
+                <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.65rem', color: card.days_to_breakeven !== null ? (card.days_to_breakeven <= 90 ? '#00ff41' : card.days_to_breakeven <= 365 ? '#ff9800' : '#ff1744') : '#444' }}>
+                  {card.days_to_breakeven !== null ? `${card.days_to_breakeven}d` : '--'}
+                </TableCell>
+                <TableCell>
+                  {card.regime && (
+                    <Chip
+                      label={REGIME_LABELS[card.regime] || card.regime}
+                      size="small"
+                      sx={{
+                        bgcolor: 'transparent',
+                        border: `1px solid ${regimeColor}`,
+                        color: regimeColor,
+                        fontSize: '0.5rem',
+                        height: 18,
+                      }}
+                    />
+                  )}
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </TableContainer>
   );
 }
 
@@ -269,12 +455,14 @@ export default function Screener() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
 
   // Filters
   const [minLiquidity, setMinLiquidity] = useState(0);
   const [minAppreciation, setMinAppreciation] = useState(0);
   const [regime, setRegime] = useState('');
   const [minPrice, setMinPrice] = useState(10);
+  const [maxPrice, setMaxPrice] = useState<string>('');
   const [sortBy, setSortBy] = useState('investment_score');
   const [sortDir, setSortDir] = useState('desc');
   const [search, setSearch] = useState('');
@@ -298,7 +486,7 @@ export default function Screener() {
       if (minLiquidity > 0) params.min_liquidity = String(minLiquidity);
       if (minAppreciation > 0) params.min_appreciation = String(minAppreciation);
       if (regime) params.regime = regime;
-
+      if (maxPrice !== '' && Number(maxPrice) > 0) params.max_price = maxPrice;
       if (search) params.q = search;
 
       const result = await api.getScreenerCards(params);
@@ -310,7 +498,7 @@ export default function Screener() {
     } finally {
       setLoading(false);
     }
-  }, [page, sortBy, sortDir, minLiquidity, minAppreciation, regime, minPrice, search]);
+  }, [page, sortBy, sortDir, minLiquidity, minAppreciation, regime, minPrice, maxPrice, search]);
 
   useEffect(() => {
     fetchCards();
@@ -328,6 +516,16 @@ export default function Screener() {
   useEffect(() => {
     return () => { if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current); };
   }, []);
+
+  const handleTableSort = (col: string) => {
+    if (sortBy === col) {
+      setSortDir(sortDir === 'desc' ? 'asc' : 'desc');
+    } else {
+      setSortBy(col);
+      setSortDir('desc');
+    }
+    setPage(1);
+  };
 
   return (
     <Box sx={{ p: { xs: 1, md: 2 } }}>
@@ -400,7 +598,7 @@ export default function Screener() {
           </Grid>
 
           {/* Regime */}
-          <Grid size={{ xs: 6, sm: 3, md: 2 }}>
+          <Grid size={{ xs: 6, sm: 3, md: 1.5 }}>
             <FormControl size="small" fullWidth>
               <InputLabel>Regime</InputLabel>
               <Select
@@ -418,13 +616,13 @@ export default function Screener() {
           </Grid>
 
           {/* Sort */}
-          <Grid size={{ xs: 6, sm: 3, md: 2 }}>
+          <Grid size={{ xs: 6, sm: 3, md: 1.5 }}>
             <FormControl size="small" fullWidth>
               <InputLabel>Sort By</InputLabel>
               <Select
                 value={sortBy}
                 label="Sort By"
-                onChange={(e) => setSortBy(e.target.value)}
+                onChange={(e) => { setSortBy(e.target.value); setPage(1); }}
               >
                 <MenuItem value="investment_score">Investment Score</MenuItem>
                 <MenuItem value="liquidity_score">Liquidity</MenuItem>
@@ -436,7 +634,7 @@ export default function Screener() {
           </Grid>
 
           {/* Min Price */}
-          <Grid size={{ xs: 6, sm: 3, md: 1 }}>
+          <Grid size={{ xs: 3, sm: 2, md: 1 }}>
             <FormControl size="small" fullWidth>
               <InputLabel>Min $</InputLabel>
               <Select
@@ -452,36 +650,71 @@ export default function Screener() {
               </Select>
             </FormControl>
           </Grid>
+
+          {/* Max Price */}
+          <Grid size={{ xs: 3, sm: 2, md: 1 }}>
+            <FormControl size="small" fullWidth>
+              <InputLabel>Max $</InputLabel>
+              <Select
+                value={maxPrice}
+                label="Max $"
+                onChange={(e) => { setMaxPrice(String(e.target.value)); setPage(1); }}
+              >
+                <MenuItem value="">No max</MenuItem>
+                <MenuItem value="25">$25</MenuItem>
+                <MenuItem value="50">$50</MenuItem>
+                <MenuItem value="100">$100</MenuItem>
+                <MenuItem value="250">$250</MenuItem>
+                <MenuItem value="500">$500</MenuItem>
+              </Select>
+            </FormControl>
+          </Grid>
         </Grid>
       </Paper>
 
-      {/* Results count */}
+      {/* Results count + view toggle */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
         <Typography variant="body2" sx={{ color: '#666' }}>
           {total.toLocaleString()} cards
         </Typography>
-        <FormControl size="small" sx={{ minWidth: 100 }}>
-          <Select
-            value={sortDir}
-            onChange={(e) => setSortDir(e.target.value)}
+        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+          <ToggleButtonGroup
+            value={viewMode}
+            exclusive
+            onChange={(_, v) => v && setViewMode(v)}
             size="small"
-            sx={{ fontSize: '0.75rem' }}
+            sx={{ '& .MuiToggleButton-root': { color: '#666', borderColor: '#333', p: 0.5 }, '& .Mui-selected': { color: '#00ff41 !important', bgcolor: '#111 !important' } }}
           >
-            <MenuItem value="desc">High to Low</MenuItem>
-            <MenuItem value="asc">Low to High</MenuItem>
-          </Select>
-        </FormControl>
+            <ToggleButton value="grid"><ViewModuleIcon sx={{ fontSize: 18 }} /></ToggleButton>
+            <ToggleButton value="table"><ViewListIcon sx={{ fontSize: 18 }} /></ToggleButton>
+          </ToggleButtonGroup>
+          <FormControl size="small" sx={{ minWidth: 100 }}>
+            <Select
+              value={sortDir}
+              onChange={(e) => { setSortDir(e.target.value); setPage(1); }}
+              size="small"
+              sx={{ fontSize: '0.75rem' }}
+            >
+              <MenuItem value="desc">High to Low</MenuItem>
+              <MenuItem value="asc">Low to High</MenuItem>
+            </Select>
+          </FormControl>
+        </Box>
       </Box>
 
-      {/* Card Grid */}
+      {/* Card Grid or Table */}
       {loading ? (
-        <Grid container spacing={1.5}>
-          {Array.from({ length: 12 }).map((_, i) => (
-            <Grid size={{ xs: 6, sm: 4, md: 3, lg: 2 }} key={i}>
-              <Skeleton variant="rounded" height={380} sx={{ bgcolor: '#1a1a1a' }} />
-            </Grid>
-          ))}
-        </Grid>
+        viewMode === 'grid' ? (
+          <Grid container spacing={1.5}>
+            {Array.from({ length: 12 }).map((_, i) => (
+              <Grid size={{ xs: 6, sm: 4, md: 3, lg: 2 }} key={i}>
+                <Skeleton variant="rounded" height={380} sx={{ bgcolor: '#1a1a1a' }} />
+              </Grid>
+            ))}
+          </Grid>
+        ) : (
+          <Skeleton variant="rounded" height={400} sx={{ bgcolor: '#1a1a1a' }} />
+        )
       ) : cards.length === 0 ? (
         <Paper sx={{ p: 4, textAlign: 'center', bgcolor: '#0a0a0a' }}>
           <Typography variant="body1" sx={{ color: '#666' }}>
@@ -491,7 +724,7 @@ export default function Screener() {
             Investment metrics are computed during background sync (every 48 hours) or can be triggered manually.
           </Typography>
         </Paper>
-      ) : (
+      ) : viewMode === 'grid' ? (
         <Grid container spacing={1.5}>
           {cards.map((card, idx) => (
             <Grid size={{ xs: 6, sm: 4, md: 3, lg: 2 }} key={card.id}>
@@ -499,6 +732,8 @@ export default function Screener() {
             </Grid>
           ))}
         </Grid>
+      ) : (
+        <CardTable cards={cards} page={page} onSort={handleTableSort} sortBy={sortBy} sortDir={sortDir} />
       )}
 
       {/* Pagination */}

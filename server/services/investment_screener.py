@@ -12,9 +12,45 @@ from server.models.card import Card
 from server.models.price_history import PriceHistory
 from server.models.sale import Sale
 from server.models.liquidity_history import LiquidityHistory
-from server.services.trading_economics import calc_liquidity_score, calc_breakeven_appreciation
+from server.services.trading_economics import calc_liquidity_score, calc_breakeven_appreciation, estimate_time_to_sell
 
 logger = logging.getLogger(__name__)
+
+# Rarity tiers for collectibility scoring (higher = more collectible)
+RARITY_SCORES: dict[str, int] = {
+    "Special Illustration Rare": 95,
+    "Hyper Rare": 90,
+    "Illustration Rare": 80,
+    "Secret Rare": 75,
+    "Double Rare": 65,
+    "Ultra Rare": 60,
+    "Rare Holo VMAX": 58,
+    "Rare Holo VSTAR": 56,
+    "Rare Holo V": 50,
+    "Rare BREAK": 45,
+    "Rare Holo GX": 48,
+    "Rare Holo EX": 48,
+    "Rare Ultra": 55,
+    "Rare Holo": 35,
+    "Rare": 20,
+    "ACE SPEC Rare": 70,
+    "Amazing Rare": 65,
+    "Shiny Rare": 70,
+    "Shiny Ultra Rare": 80,
+    "Rare Shiny": 60,
+    "Rare Shiny GX": 70,
+    "Rare Rainbow": 75,
+    "Trainer Gallery Rare Holo": 55,
+    "LEGEND": 85,
+    "Radiant Rare": 60,
+}
+
+BLUE_CHIP_POKEMON = {
+    "Charizard", "Pikachu", "Mewtwo", "Mew", "Umbreon", "Rayquaza",
+    "Lugia", "Gengar", "Eevee", "Blastoise", "Venusaur", "Dragonite",
+    "Gyarados", "Alakazam", "Espeon", "Sylveon", "Gardevoir", "Arceus",
+    "Giratina", "Palkia", "Dialga", "Ho-Oh", "Suicune", "Celebi",
+}
 
 
 def calc_steady_appreciation(prices: list[float], dates: list[date_type]) -> dict:
@@ -74,13 +110,13 @@ def calc_steady_appreciation(prices: list[float], dates: list[date_type]) -> dic
     # Convert log slope to daily % change
     slope_pct_per_day = (math.exp(slope) - 1) * 100
 
-    # Win rate: % of days with positive return
+    # Win rate: % of days with strictly positive return (flat days are holds, not wins)
     positive_days = 0
     total_days = 0
     for i in range(1, len(prices)):
         if prices[i] > 0 and prices[i-1] > 0:
             total_days += 1
-            if prices[i] >= prices[i-1]:
+            if prices[i] > prices[i-1]:
                 positive_days += 1
     win_rate = (positive_days / total_days * 100) if total_days > 0 else 0
 
@@ -88,16 +124,18 @@ def calc_steady_appreciation(prices: list[float], dates: list[date_type]) -> dic
     # Weights: slope direction & magnitude (40%), consistency R² (35%), win rate (25%)
     score = 0.0
 
-    # Slope component (0-40): positive slope = good, scaled by magnitude
-    # 0.1% per day = 44% annual, which is excellent
+    # Slope component (0-40): only positive slopes earn points
+    # A declining card should score near zero on slope
     if slope_pct_per_day > 0:
         slope_score = min(40, slope_pct_per_day * 200)  # 0.2%/day = max
     else:
-        slope_score = max(0, 20 + slope_pct_per_day * 100)  # slightly negative still gets some points
+        slope_score = 0  # depreciating cards get zero slope credit
     score += slope_score
 
-    # R² component (0-35): higher = more predictable/steady
-    score += r_squared * 35
+    # R² component (0-35): floor at 0.3 — below that, the trend is noise
+    if r_squared >= 0.3:
+        score += r_squared * 35
+    # Below 0.3 R² = no consistency credit (trend is not statistically meaningful)
 
     # Win rate component (0-25): > 55% = good
     if win_rate >= 55:
@@ -295,10 +333,15 @@ def get_investment_candidates(
         "name": Card.name,
     }
 
-    # Investment score as SQL expression: coalesce(liquidity * 0.4, 0) + coalesce(appreciation * 0.6, 0)
-    investment_score_expr = (
-        func.coalesce(Card.liquidity_score * 0.4, literal(0))
-        + func.coalesce(Card.appreciation_score * 0.6, literal(0))
+    # Investment score as SQL expression: gate model
+    # If liquidity < 15: score = 0 (uninvestable)
+    # Otherwise: appreciation * min(1.0, 0.5 + liquidity/120)
+    investment_score_expr = case(
+        (Card.liquidity_score < 15, literal(0)),
+        else_=(
+            func.coalesce(Card.appreciation_score, literal(0))
+            * func.min(literal(1.0), literal(0.5) + func.coalesce(Card.liquidity_score, literal(0)) / literal(120.0))
+        ),
     )
 
     if sort_by == "investment_score":
@@ -317,14 +360,57 @@ def get_investment_candidates(
 
     results = []
     for card in cards:
-        # Compute investment score inline
-        inv_score = None
-        if card.liquidity_score is not None and card.appreciation_score is not None:
-            inv_score = round(card.liquidity_score * 0.4 + card.appreciation_score * 0.6, 1)
-        elif card.appreciation_score is not None:
-            inv_score = round(card.appreciation_score * 0.6, 1)
-
         breakeven = calc_breakeven_appreciation(card.current_price) if card.current_price else None
+
+        # Rarity premium score (0-100)
+        rarity_score = RARITY_SCORES.get(card.rarity, 10) if card.rarity else 10
+        # Blue-chip Pokemon bonus (+15 points, capped at 100)
+        card_name_first = (card.name or "").split(" ")[0]
+        is_blue_chip = card_name_first in BLUE_CHIP_POKEMON
+        if is_blue_chip:
+            rarity_score = min(100, rarity_score + 15)
+
+        # Breakeven-adjusted slope: net of hurdle rate
+        breakeven_adjusted_slope = None
+        if card.appreciation_slope is not None and breakeven is not None:
+            hurdle_per_day = breakeven / 365  # annualize to daily
+            breakeven_adjusted_slope = round(card.appreciation_slope - hurdle_per_day, 4)
+
+        # Days to breakeven
+        days_to_breakeven = None
+        if card.appreciation_slope is not None and card.appreciation_slope > 0 and breakeven is not None:
+            days_to_breakeven = round(breakeven / card.appreciation_slope)
+
+        # Time to sell estimate
+        time_to_sell = None
+        if card.current_price:
+            # Use sales counts from liquidity data if available
+            from server.models.sale import Sale as SaleModel
+            d30 = (datetime.now(timezone.utc) - timedelta(days=30)).date()
+            d90 = (datetime.now(timezone.utc) - timedelta(days=90)).date()
+            s30 = db.query(func.count(SaleModel.id)).filter(
+                SaleModel.card_id == card.id, SaleModel.order_date >= d30
+            ).scalar() or 0
+            s90 = db.query(func.count(SaleModel.id)).filter(
+                SaleModel.card_id == card.id, SaleModel.order_date >= d90
+            ).scalar() or 0
+            tts = estimate_time_to_sell(card.current_price, s90, s30)
+            time_to_sell = tts
+
+        # Investment score: multiplicative gate model
+        # Liquidity is a prerequisite — below floor, card is uninvestable
+        inv_score = None
+        liq = card.liquidity_score or 0
+        app = card.appreciation_score or 0
+        if liq < 15:
+            inv_score = 0  # Uninvestable — cannot exit position
+        elif card.appreciation_score is not None:
+            # Liquidity modifier: diminishing returns above 50
+            liq_modifier = min(1.0, 0.5 + 0.5 * (liq / 60))
+            # Rarity bonus: 0-15 points
+            rarity_bonus = rarity_score * 0.15
+            # Base = appreciation * liquidity gate + rarity bonus
+            inv_score = round(min(100, app * liq_modifier + rarity_bonus), 1)
 
         results.append({
             "id": card.id,
@@ -335,13 +421,20 @@ def get_investment_candidates(
             "image_small": card.image_small,
             "current_price": card.current_price,
             "price_variant": card.price_variant,
+            "artist": card.artist,
             # Liquidity
             "liquidity_score": card.liquidity_score,
+            "time_to_sell": time_to_sell,
             # Appreciation
             "appreciation_slope": card.appreciation_slope,
             "appreciation_consistency": card.appreciation_consistency,
             "appreciation_win_rate": card.appreciation_win_rate,
             "appreciation_score": card.appreciation_score,
+            "breakeven_adjusted_slope": breakeven_adjusted_slope,
+            "days_to_breakeven": days_to_breakeven,
+            # Collectibility
+            "rarity_score": rarity_score,
+            "is_blue_chip": is_blue_chip,
             # Regime
             "regime": card.cached_regime,
             "adx": card.cached_adx,
