@@ -387,10 +387,11 @@ def get_investment_candidates(
         breakeven = calc_breakeven_appreciation(card.current_price) if card.current_price else None
 
         # Rarity premium score (0-100) with tiered blue-chip bonus
+        # Check ALL words in card name for blue-chip match (handles "Radiant Alakazam", "Eternal Zapdos")
         rarity_score = RARITY_SCORES.get(card.rarity, 10) if card.rarity else 10
-        card_name_first = (card.name or "").split(" ")[0]
-        is_blue_chip = card_name_first in BLUE_CHIP_POKEMON
-        bc_bonus = _blue_chip_bonus(card_name_first)
+        card_words = (card.name or "").split()
+        bc_bonus = max((_blue_chip_bonus(w) for w in card_words), default=0)
+        is_blue_chip = bc_bonus > 0
         rarity_score = min(100, rarity_score + bc_bonus)
 
         # Breakeven-adjusted slope: convert breakeven % to daily continuous rate
