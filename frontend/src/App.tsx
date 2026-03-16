@@ -23,12 +23,14 @@ import DashboardIcon from '@mui/icons-material/Dashboard';
 import ViewModuleIcon from '@mui/icons-material/ViewModule';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import BookmarkIcon from '@mui/icons-material/Bookmark';
+import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const CardExplorer = lazy(() => import('./pages/CardExplorer'));
 const CardDetail = lazy(() => import('./pages/CardDetail'));
 const Trader = lazy(() => import('./pages/Trader'));
 const Watchlist = lazy(() => import('./pages/Watchlist'));
+const Screener = lazy(() => import('./pages/Screener'));
 
 function NavBar() {
   const location = useLocation();
@@ -40,6 +42,7 @@ function NavBar() {
   const navItems = [
     { label: 'Dashboard', path: '/', icon: <DashboardIcon /> },
     { label: 'Explorer', path: '/explore', icon: <ViewModuleIcon /> },
+    { label: 'Screener', path: '/screener', icon: <TrendingUpIcon /> },
     { label: 'AI Trader', path: '/trader', icon: <SmartToyIcon /> },
     { label: 'Watchlist', path: '/watchlist', icon: <BookmarkIcon /> },
   ];
@@ -91,6 +94,19 @@ function NavBar() {
                 }}
               >
                 Explorer
+              </Button>
+              <Button
+                component={Link}
+                to="/screener"
+                startIcon={<TrendingUpIcon />}
+                size="small"
+                sx={{
+                  color: isActive('/screener') ? '#00ff41' : '#666',
+                  textTransform: 'none',
+                  mr: 1,
+                }}
+              >
+                Screener
               </Button>
               <Button
                 component={Link}
@@ -186,6 +202,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/explore" element={<CardExplorer />} />
+            <Route path="/screener" element={<Screener />} />
             <Route path="/card/:id" element={<CardDetail />} />
             <Route path="/trader" element={<Trader />} />
             <Route path="/watchlist" element={<Watchlist />} />
