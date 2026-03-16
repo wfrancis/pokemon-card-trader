@@ -13,6 +13,7 @@ router = APIRouter(prefix="/api/market", tags=["screener"])
 
 @router.get("/screener")
 def screener(
+    q: str = Query(None, description="Search by card name or set name"),
     min_liquidity: int = Query(0, ge=0, le=100, description="Minimum liquidity score"),
     min_appreciation: float = Query(0, ge=0, le=100, description="Minimum appreciation score"),
     regime: str = Query(None, description="Filter by regime: markup, accumulation, distribution, markdown"),
@@ -39,6 +40,7 @@ def screener(
         sort_dir=sort_dir,
         page=page,
         page_size=page_size,
+        q=q,
     )
 
 

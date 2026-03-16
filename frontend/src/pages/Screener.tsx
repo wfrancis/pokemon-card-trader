@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   Box, Paper, Typography, Grid, Avatar, Chip, LinearProgress,
   Pagination, Select, MenuItem, FormControl, InputLabel, Slider,
@@ -299,18 +299,10 @@ export default function Screener() {
       if (minAppreciation > 0) params.min_appreciation = String(minAppreciation);
       if (regime) params.regime = regime;
 
+      if (search) params.q = search;
+
       const result = await api.getScreenerCards(params);
-
-      // Client-side search filter (API doesn't have search on screener)
-      let filtered = result.data;
-      if (search) {
-        const q = search.toLowerCase();
-        filtered = filtered.filter(c =>
-          c.name.toLowerCase().includes(q) || c.set_name.toLowerCase().includes(q)
-        );
-      }
-
-      setCards(filtered);
+      setCards(result.data);
       setTotal(result.total);
       setTotalPages(result.total_pages);
     } catch (err) {
@@ -324,15 +316,18 @@ export default function Screener() {
     fetchCards();
   }, [fetchCards]);
 
-  // Debounced search
-  const [searchTimeout, setSearchTimeout] = useState<NodeJS.Timeout | null>(null);
+  // Debounced search using ref to avoid stale closure issues
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const handleSearchChange = (value: string) => {
-    if (searchTimeout) clearTimeout(searchTimeout);
-    setSearchTimeout(setTimeout(() => {
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    searchTimeoutRef.current = setTimeout(() => {
       setSearch(value);
       setPage(1);
-    }, 300));
+    }, 300);
   };
+  useEffect(() => {
+    return () => { if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current); };
+  }, []);
 
   return (
     <Box sx={{ p: { xs: 1, md: 2 } }}>

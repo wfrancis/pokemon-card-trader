@@ -250,6 +250,7 @@ def get_investment_candidates(
     sort_dir: str = "desc",
     page: int = 1,
     page_size: int = 50,
+    q: str | None = None,
 ) -> dict:
     """Query cached investment metrics for screener UI.
 
@@ -279,7 +280,12 @@ def get_investment_candidates(
     if max_price is not None:
         query = query.filter(Card.current_price <= max_price)
 
+    if q:
+        query = query.filter(Card.name.ilike(f"%{q}%") | Card.set_name.ilike(f"%{q}%"))
+
     # Sorting
+    from sqlalchemy import case, literal
+
     sort_map = {
         "liquidity_score": Card.liquidity_score,
         "appreciation_score": Card.appreciation_score,
@@ -289,10 +295,14 @@ def get_investment_candidates(
         "name": Card.name,
     }
 
-    # Investment score = combined sort (liquidity * 0.4 + appreciation * 0.6)
+    # Investment score as SQL expression: coalesce(liquidity * 0.4, 0) + coalesce(appreciation * 0.6, 0)
+    investment_score_expr = (
+        func.coalesce(Card.liquidity_score * 0.4, literal(0))
+        + func.coalesce(Card.appreciation_score * 0.6, literal(0))
+    )
+
     if sort_by == "investment_score":
-        # Can't do weighted sum in SQLAlchemy easily with nulls, so sort by appreciation_score then liquidity
-        sort_col = Card.appreciation_score
+        sort_col = investment_score_expr
     else:
         sort_col = sort_map.get(sort_by, Card.appreciation_score)
 
@@ -339,13 +349,6 @@ def get_investment_candidates(
             "investment_score": inv_score,
             "breakeven_pct": breakeven,
         })
-
-    # If sorting by investment_score, sort in Python (since it's computed)
-    if sort_by == "investment_score":
-        results.sort(
-            key=lambda x: x["investment_score"] or 0,
-            reverse=(sort_dir == "desc"),
-        )
 
     return {
         "data": results,
