@@ -99,6 +99,11 @@ export const api = {
     );
   },
 
+  getCardFilters: (setName?: string) =>
+    fetchApi<{ sets: string[]; rarities: string[] }>(
+      `/api/cards/filters${setName ? `?set_name=${encodeURIComponent(setName)}` : ''}`
+    ),
+
   getCard: (id: number) => fetchApi<Card>(`/api/cards/${id}`),
 
   getCardPrices: (id: number, condition?: string) =>

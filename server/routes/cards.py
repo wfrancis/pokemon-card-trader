@@ -26,7 +26,7 @@ def list_cards(
     if q:
         query = query.filter(Card.name.ilike(f"%{q}%"))
     if set_name:
-        query = query.filter(Card.set_name.ilike(f"%{set_name}%"))
+        query = query.filter(Card.set_name == set_name)
     if rarity:
         query = query.filter(Card.rarity == rarity)
     if supertype:
@@ -54,6 +54,31 @@ def list_cards(
         "page": page,
         "page_size": page_size,
         "total_pages": (total + page_size - 1) // page_size,
+    }
+
+
+@router.get("/filters")
+def get_filters(
+    set_name: str = Query(None, description="Filter rarities to this set"),
+    db: Session = Depends(get_db),
+):
+    """Return distinct set names and rarities for filter dropdowns."""
+    sets = (
+        db.query(Card.set_name)
+        .filter(Card.is_tracked == True, Card.set_name.isnot(None))
+        .distinct()
+        .order_by(Card.set_name.asc())
+        .all()
+    )
+    rarity_query = db.query(Card.rarity).filter(
+        Card.is_tracked == True, Card.rarity.isnot(None)
+    )
+    if set_name:
+        rarity_query = rarity_query.filter(Card.set_name == set_name)
+    rarities = rarity_query.distinct().order_by(Card.rarity.asc()).all()
+    return {
+        "sets": [s[0] for s in sets],
+        "rarities": [r[0] for r in rarities],
     }
 
 

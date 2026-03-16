@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Box, Paper, Typography, Grid, Chip, Stack, ToggleButton, ToggleButtonGroup, Button, IconButton, Tooltip } from '@mui/material';
+import {
+  Box, Paper, Typography, Grid, Chip, Stack, ToggleButton, ToggleButtonGroup,
+  Button, IconButton, Tooltip, Dialog, DialogTitle, DialogContent, DialogActions, TextField,
+} from '@mui/material';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import BookmarkBorderIcon from '@mui/icons-material/BookmarkBorder';
 import BookmarkIcon from '@mui/icons-material/Bookmark';
@@ -47,6 +50,9 @@ export default function CardDetail() {
     setIsWatchlisted(watchlist.some((w: any) => w.cardId === parseInt(id)));
   }, [id]);
 
+  const [costBasisOpen, setCostBasisOpen] = useState(false);
+  const [costBasisValue, setCostBasisValue] = useState('');
+
   const toggleWatchlist = () => {
     if (!card) return;
     const watchlist = JSON.parse(localStorage.getItem('pkmn_watchlist') || '[]');
@@ -55,15 +61,23 @@ export default function CardDetail() {
       localStorage.setItem('pkmn_watchlist', JSON.stringify(updated));
       setIsWatchlisted(false);
     } else {
-      const costBasis = prompt('Enter cost basis (optional, press Cancel to skip):');
-      watchlist.push({
-        cardId: card.id,
-        costBasis: costBasis ? parseFloat(costBasis) : null,
-        addedAt: new Date().toISOString(),
-      });
-      localStorage.setItem('pkmn_watchlist', JSON.stringify(watchlist));
-      setIsWatchlisted(true);
+      setCostBasisValue('');
+      setCostBasisOpen(true);
     }
+  };
+
+  const handleAddToWatchlist = () => {
+    if (!card) return;
+    const watchlist = JSON.parse(localStorage.getItem('pkmn_watchlist') || '[]');
+    const parsed = parseFloat(costBasisValue);
+    watchlist.push({
+      cardId: card.id,
+      costBasis: !isNaN(parsed) && parsed > 0 ? parsed : null,
+      addedAt: new Date().toISOString(),
+    });
+    localStorage.setItem('pkmn_watchlist', JSON.stringify(watchlist));
+    setIsWatchlisted(true);
+    setCostBasisOpen(false);
   };
 
   useEffect(() => {
@@ -222,14 +236,18 @@ export default function CardDetail() {
 
             {/* Condition Pricing */}
             {sales.length > 0 && (() => {
-              const conditionMap: Record<string, { total: number; count: number }> = {};
+              const conditionMap: Record<string, { prices: number[] }> = {};
               const conditionOrder = ['Near Mint', 'Lightly Played', 'Moderately Played', 'Heavily Played', 'Damaged'];
               sales.forEach(s => {
                 const cond = s.condition || 'Unknown';
-                if (!conditionMap[cond]) conditionMap[cond] = { total: 0, count: 0 };
-                conditionMap[cond].total += s.purchase_price;
-                conditionMap[cond].count += 1;
+                if (!conditionMap[cond]) conditionMap[cond] = { prices: [] };
+                conditionMap[cond].prices.push(s.purchase_price);
               });
+              const getMedian = (arr: number[]): number => {
+                const sorted = [...arr].sort((a, b) => a - b);
+                const mid = Math.floor(sorted.length / 2);
+                return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+              };
               const conditions = Object.entries(conditionMap)
                 .sort((a, b) => {
                   const ai = conditionOrder.indexOf(a[0]);
@@ -237,6 +255,7 @@ export default function CardDetail() {
                   return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
                 });
               if (conditions.length === 0) return null;
+              const LOW_SAMPLE_THRESHOLD = 5;
               return (
                 <Box sx={{ mt: 2.5 }}>
                   <Typography variant="body2" sx={{
@@ -251,23 +270,43 @@ export default function CardDetail() {
                     {/* Header */}
                     <Box sx={{ display: 'flex', bgcolor: '#1a1a2e', px: 1, py: 0.5 }}>
                       <Typography sx={{ flex: 1, color: '#666', fontSize: '0.65rem', fontFamily: 'monospace', fontWeight: 700 }}>CONDITION</Typography>
-                      <Typography sx={{ width: 55, textAlign: 'right', color: '#666', fontSize: '0.65rem', fontFamily: 'monospace', fontWeight: 700 }}>AVG</Typography>
-                      <Typography sx={{ width: 30, textAlign: 'right', color: '#666', fontSize: '0.65rem', fontFamily: 'monospace', fontWeight: 700 }}>#</Typography>
+                      <Typography sx={{ width: 55, textAlign: 'right', color: '#666', fontSize: '0.65rem', fontFamily: 'monospace', fontWeight: 700 }}>MEDIAN</Typography>
+                      <Typography sx={{ width: 55, textAlign: 'right', color: '#666', fontSize: '0.65rem', fontFamily: 'monospace', fontWeight: 700 }}>SALES</Typography>
                     </Box>
-                    {conditions.map(([cond, data]) => (
-                      <Box key={cond} sx={{ display: 'flex', px: 1, py: 0.4, borderTop: '1px solid #222', '&:hover': { bgcolor: '#1a1a2e33' } }}>
-                        <Typography sx={{ flex: 1, color: '#ccc', fontSize: '0.7rem', fontFamily: 'monospace' }}>
-                          {cond === 'Near Mint' ? 'NM' : cond === 'Lightly Played' ? 'LP' : cond === 'Moderately Played' ? 'MP' : cond === 'Heavily Played' ? 'HP' : cond === 'Damaged' ? 'DMG' : cond}
-                        </Typography>
-                        <Typography sx={{ width: 55, textAlign: 'right', color: '#00ff41', fontSize: '0.7rem', fontFamily: '"JetBrains Mono", monospace', fontWeight: 700 }}>
-                          ${(data.total / data.count).toFixed(2)}
-                        </Typography>
-                        <Typography sx={{ width: 30, textAlign: 'right', color: '#888', fontSize: '0.7rem', fontFamily: 'monospace' }}>
-                          {data.count}
-                        </Typography>
-                      </Box>
-                    ))}
+                    {conditions.map(([cond, data]) => {
+                      const count = data.prices.length;
+                      const median = getMedian(data.prices);
+                      const isLowSample = count < LOW_SAMPLE_THRESHOLD;
+                      const sorted = [...data.prices].sort((a, b) => a - b);
+                      const low = sorted[0];
+                      const high = sorted[sorted.length - 1];
+                      return (
+                        <Box key={cond} sx={{ borderTop: '1px solid #222', opacity: isLowSample ? 0.5 : 1, '&:hover': { bgcolor: '#1a1a2e33' } }}>
+                          <Box sx={{ display: 'flex', px: 1, py: 0.4, alignItems: 'center' }}>
+                            <Typography sx={{ flex: 1, color: isLowSample ? '#666' : '#ccc', fontSize: '0.7rem', fontFamily: 'monospace' }}>
+                              {cond === 'Near Mint' ? 'NM' : cond === 'Lightly Played' ? 'LP' : cond === 'Moderately Played' ? 'MP' : cond === 'Heavily Played' ? 'HP' : cond === 'Damaged' ? 'DMG' : cond}
+                            </Typography>
+                            <Typography sx={{ width: 55, textAlign: 'right', color: isLowSample ? '#666' : '#00ff41', fontSize: '0.7rem', fontFamily: '"JetBrains Mono", monospace', fontWeight: 700 }}>
+                              ${median.toFixed(2)}
+                            </Typography>
+                            <Typography sx={{ width: 55, textAlign: 'right', fontSize: '0.65rem', fontFamily: 'monospace', color: isLowSample ? '#ff9800' : '#888' }}>
+                              {count}{isLowSample && ' *'}
+                            </Typography>
+                          </Box>
+                          {count > 1 && (
+                            <Typography sx={{ px: 1, pb: 0.3, color: '#555', fontSize: '0.6rem', fontFamily: 'monospace' }}>
+                              range ${low.toFixed(2)} - ${high.toFixed(2)}
+                            </Typography>
+                          )}
+                        </Box>
+                      );
+                    })}
                   </Box>
+                  {conditions.some(([, data]) => data.prices.length < LOW_SAMPLE_THRESHOLD) && (
+                    <Typography sx={{ mt: 0.5, color: '#ff9800', fontSize: '0.6rem', fontFamily: 'monospace' }}>
+                      * Low sample — fewer than {LOW_SAMPLE_THRESHOLD} sales
+                    </Typography>
+                  )}
                 </Box>
               );
             })()}
@@ -391,6 +430,43 @@ export default function CardDetail() {
 
         </Grid>
       </Grid>
+
+      {/* Cost Basis Dialog */}
+      <Dialog
+        open={costBasisOpen}
+        onClose={() => setCostBasisOpen(false)}
+        PaperProps={{ sx: { bgcolor: '#111', border: '1px solid #1e1e1e', minWidth: 320 } }}
+      >
+        <DialogTitle sx={{ color: '#00bcd4', fontFamily: 'monospace', fontSize: '0.95rem' }}>
+          Add to Watchlist
+        </DialogTitle>
+        <DialogContent>
+          <Typography sx={{ color: '#888', fontSize: '0.8rem', mb: 2 }}>
+            Enter your purchase price to track P&L (optional).
+          </Typography>
+          <TextField
+            autoFocus
+            fullWidth
+            size="small"
+            type="number"
+            label="Cost Basis"
+            placeholder="e.g. 25.00"
+            value={costBasisValue}
+            onChange={(e) => setCostBasisValue(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleAddToWatchlist(); }}
+            InputProps={{ startAdornment: <Typography sx={{ color: '#555', mr: 0.5 }}>$</Typography> }}
+            sx={{ '& .MuiInputLabel-root': { color: '#666' } }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => { setCostBasisOpen(false); }} sx={{ color: '#666' }}>
+            Cancel
+          </Button>
+          <Button onClick={handleAddToWatchlist} sx={{ color: '#00ff41' }}>
+            Add
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

@@ -59,16 +59,32 @@ After each sprint, re-run the 4 personas through the site via Chrome MCP. Track 
 
 ---
 
-### Post-Sprint 1 — [DATE TBD]
+### Post-Sprint 1 — 2026-03-16
 
 | Persona | Stickiness (1-10) | Delta | Notes |
 |---------|-------------------|-------|-------|
-| P1 Jake | | | |
-| P2 Maria | | | |
-| P3 Alex | | | |
-| P4 Sam | | | |
+| P1 Jake | **6/10** | +2 | Loves Screener (9/10) and AI Trader (8/10). Card Detail condition pricing is "gold". Still wants spread/fee calc on every page, price alerts, quantity tracking on Watchlist |
+| P2 Maria | **5/10** | +1 | Card Detail (8/10) and Screener (8/10) strong. Watchlist portfolio tracking works but needs quantity, history chart, cloud sync. Wants graded card pricing (PSA/CGC). Price data inconsistencies hurt trust |
+| P3 Alex | **5/10** | +2 | AI Trader is "star feature" (9/10), Screener (8/10). Card Detail charts need TradingView-level upgrades. Wants exportable charts, weekly recap, sales scatter data populated. Analysis feels stale (week old) |
+| P4 Sam | **6/10** | +2 | Card Detail condition pricing (8/10) is "single best feature". Watchlist P&L (7/10) intuitive. Needs hero search bar on Dashboard, jargon tooltips everywhere, beginner onboarding flow |
 
-**Average: /10 (delta: )**
+**Average: 5.5/10 (delta: +1.75)** — Target was 6.0+, fell short by 0.5
+
+#### Sprint 1 Improvements Recognized
+- Set/Rarity filters: All personas used successfully
+- Condition pricing with median + low sample warnings: Praised by all 4
+- Card image fallbacks: No complaints about missing images
+- Cost basis dialog: Clean UX, praised by Maria and Sam
+- Portfolio P&L on Watchlist: Working, praised by Sam and Jake
+
+#### Remaining Issues (across all personas)
+1. **"Navigation bug"** — All 4 reported random page transitions. Confirmed as Chrome MCP automation artifact (agents clicking nav elements), not a real user bug. Discount this feedback.
+2. **Price data inconsistencies** — Pikachu $5,999.50 market vs $499.95 median sale. Market price vs sale price disconnect not explained to users.
+3. **No jargon tooltips/onboarding** — Sam and Maria both flagged. Sprint 2 item.
+4. **No spread/fee calculations** — Jake's #1 ask. Sprint 2 item.
+5. **Watchlist needs: quantity, history chart, cloud sync** — Maria and Jake both want.
+6. **Stale AI analysis** — Alex noted analysis is a week old. Need more frequent runs.
+7. **Search not prominent enough** — Sam wants hero search on Dashboard.
 
 ---
 

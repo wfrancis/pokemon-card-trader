@@ -54,7 +54,8 @@ export default function Watchlist() {
   };
 
   const updateCostBasis = (cardId: number, value: string) => {
-    const numVal = value === '' ? null : parseFloat(value);
+    const parsed = parseFloat(value);
+    const numVal = value === '' || isNaN(parsed) ? null : parsed;
     const items: WatchlistItem[] = JSON.parse(localStorage.getItem('pkmn_watchlist') || '[]');
     const updated = items.map(w => w.cardId === cardId ? { ...w, costBasis: numVal } : w);
     localStorage.setItem('pkmn_watchlist', JSON.stringify(updated));
@@ -98,7 +99,7 @@ export default function Watchlist() {
                   color: totalPnL != null && totalPnL >= 0 ? '#00ff41' : '#ff1744',
                   fontWeight: 700, fontFamily: '"JetBrains Mono", monospace', fontSize: '1.2rem',
                 }}>
-                  {totalPnL != null && totalPnL >= 0 ? '+' : ''}{totalPnL?.toFixed(2)} ({totalCost > 0 ? ((totalPnL! / totalCost) * 100).toFixed(1) : '0'}%)
+                  {totalPnL != null && totalPnL >= 0 ? '+' : ''}${totalPnL?.toFixed(2)} ({totalCost > 0 ? ((totalPnL! / totalCost) * 100).toFixed(1) : '0'}%)
                 </Typography>
               </Paper>
             </>

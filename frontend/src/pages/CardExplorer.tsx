@@ -2,12 +2,58 @@ import { useEffect, useState, useCallback } from 'react';
 import {
   Box, Paper, Typography, TextField, Grid, Avatar,
   Pagination, InputAdornment, Select, MenuItem, FormControl,
-  InputLabel, Chip, LinearProgress, Skeleton,
+  InputLabel, Chip, LinearProgress, Skeleton, Autocomplete,
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import WhatshotIcon from '@mui/icons-material/Whatshot';
+import StyleIcon from '@mui/icons-material/Style';
 import { useNavigate } from 'react-router-dom';
 import { api, Card, HotCard } from '../services/api';
+
+const cardImageFallback = (
+  <Box sx={{
+    width: '100%',
+    height: '100%',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    bgcolor: '#111',
+    border: '1px solid #222',
+    borderRadius: 1,
+  }}>
+    <StyleIcon sx={{ fontSize: 40, color: '#333', mb: 0.5 }} />
+    <Typography variant="body2" sx={{ color: '#333', fontSize: '0.6rem', fontWeight: 600 }}>
+      NO IMAGE
+    </Typography>
+  </Box>
+);
+
+function CardImage({ src, alt }: { src?: string | null; alt?: string }) {
+  const [failed, setFailed] = useState(false);
+
+  if (!src || failed) {
+    return (
+      <Box sx={{ width: '100%', aspectRatio: '2.5/3.5', mx: 'auto' }}>
+        {cardImageFallback}
+      </Box>
+    );
+  }
+
+  return (
+    <Avatar
+      src={src}
+      variant="rounded"
+      sx={{ width: '100%', height: 'auto', aspectRatio: '2.5/3.5', mx: 'auto' }}
+      imgProps={{
+        loading: 'lazy',
+        onError: () => setFailed(true),
+      }}
+    >
+      {cardImageFallback}
+    </Avatar>
+  );
+}
 
 function HotCardsSection() {
   const [hotCards, setHotCards] = useState<HotCard[]>([]);
@@ -87,12 +133,7 @@ function HotCardsSection() {
               </Box>
 
               <Box sx={{ textAlign: 'center', mb: 1 }}>
-                <Avatar
-                  src={card.image_small}
-                  variant="rounded"
-                  sx={{ width: '100%', height: 'auto', aspectRatio: '2.5/3.5', mx: 'auto' }}
-                  imgProps={{ loading: 'lazy' }}
-                />
+                <CardImage src={card.image_small} alt={card.name} />
               </Box>
 
               <Typography variant="body2" sx={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -168,12 +209,30 @@ export default function CardExplorer() {
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('current_price');
   const [sortDir, setSortDir] = useState('desc');
+  const [filterSet, setFilterSet] = useState<string | null>(null);
+  const [filterRarity, setFilterRarity] = useState<string | null>(null);
+  const [availableSets, setAvailableSets] = useState<string[]>([]);
+  const [availableRarities, setAvailableRarities] = useState<string[]>([]);
   const navigate = useNavigate();
 
   useEffect(() => {
     document.title = 'Explorer | PKMN Trader';
     return () => { document.title = 'PKMN Trader — Pokemon Card Market'; };
   }, []);
+
+  // Fetch filter options (rarities refresh when set changes)
+  useEffect(() => {
+    api.getCardFilters(filterSet ?? undefined)
+      .then((filters) => {
+        setAvailableSets(filters.sets);
+        setAvailableRarities(filters.rarities);
+        // Clear rarity if it's no longer valid for the selected set
+        if (filterRarity && !filters.rarities.includes(filterRarity)) {
+          setFilterRarity(null);
+        }
+      })
+      .catch(console.error);
+  }, [filterSet]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchCards = useCallback(async () => {
     try {
@@ -185,6 +244,8 @@ export default function CardExplorer() {
         has_price: 'true',
       };
       if (search) params.q = search;
+      if (filterSet) params.set_name = filterSet;
+      if (filterRarity) params.rarity = filterRarity;
       const result = await api.getCards(params);
       setCards(result.data);
       setTotal(result.total);
@@ -192,7 +253,7 @@ export default function CardExplorer() {
     } catch (err) {
       console.error(err);
     }
-  }, [page, search, sortBy, sortDir]);
+  }, [page, search, sortBy, sortDir, filterSet, filterRarity]);
 
   useEffect(() => {
     fetchCards();
@@ -232,6 +293,76 @@ export default function CardExplorer() {
           }}
           sx={{ flex: 1, maxWidth: { xs: 'none', sm: 400 }, width: { xs: '100%', sm: 'auto' } }}
         />
+        <Autocomplete
+          size="small"
+          options={availableSets}
+          value={filterSet}
+          onChange={(_, val) => { setFilterSet(val); setPage(1); }}
+          renderInput={(params) => (
+            <TextField
+              {...params}
+              label="Set"
+              placeholder="All Sets"
+              sx={{
+                '& .MuiInputLabel-root': { color: '#888' },
+                '& .MuiInputLabel-root.Mui-focused': { color: '#00bcd4' },
+              }}
+            />
+          )}
+          sx={{
+            minWidth: 200,
+            '& .MuiAutocomplete-clearIndicator': { color: '#666' },
+            '& .MuiAutocomplete-popupIndicator': { color: '#666' },
+          }}
+          slotProps={{
+            paper: {
+              sx: {
+                bgcolor: '#111',
+                border: '1px solid #1e1e1e',
+                '& .MuiAutocomplete-option': {
+                  fontSize: '0.85rem',
+                  '&:hover': { bgcolor: '#1a1a1a' },
+                  '&[aria-selected="true"]': { bgcolor: '#0d2f33' },
+                },
+              },
+            },
+          }}
+        />
+        <Autocomplete
+          size="small"
+          options={availableRarities}
+          value={filterRarity}
+          onChange={(_, val) => { setFilterRarity(val); setPage(1); }}
+          renderInput={(params) => (
+            <TextField
+              {...params}
+              label="Rarity"
+              placeholder="All Rarities"
+              sx={{
+                '& .MuiInputLabel-root': { color: '#888' },
+                '& .MuiInputLabel-root.Mui-focused': { color: '#00bcd4' },
+              }}
+            />
+          )}
+          sx={{
+            minWidth: 180,
+            '& .MuiAutocomplete-clearIndicator': { color: '#666' },
+            '& .MuiAutocomplete-popupIndicator': { color: '#666' },
+          }}
+          slotProps={{
+            paper: {
+              sx: {
+                bgcolor: '#111',
+                border: '1px solid #1e1e1e',
+                '& .MuiAutocomplete-option': {
+                  fontSize: '0.85rem',
+                  '&:hover': { bgcolor: '#1a1a1a' },
+                  '&[aria-selected="true"]': { bgcolor: '#0d2f33' },
+                },
+              },
+            },
+          }}
+        />
         <FormControl size="small" sx={{ minWidth: 150 }}>
           <InputLabel>Sort By</InputLabel>
           <Select value={sortBy} label="Sort By" onChange={(e) => setSortBy(e.target.value)}>
@@ -270,12 +401,7 @@ export default function CardExplorer() {
               onClick={() => navigate(`/card/${card.id}`)}
             >
               <Box sx={{ textAlign: 'center', mb: 1 }}>
-                <Avatar
-                  src={card.image_small}
-                  variant="rounded"
-                  sx={{ width: '100%', height: 'auto', aspectRatio: '2.5/3.5', mx: 'auto' }}
-                  imgProps={{ loading: 'lazy' }}
-                />
+                <CardImage src={card.image_small} alt={card.name} />
               </Box>
               <Typography variant="body2" sx={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {card.name}
