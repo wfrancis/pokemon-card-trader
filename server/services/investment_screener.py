@@ -314,6 +314,7 @@ def get_investment_candidates(
     regime: str | None = None,
     min_price: float = 10.0,
     max_price: float | None = None,
+    min_velocity: float = 0,
     sort_by: str = "investment_score",
     sort_dir: str = "desc",
     page: int = 1,
@@ -422,6 +423,7 @@ def get_investment_candidates(
 
         # Time to sell estimate
         time_to_sell = None
+        sales_per_day = 0
         if card.current_price:
             # Use sales counts from liquidity data if available
             from server.models.sale import Sale as SaleModel
@@ -435,6 +437,7 @@ def get_investment_candidates(
             ).scalar() or 0
             tts = estimate_time_to_sell(card.current_price, s90, s30)
             time_to_sell = tts
+            sales_per_day = round(s30 / 30, 2) if s30 else 0
 
         # Investment score: soft gate model
         # Liquidity scales smoothly from 0→1.0 using sigmoid-like curve
@@ -463,6 +466,7 @@ def get_investment_candidates(
             "artist": card.artist,
             # Liquidity
             "liquidity_score": card.liquidity_score,
+            "sales_per_day": sales_per_day,
             "time_to_sell": time_to_sell,
             # Appreciation
             "appreciation_slope": card.appreciation_slope,
@@ -481,6 +485,11 @@ def get_investment_candidates(
             "investment_score": inv_score,
             "breakeven_pct": breakeven,
         })
+
+    # Post-filter by min_velocity (sales_per_day is computed, not a DB column)
+    if min_velocity > 0:
+        results = [r for r in results if r.get("sales_per_day", 0) >= min_velocity]
+        total = len(results)
 
     return {
         "data": results,

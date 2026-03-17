@@ -60,6 +60,8 @@ def get_card_analysis(
     except Exception:
         pass
     analysis_dict["liquidity_score"] = liquidity_score
+    analysis_dict["sales_30d"] = sales_30d
+    analysis_dict["sales_per_day"] = round(sales_30d / 30, 2) if sales_30d else 0
 
     return {
         "card_id": card_id,

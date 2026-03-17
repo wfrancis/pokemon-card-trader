@@ -1,9 +1,13 @@
 import json
+import re
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import and_, or_
 from server.database import get_db
 from server.models.card import Card
 from server.models.card_set import CardSet
+from server.models.price_history import PriceHistory
 
 router = APIRouter(prefix="/api/cards", tags=["cards"])
 
@@ -89,6 +93,93 @@ def get_card(card_id: int, db: Session = Depends(get_db)):
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Card not found")
     return _card_to_dict(card, db)
+
+
+@router.get("/{card_id}/similar")
+def get_similar_cards(card_id: int, db: Session = Depends(get_db)):
+    """Return similar cards: same Pokemon from different sets + same set different Pokemon."""
+    from fastapi import HTTPException
+
+    card = db.query(Card).filter(Card.id == card_id).first()
+    if not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+
+    # Extract the base Pokemon name from the card name
+    # e.g. "Charizard ex" -> "Charizard", "Pikachu VMAX" -> "Pikachu"
+    pokemon_name = re.split(r'\s+(ex|EX|GX|V|VMAX|VSTAR|BREAK|LV\.X|TAG TEAM|Prism Star)\b', card.name)[0].strip()
+    if not pokemon_name:
+        pokemon_name = card.name
+
+    results = []
+
+    # 1. Same Pokemon, different sets (up to 3)
+    same_pokemon = (
+        db.query(Card)
+        .filter(
+            Card.is_tracked == True,
+            Card.id != card_id,
+            Card.name.ilike(f"%{pokemon_name}%"),
+            Card.set_name != card.set_name,
+            Card.current_price.isnot(None),
+            Card.current_price > 0,
+        )
+        .order_by(Card.current_price.desc())
+        .limit(3)
+        .all()
+    )
+    results.extend(same_pokemon)
+
+    # 2. Same set, different Pokemon (up to 3)
+    same_set = (
+        db.query(Card)
+        .filter(
+            Card.is_tracked == True,
+            Card.id != card_id,
+            Card.set_name == card.set_name,
+            ~Card.name.ilike(f"%{pokemon_name}%"),
+            Card.current_price.isnot(None),
+            Card.current_price > 0,
+        )
+        .order_by(Card.current_price.desc())
+        .limit(3)
+        .all()
+    )
+    results.extend(same_set)
+
+    # Compute 7d price change for each result
+    seven_days_ago = datetime.now(timezone.utc).date() - timedelta(days=7)
+    similar = []
+    seen_ids = set()
+    for c in results:
+        if c.id in seen_ids:
+            continue
+        seen_ids.add(c.id)
+
+        price_change_7d = None
+        if c.current_price:
+            old_price = (
+                db.query(PriceHistory.market_price)
+                .filter(
+                    PriceHistory.card_id == c.id,
+                    PriceHistory.date <= seven_days_ago,
+                    PriceHistory.market_price.isnot(None),
+                )
+                .order_by(PriceHistory.date.desc())
+                .first()
+            )
+            if old_price and old_price[0] and old_price[0] > 0:
+                price_change_7d = ((c.current_price - old_price[0]) / old_price[0]) * 100
+
+        similar.append({
+            "id": c.id,
+            "name": c.name,
+            "set_name": c.set_name,
+            "image_small": c.image_small,
+            "current_price": c.current_price,
+            "price_change_7d": round(price_change_7d, 2) if price_change_7d is not None else None,
+        })
+
+    return {"similar": similar}
 
 
 def _card_to_dict(card: Card, db: Session = None) -> dict:

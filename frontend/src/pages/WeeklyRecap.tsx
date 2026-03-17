@@ -1,12 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Box, Paper, Typography, Grid, Skeleton, Table, TableBody, TableCell,
-  TableContainer, TableHead, TableRow, Avatar, LinearProgress,
+  TableContainer, TableHead, TableRow, Avatar, LinearProgress, IconButton, Tooltip,
 } from '@mui/material';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import WhatshotIcon from '@mui/icons-material/Whatshot';
+import CameraAltIcon from '@mui/icons-material/CameraAlt';
 import { useNavigate } from 'react-router-dom';
+import html2canvas from 'html2canvas';
 import { api, WeeklyRecapResponse } from '../services/api';
 
 function formatDate(dateStr: string) {
@@ -49,6 +51,27 @@ export default function WeeklyRecap() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
+  const recapRef = useRef<HTMLDivElement>(null);
+
+  const handleExport = async () => {
+    if (!recapRef.current || !data) return;
+    const watermark = document.createElement('div');
+    watermark.style.cssText = 'text-align:center;padding:16px;color:#666;font-size:14px;font-family:monospace;';
+    watermark.textContent = 'PKMN TRADER \u2022 pokemon-card-trader.fly.dev';
+    recapRef.current.appendChild(watermark);
+
+    const canvas = await html2canvas(recapRef.current, {
+      backgroundColor: '#0a0a0a',
+      scale: 2,
+    });
+
+    recapRef.current.removeChild(watermark);
+
+    const link = document.createElement('a');
+    link.download = `pkmn_recap_${data.period.start}_${data.period.end}.png`;
+    link.href = canvas.toDataURL();
+    link.click();
+  };
 
   useEffect(() => {
     api.getWeeklyRecap()
@@ -69,11 +92,21 @@ export default function WeeklyRecap() {
   const maxActivity = Math.max(...hottest.map(h => h.activity_score), 1);
 
   return (
-    <Box sx={{ p: { xs: 2, md: 4 }, maxWidth: 1100, mx: 'auto' }}>
+    <Box ref={recapRef} sx={{ p: { xs: 2, md: 4 }, maxWidth: 1100, mx: 'auto' }}>
       {/* Header */}
-      <Typography variant="h4" sx={{ color: '#00bcd4', fontWeight: 700, letterSpacing: 3, mb: 0.5 }}>
-        WEEKLY MARKET RECAP
-      </Typography>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+        <Typography variant="h4" sx={{ color: '#00bcd4', fontWeight: 700, letterSpacing: 3 }}>
+          WEEKLY MARKET RECAP
+        </Typography>
+        <Tooltip title="Export as Image">
+          <IconButton
+            onClick={handleExport}
+            sx={{ color: '#00bcd4', '&:hover': { bgcolor: '#1a1a1a' } }}
+          >
+            <CameraAltIcon />
+          </IconButton>
+        </Tooltip>
+      </Box>
       <Typography sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.85rem', mb: 3 }}>
         {formatDate(period.start)} &mdash; {formatDate(period.end)}
       </Typography>

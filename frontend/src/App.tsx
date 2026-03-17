@@ -25,6 +25,7 @@ import SmartToyIcon from '@mui/icons-material/SmartToy';
 import BookmarkIcon from '@mui/icons-material/Bookmark';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import SummarizeIcon from '@mui/icons-material/Summarize';
+import NotificationsIcon from '@mui/icons-material/Notifications';
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const CardExplorer = lazy(() => import('./pages/CardExplorer'));
@@ -33,6 +34,7 @@ const Trader = lazy(() => import('./pages/Trader'));
 const Watchlist = lazy(() => import('./pages/Watchlist'));
 const Screener = lazy(() => import('./pages/Screener'));
 const WeeklyRecap = lazy(() => import('./pages/WeeklyRecap'));
+const AlertsPage = lazy(() => import('./pages/AlertsPage'));
 
 function NavBar() {
   const location = useLocation();
@@ -47,6 +49,7 @@ function NavBar() {
     { label: 'Screener', path: '/screener', icon: <TrendingUpIcon /> },
     { label: 'AI Trader', path: '/trader', icon: <SmartToyIcon /> },
     { label: 'Watchlist', path: '/watchlist', icon: <BookmarkIcon /> },
+    { label: 'Alerts', path: '/alerts', icon: <NotificationsIcon /> },
     { label: 'Recap', path: '/recap', icon: <SummarizeIcon /> },
   ];
 
@@ -149,6 +152,19 @@ function NavBar() {
               >
                 Recap
               </Button>
+              <Button
+                component={Link}
+                to="/alerts"
+                startIcon={<NotificationsIcon />}
+                size="small"
+                sx={{
+                  color: isActive('/alerts') ? '#ff9800' : '#666',
+                  textTransform: 'none',
+                  ml: 1,
+                }}
+              >
+                Alerts
+              </Button>
             </>
           ) : (
             <>
@@ -223,6 +239,7 @@ export default function App() {
             <Route path="/trader" element={<Trader />} />
             <Route path="/watchlist" element={<Watchlist />} />
             <Route path="/recap" element={<WeeklyRecap />} />
+            <Route path="/alerts" element={<AlertsPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>

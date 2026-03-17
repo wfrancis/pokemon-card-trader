@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 from server.database import get_db
 from server.models.price_alert import PriceAlert
+from server.models.card import Card
 
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
 
@@ -64,20 +65,60 @@ def list_alerts(
     email: str = Query(..., description="Email to list alerts for"),
     db: Session = Depends(get_db),
 ):
-    alerts = db.query(PriceAlert).filter(
-        PriceAlert.email == email,
-        PriceAlert.is_active == True,
-    ).all()
+    rows = (
+        db.query(PriceAlert, Card.name, Card.image_small)
+        .outerjoin(Card, PriceAlert.card_id == Card.id)
+        .filter(
+            PriceAlert.email == email,
+            PriceAlert.is_active == True,
+        )
+        .all()
+    )
     return [
         {
             "id": a.id,
             "card_id": a.card_id,
+            "card_name": card_name,
+            "card_image": card_image,
             "email": a.email,
             "threshold_above": a.threshold_above,
             "threshold_below": a.threshold_below,
             "is_active": a.is_active,
+            "created_at": a.created_at.isoformat() if a.created_at else None,
         }
-        for a in alerts
+        for a, card_name, card_image in rows
+    ]
+
+
+@router.get("/history")
+def alert_history(
+    email: str = Query(..., description="Email to list triggered alerts for"),
+    db: Session = Depends(get_db),
+):
+    rows = (
+        db.query(PriceAlert, Card.name, Card.image_small, Card.current_price)
+        .outerjoin(Card, PriceAlert.card_id == Card.id)
+        .filter(
+            PriceAlert.email == email,
+            PriceAlert.last_triggered_at.isnot(None),
+        )
+        .order_by(PriceAlert.last_triggered_at.desc())
+        .all()
+    )
+    return [
+        {
+            "id": a.id,
+            "card_id": a.card_id,
+            "card_name": card_name,
+            "card_image": card_image,
+            "email": a.email,
+            "threshold_above": a.threshold_above,
+            "threshold_below": a.threshold_below,
+            "is_active": a.is_active,
+            "triggered_at": a.last_triggered_at.isoformat() if a.last_triggered_at else None,
+            "price_at_trigger": current_price,
+        }
+        for a, card_name, card_image, current_price in rows
     ]
 
 

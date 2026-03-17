@@ -19,6 +19,7 @@ def screener(
     regime: str = Query(None, description="Filter by regime: markup, accumulation, distribution, markdown"),
     min_price: float = Query(10.0, ge=0, description="Minimum card price"),
     max_price: float = Query(None, ge=0, description="Maximum card price"),
+    min_velocity: float = Query(0, ge=0, le=50, description="Minimum sales per day (30d avg)"),
     sort_by: str = Query(
         "investment_score",
         description="Sort by: investment_score, liquidity_score, appreciation_score, appreciation_slope, current_price, name",
@@ -36,6 +37,7 @@ def screener(
         regime=regime,
         min_price=min_price,
         max_price=max_price,
+        min_velocity=min_velocity,
         sort_by=sort_by,
         sort_dir=sort_dir,
         page=page,

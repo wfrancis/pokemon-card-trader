@@ -261,8 +261,23 @@ function CardTile({ card, rank }: { card: ScreenerCard; rank: number }) {
         ${card.current_price.toFixed(2)}
       </Typography>
 
-      {/* Time to sell */}
-      <TimeToSellBadge value={card.time_to_sell} />
+      {/* Time to sell + Velocity */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
+        <TimeToSellBadge value={card.time_to_sell} />
+        {card.sales_per_day != null && (
+          <Chip
+            size="small"
+            label={`${card.sales_per_day.toFixed(1)}/day`}
+            sx={{
+              height: 18, fontSize: '0.5rem', fontWeight: 600, fontFamily: 'monospace', mt: 0.3,
+              bgcolor: 'transparent',
+              color: card.sales_per_day >= 1 ? '#00bcd4' : card.sales_per_day >= 0.5 ? '#ff9800' : '#666',
+              border: '1px solid',
+              borderColor: card.sales_per_day >= 1 ? '#00bcd433' : card.sales_per_day >= 0.5 ? '#ff980033' : '#33333366',
+            }}
+          />
+        )}
+      </Box>
 
       {/* Investment Score (big number) with breakdown tooltip */}
       {card.investment_score !== null && (
@@ -499,6 +514,7 @@ export default function Screener() {
   const [sortBy, setSortBy] = useState('investment_score');
   const [sortDir, setSortDir] = useState('desc');
   const [search, setSearch] = useState('');
+  const [minVelocity, setMinVelocity] = useState(0);
   const [investmentGradeOnly, setInvestmentGradeOnly] = useState(false);
 
   useEffect(() => {
@@ -528,6 +544,7 @@ export default function Screener() {
       if (regime) params.regime = regime;
       if (maxPrice !== '' && Number(maxPrice) > 0) params.max_price = maxPrice;
       if (search) params.q = search;
+      if (minVelocity > 0) params.min_velocity = String(minVelocity);
 
       const result = await api.getScreenerCards(params);
       setCards(result.data);
@@ -538,7 +555,7 @@ export default function Screener() {
     } finally {
       setLoading(false);
     }
-  }, [page, sortBy, sortDir, minLiquidity, minAppreciation, regime, minPrice, maxPrice, search, investmentGradeOnly]);
+  }, [page, sortBy, sortDir, minLiquidity, minAppreciation, regime, minPrice, maxPrice, search, minVelocity, investmentGradeOnly]);
 
   useEffect(() => {
     fetchCards();
@@ -648,6 +665,20 @@ export default function Screener() {
               min={0} max={100} step={5}
               size="small"
               sx={{ color: '#ff9800' }}
+            />
+          </Grid>
+
+          {/* Min Velocity */}
+          <Grid size={{ xs: 6, sm: 3, md: 2 }}>
+            <Typography variant="body2" sx={{ color: '#888', fontSize: '0.6rem', mb: 0.5 }}>
+              Min Velocity: {minVelocity} sales/day
+            </Typography>
+            <Slider
+              value={minVelocity}
+              onChange={(_, v) => { setMinVelocity(v as number); setPage(1); }}
+              min={0} max={5} step={0.5}
+              size="small"
+              sx={{ color: '#e040fb' }}
             />
           </Grid>
 

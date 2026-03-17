@@ -47,6 +47,15 @@ export interface Card {
   set_total_cards: number | null;
 }
 
+export interface SimilarCard {
+  id: number;
+  name: string;
+  set_name: string;
+  image_small: string | null;
+  current_price: number | null;
+  price_change_7d: number | null;
+}
+
 export interface PricePoint {
   date: string;
   market_price: number;
@@ -77,6 +86,7 @@ export interface Analysis {
   signal_strength: number;
   total_history_days: number | null;
   liquidity_score: number | null;
+  sales_per_day: number | null;
 }
 
 export interface Mover {
@@ -105,6 +115,9 @@ export const api = {
     ),
 
   getCard: (id: number) => fetchApi<Card>(`/api/cards/${id}`),
+
+  getSimilarCards: (id: number) =>
+    fetchApi<{ similar: SimilarCard[] }>(`/api/cards/${id}/similar`),
 
   getCardPrices: (id: number, condition?: string) =>
     fetchApi<{ card_id: number; card_name: string; condition: string; available_conditions: string[]; data: PricePoint[] }>(
@@ -236,6 +249,9 @@ export const api = {
 
   deleteAlert: (alertId: number) =>
     fetchApi<{ status: string }>(`/api/alerts/${alertId}`, { method: 'DELETE' }),
+
+  getAlertHistory: (email: string) =>
+    fetchApi<AlertHistoryItem[]>(`/api/alerts/history?email=${encodeURIComponent(email)}`),
 
   // Weekly Recap
   getWeeklyRecap: () =>
@@ -555,6 +571,7 @@ export interface ScreenerCard {
   artist: string | null;
   // Liquidity
   liquidity_score: number | null;
+  sales_per_day: number | null;
   time_to_sell: { estimated_days: number; confidence: string; price_tier: string; sales_90d: number; sales_30d: number } | null;
   // Appreciation
   appreciation_slope: number | null;
@@ -615,10 +632,26 @@ export interface AgentAnalysisResult {
 export interface PriceAlertResponse {
   id: number;
   card_id: number;
+  card_name?: string;
+  card_image?: string;
   email: string;
   threshold_above: number | null;
   threshold_below: number | null;
   is_active: boolean;
+  created_at?: string;
+}
+
+export interface AlertHistoryItem {
+  id: number;
+  card_id: number;
+  card_name: string | null;
+  card_image: string | null;
+  email: string;
+  threshold_above: number | null;
+  threshold_below: number | null;
+  is_active: boolean;
+  triggered_at: string | null;
+  price_at_trigger: number | null;
 }
 
 export interface WeeklyRecapResponse {

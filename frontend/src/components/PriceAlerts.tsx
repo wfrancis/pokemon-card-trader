@@ -37,16 +37,17 @@ export default function PriceAlerts() {
       for (const r of results) {
         if (!r || !r.card.current_price) continue;
         const { item, card } = r;
-        if (item.alertAbove != null && card.current_price >= item.alertAbove) {
+        const price = card.current_price!;
+        if (item.alertAbove != null && price >= item.alertAbove) {
           triggered.push({
             cardId: item.cardId, cardName: card.name, setName: card.set_name,
-            currentPrice: card.current_price, type: 'above', target: item.alertAbove,
+            currentPrice: price, type: 'above', target: item.alertAbove,
           });
         }
-        if (item.alertBelow != null && card.current_price <= item.alertBelow) {
+        if (item.alertBelow != null && price <= item.alertBelow) {
           triggered.push({
             cardId: item.cardId, cardName: card.name, setName: card.set_name,
-            currentPrice: card.current_price, type: 'below', target: item.alertBelow,
+            currentPrice: price, type: 'below', target: item.alertBelow,
           });
         }
       }

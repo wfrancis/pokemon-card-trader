@@ -1,20 +1,22 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box, Paper, Typography, Grid, Chip, Stack, ToggleButton, ToggleButtonGroup,
   Button, Dialog, DialogTitle, DialogContent, DialogActions, TextField,
-  Menu, MenuItem,
+  Menu, MenuItem, CardMedia, Card as MuiCard, CardContent, CardActionArea,
 } from '@mui/material';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import BookmarkBorderIcon from '@mui/icons-material/BookmarkBorder';
 import BookmarkIcon from '@mui/icons-material/Bookmark';
+import NotificationsIcon from '@mui/icons-material/Notifications';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
-import { api, Card, PricePoint, SaleRecord, Analysis } from '../services/api';
+import { api, Card, PricePoint, SaleRecord, Analysis, SimilarCard } from '../services/api';
 import PriceChart from '../components/PriceChart';
 import SalesChart from '../components/SalesChart';
 import GlossaryTooltip from '../components/GlossaryTooltip';
+import CardSummary from '../components/CardSummary';
 
 function formatVariant(variant: string): string {
   const map: Record<string, string> = {
@@ -31,7 +33,9 @@ type ChartView = 'sales' | 'history';
 
 export default function CardDetail() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const [card, setCard] = useState<Card | null>(null);
+  const [similarCards, setSimilarCards] = useState<SimilarCard[]>([]);
   const [prices, setPrices] = useState<PricePoint[]>([]);
   const [sales, setSales] = useState<SaleRecord[]>([]);
   const [medianPrice, setMedianPrice] = useState<number | null>(null);
@@ -63,6 +67,42 @@ export default function CardDetail() {
   const [quantityValue, setQuantityValue] = useState('1');
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  const [alertDialogOpen, setAlertDialogOpen] = useState(false);
+  const [alertDialogAbove, setAlertDialogAbove] = useState('');
+  const [alertDialogBelow, setAlertDialogBelow] = useState('');
+  const [alertDialogEmail, setAlertDialogEmail] = useState(() => localStorage.getItem('pkmn_alert_email') || '');
+  const [alertSubmitting, setAlertSubmitting] = useState(false);
+
+  const handleOpenAlertDialog = () => {
+    setAlertDialogAbove('');
+    setAlertDialogBelow('');
+    setAlertDialogEmail(localStorage.getItem('pkmn_alert_email') || '');
+    setAlertDialogOpen(true);
+  };
+
+  const handleSubmitAlert = async () => {
+    if (!card) return;
+    const email = alertDialogEmail.trim();
+    const above = parseFloat(alertDialogAbove);
+    const below = parseFloat(alertDialogBelow);
+    if (!email) return;
+    if (isNaN(above) && isNaN(below)) return;
+    setAlertSubmitting(true);
+    try {
+      localStorage.setItem('pkmn_alert_email', email);
+      await api.createAlert({
+        card_id: card.id,
+        email,
+        threshold_above: !isNaN(above) && above > 0 ? above : null,
+        threshold_below: !isNaN(below) && below > 0 ? below : null,
+      });
+      setAlertDialogOpen(false);
+    } catch {
+      // best effort
+    } finally {
+      setAlertSubmitting(false);
+    }
+  };
 
   const toggleWatchlist = (e: React.MouseEvent<HTMLElement>) => {
     if (!card) return;
@@ -161,6 +201,9 @@ export default function CardDetail() {
     }).catch(() => {});
     api.getCardAnalysis(cardId).then(data => {
       setAnalysis(data.analysis);
+    }).catch(() => {});
+    api.getSimilarCards(cardId).then(data => {
+      setSimilarCards(data.similar);
     }).catch(() => {});
   }, [id]);
 
@@ -316,6 +359,31 @@ export default function CardDetail() {
                           borderColor: isProfitable ? '#00ff4133' : spread > 50 ? '#ff174433' : '#ff980033',
                         }}
                       />
+                      {analysis?.sales_per_day != null && analysis.sales_per_day < 0.5 && (
+                        <Chip
+                          size="small"
+                          label="LOW LIQUIDITY"
+                          sx={{
+                            height: 18, fontSize: '0.6rem', fontWeight: 700, fontFamily: 'monospace',
+                            bgcolor: '#66666622',
+                            color: '#999',
+                            border: '1px solid #66666633',
+                          }}
+                        />
+                      )}
+                      {analysis?.sales_per_day != null && (
+                        <Chip
+                          size="small"
+                          label={`${analysis.sales_per_day.toFixed(1)} sales/day`}
+                          sx={{
+                            height: 18, fontSize: '0.55rem', fontWeight: 600, fontFamily: 'monospace',
+                            bgcolor: 'transparent',
+                            color: analysis.sales_per_day >= 1 ? '#00bcd4' : analysis.sales_per_day >= 0.5 ? '#ff9800' : '#666',
+                            border: '1px solid',
+                            borderColor: analysis.sales_per_day >= 1 ? '#00bcd433' : analysis.sales_per_day >= 0.5 ? '#ff980033' : '#33333366',
+                          }}
+                        />
+                      )}
                       {analysis?.sma_30 != null && analysis?.sma_90 != null && (
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3 }}>
                           {analysis.sma_30 > analysis.sma_90 ? (
@@ -333,6 +401,26 @@ export default function CardDetail() {
                 </Box>
               );
             })()}
+
+            {/* Set Price Alert Button */}
+            <Button
+              variant="outlined"
+              startIcon={<NotificationsIcon />}
+              onClick={handleOpenAlertDialog}
+              sx={{
+                mt: 1.5,
+                width: '100%',
+                maxWidth: 220,
+                fontWeight: 700,
+                fontSize: '0.7rem',
+                fontFamily: 'monospace',
+                color: '#ff9800',
+                borderColor: '#ff980055',
+                '&:hover': { borderColor: '#ff9800', bgcolor: '#ff980011' },
+              }}
+            >
+              Set Price Alert
+            </Button>
 
             {card.price_variant && (
               <Chip
@@ -546,6 +634,7 @@ export default function CardDetail() {
 
         {/* Right: Charts + Analysis */}
         <Grid size={{ xs: 12, md: 9 }}>
+          <CardSummary card={card} sales={sales} medianPrice={medianPrice} analysis={analysis} />
           <Paper sx={{ p: 2, mb: 2 }}>
             {/* Chart view + condition toggles */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 1, md: 2 }, mb: 1, flexWrap: 'wrap' }}>
@@ -588,7 +677,7 @@ export default function CardDetail() {
               )}
               {chartView === 'sales' && sales.length === 0 && (
                 <Typography variant="body2" sx={{ color: '#ff9800', fontFamily: 'monospace', fontSize: '0.7rem' }}>
-                  No sales collected yet — run /api/sync/sales
+                  Sale data not yet available for this card.
                 </Typography>
               )}
             </Box>
@@ -698,6 +787,139 @@ export default function CardDetail() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Price Alert Dialog */}
+      <Dialog
+        open={alertDialogOpen}
+        onClose={() => setAlertDialogOpen(false)}
+        PaperProps={{ sx: { bgcolor: '#111', border: '1px solid #1e1e1e', minWidth: 320 } }}
+      >
+        <DialogTitle sx={{ color: '#ff9800', fontFamily: 'monospace', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: 1 }}>
+          <NotificationsIcon sx={{ fontSize: 20 }} />
+          Set Price Alert
+        </DialogTitle>
+        <DialogContent>
+          <Typography sx={{ color: '#888', fontSize: '0.8rem', mb: 2 }}>
+            Get notified when {card?.name || 'this card'} hits your price targets.
+          </Typography>
+          <TextField
+            autoFocus
+            fullWidth
+            size="small"
+            type="number"
+            label="Alert when price rises above"
+            placeholder="e.g. 50.00"
+            value={alertDialogAbove}
+            onChange={(e) => setAlertDialogAbove(e.target.value)}
+            InputProps={{ startAdornment: <Typography sx={{ color: '#555', mr: 0.5 }}>$</Typography> }}
+            sx={{ mb: 2, '& .MuiInputLabel-root': { color: '#666' } }}
+          />
+          <TextField
+            fullWidth
+            size="small"
+            type="number"
+            label="Alert when price drops below"
+            placeholder="e.g. 20.00"
+            value={alertDialogBelow}
+            onChange={(e) => setAlertDialogBelow(e.target.value)}
+            InputProps={{ startAdornment: <Typography sx={{ color: '#555', mr: 0.5 }}>$</Typography> }}
+            sx={{ mb: 2, '& .MuiInputLabel-root': { color: '#666' } }}
+          />
+          <TextField
+            fullWidth
+            size="small"
+            type="email"
+            label="Email"
+            placeholder="your@email.com"
+            value={alertDialogEmail}
+            onChange={(e) => setAlertDialogEmail(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleSubmitAlert(); }}
+            helperText="Required — where to send alert notifications"
+            sx={{ '& .MuiInputLabel-root': { color: '#666' }, '& .MuiFormHelperText-root': { color: '#555' } }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setAlertDialogOpen(false)} sx={{ color: '#666' }}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleSubmitAlert}
+            disabled={alertSubmitting || !alertDialogEmail.trim() || (isNaN(parseFloat(alertDialogAbove)) && isNaN(parseFloat(alertDialogBelow)))}
+            sx={{ color: '#ff9800', fontWeight: 700 }}
+          >
+            {alertSubmitting ? 'Saving...' : 'Create Alert'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Similar Cards Section */}
+      <Paper sx={{ mt: 2, p: 2 }}>
+        <Typography variant="h3" sx={{ color: '#00bcd4', mb: 2, fontSize: '0.85rem', fontFamily: '"JetBrains Mono", monospace', fontWeight: 700, letterSpacing: 1 }}>
+          SIMILAR CARDS
+        </Typography>
+        {similarCards.length === 0 ? (
+          <Typography sx={{ color: '#555', fontFamily: 'monospace', fontSize: '0.8rem' }}>
+            No similar cards found
+          </Typography>
+        ) : (
+          <Box sx={{
+            display: 'flex',
+            gap: 2,
+            overflowX: 'auto',
+            pb: 1,
+            '&::-webkit-scrollbar': { height: 6 },
+            '&::-webkit-scrollbar-thumb': { bgcolor: '#333', borderRadius: 3 },
+          }}>
+            {similarCards.map((sc) => (
+              <MuiCard
+                key={sc.id}
+                sx={{
+                  minWidth: 160, maxWidth: 180, bgcolor: '#0a0a1a', border: '1px solid #222',
+                  flexShrink: 0, '&:hover': { borderColor: '#00bcd4' },
+                }}
+              >
+                <CardActionArea onClick={() => navigate(`/card/${sc.id}`)}>
+                  {sc.image_small ? (
+                    <CardMedia
+                      component="img"
+                      image={sc.image_small}
+                      alt={sc.name}
+                      sx={{ height: 220, objectFit: 'contain', bgcolor: '#111', p: 1 }}
+                    />
+                  ) : (
+                    <Box sx={{ height: 220, bgcolor: '#111', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Typography sx={{ color: '#333', fontSize: '0.7rem' }}>No Image</Typography>
+                    </Box>
+                  )}
+                  <CardContent sx={{ p: 1, '&:last-child': { pb: 1 } }}>
+                    <Typography sx={{ color: '#ccc', fontSize: '0.75rem', fontWeight: 700, lineHeight: 1.2, mb: 0.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {sc.name}
+                    </Typography>
+                    <Typography sx={{ color: '#666', fontSize: '0.6rem', fontFamily: 'monospace', mb: 0.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {sc.set_name}
+                    </Typography>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Typography sx={{ color: '#00ff41', fontSize: '0.8rem', fontFamily: '"JetBrains Mono", monospace', fontWeight: 700 }}>
+                        {sc.current_price != null ? `$${sc.current_price.toFixed(2)}` : '--'}
+                      </Typography>
+                      {sc.price_change_7d != null && (
+                        <Typography sx={{
+                          color: sc.price_change_7d >= 0 ? '#00ff41' : '#ff1744',
+                          fontSize: '0.65rem',
+                          fontFamily: '"JetBrains Mono", monospace',
+                          fontWeight: 700,
+                        }}>
+                          {sc.price_change_7d >= 0 ? '+' : ''}{sc.price_change_7d.toFixed(1)}%
+                        </Typography>
+                      )}
+                    </Box>
+                  </CardContent>
+                </CardActionArea>
+              </MuiCard>
+            ))}
+          </Box>
+        )}
+      </Paper>
     </Box>
   );
 }
