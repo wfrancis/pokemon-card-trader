@@ -4,7 +4,7 @@ import {
   Pagination, Select, MenuItem, FormControl, InputLabel, Slider,
   Tooltip, Skeleton, TextField, InputAdornment, ToggleButtonGroup, ToggleButton,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TableSortLabel,
-  Switch,
+  Switch, IconButton,
 } from '@mui/material';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import WaterDropIcon from '@mui/icons-material/WaterDrop';
@@ -18,6 +18,7 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CancelIcon from '@mui/icons-material/Cancel';
 import MonetizationOnIcon from '@mui/icons-material/MonetizationOn';
 import ClearIcon from '@mui/icons-material/Clear';
+import DownloadIcon from '@mui/icons-material/Download';
 import { useNavigate } from 'react-router-dom';
 import { api, ScreenerCard, ScreenerStats } from '../services/api';
 import GlossaryTooltip from '../components/GlossaryTooltip';
@@ -836,13 +837,17 @@ export default function Screener() {
   const [totalPages, setTotalPages] = useState(1);
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [simpleMode, setSimpleMode] = useState<boolean>(() => {
-    const stored = localStorage.getItem('pkmn_screener_mode_v3');
+    // Force-clean ALL old localStorage keys that may persist in Chrome sessions
+    localStorage.removeItem('pkmn_screener_mode');
+    localStorage.removeItem('pkmn_screener_mode_v2');
+    localStorage.removeItem('pkmn_screener_mode_v3');
+    const stored = localStorage.getItem('pkmn_screener_mode_v4');
     return stored === null ? true : stored === 'simple';
   });
 
   const handleSimpleModeToggle = (checked: boolean) => {
     setSimpleMode(checked);
-    localStorage.setItem('pkmn_screener_mode_v3', checked ? 'simple' : 'advanced');
+    localStorage.setItem('pkmn_screener_mode_v4', checked ? 'simple' : 'advanced');
   };
 
   // Filters
@@ -905,13 +910,16 @@ export default function Screener() {
       if (isFlip) params.min_profit = '0.01';
 
       const result = await api.getScreenerCards(params);
-      // Client-side ROI% sort for Flip Finder
-      if (isFlip && flipSortMode === 'roi') {
-        result.data.sort((a, b) => {
-          const roiA = a.current_price > 0 && a.est_profit != null ? (a.est_profit / a.current_price) * 100 : -Infinity;
-          const roiB = b.current_price > 0 && b.est_profit != null ? (b.est_profit / b.current_price) * 100 : -Infinity;
-          return roiB - roiA;
-        });
+      // Flip Finder: filter out DOWNTREND cards (risky for flipping) and apply ROI sort
+      if (isFlip) {
+        result.data = result.data.filter(c => c.regime !== 'markdown');
+        if (flipSortMode === 'roi') {
+          result.data.sort((a, b) => {
+            const roiA = a.current_price > 0 && a.est_profit != null ? (a.est_profit / a.current_price) * 100 : -Infinity;
+            const roiB = b.current_price > 0 && b.est_profit != null ? (b.est_profit / b.current_price) * 100 : -Infinity;
+            return roiB - roiA;
+          });
+        }
       }
       setCards(result.data);
       setTotal(result.total);
@@ -1291,12 +1299,12 @@ export default function Screener() {
 
               {/* Sort */}
               <Grid size={{ xs: 6, sm: 3, md: 1.5 }}>
-                <FormControl size="small" fullWidth>
-                  <InputLabel>Sort By</InputLabel>
+                <FormControl size="small" fullWidth disabled={flipFinderActive}>
+                  <InputLabel>{flipFinderActive ? 'Sorted by Profit' : 'Sort By'}</InputLabel>
                   <Select
-                    value={sortBy}
-                    label="Sort By"
-                    onChange={(e) => { setSortBy(e.target.value); setPage(1); }}
+                    value={flipFinderActive ? 'est_profit' : sortBy}
+                    label={flipFinderActive ? 'Sorted by Profit' : 'Sort By'}
+                    onChange={(e) => { if (!flipFinderActive) { setSortBy(e.target.value); setPage(1); } }}
                   >
                     <MenuItem value="investment_score"><GlossaryTooltip term="investment_score">Investment Score</GlossaryTooltip></MenuItem>
                     <MenuItem value="liquidity_score"><GlossaryTooltip term="liquidity_score">Liquidity</GlossaryTooltip></MenuItem>
@@ -1314,9 +1322,38 @@ export default function Screener() {
 
       {/* Results count + view toggle */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-        <Typography variant="body2" sx={{ color: '#666' }}>
-          {total.toLocaleString()} cards
-        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Typography variant="body2" sx={{ color: '#666' }}>
+            {total.toLocaleString()} cards
+          </Typography>
+          {cards.length > 0 && (
+            <Tooltip title="Export current page as CSV">
+              <IconButton
+                size="small"
+                onClick={() => {
+                  const headers = ['Name', 'Set', 'Price', 'Investment Score', 'Liquidity', 'Appreciation', 'Regime', 'Est Profit', 'ROI%', 'Velocity'];
+                  const rows = cards.map(c => [
+                    `"${c.name}"`, `"${c.set_name}"`, c.current_price?.toFixed(2) ?? '',
+                    c.investment_score?.toFixed(1) ?? '', c.liquidity_score?.toFixed(1) ?? '',
+                    c.appreciation_score?.toFixed(1) ?? '', c.regime ?? '',
+                    c.est_profit?.toFixed(2) ?? '',
+                    c.est_profit != null && c.current_price > 0 ? ((c.est_profit / c.current_price) * 100).toFixed(1) : '',
+                    c.sales_per_day?.toFixed(2) ?? '',
+                  ]);
+                  const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+                  const blob = new Blob([csv], { type: 'text/csv' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a'); a.href = url;
+                  a.download = `screener_${new Date().toISOString().slice(0,10)}.csv`;
+                  a.click(); URL.revokeObjectURL(url);
+                }}
+                sx={{ color: '#666', '&:hover': { color: '#00ff41' } }}
+              >
+                <DownloadIcon sx={{ fontSize: 16 }} />
+              </IconButton>
+            </Tooltip>
+          )}
+        </Box>
         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
           <ToggleButtonGroup
             value={viewMode}

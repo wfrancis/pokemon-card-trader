@@ -543,11 +543,11 @@ export default function CardDetail() {
                   href={`https://www.tcgplayer.com/product/${card.tcgplayer_product_id}`}
                   target="_blank"
                   sx={{
-                    color: '#00bcd4', borderColor: '#00bcd433', fontSize: '0.65rem',
-                    '&:hover': { borderColor: '#00bcd4', bgcolor: '#00bcd410' },
+                    color: '#00e676', borderColor: '#00e67644', fontSize: '0.65rem', fontWeight: 700,
+                    '&:hover': { borderColor: '#00e676', bgcolor: '#00e67615' },
                   }}
                 >
-                  TCGPlayer
+                  Buy on TCGPlayer
                 </Button>
               )}
             </Stack>

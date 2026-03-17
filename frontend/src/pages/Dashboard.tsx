@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, Link as RouterLink } from 'react-router-dom';
-import { Box, Paper, Typography, Grid, TextField, InputAdornment, Link } from '@mui/material';
+import { Box, Paper, Typography, Grid, TextField, InputAdornment, Link, Tooltip, Autocomplete } from '@mui/material';
 import ShowChartIcon from '@mui/icons-material/ShowChart';
 import SearchIcon from '@mui/icons-material/Search';
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
@@ -33,6 +33,8 @@ export default function Dashboard() {
   const [index, setIndex] = useState<MarketIndex | null>(null);
   const [hasAlerts, setHasAlerts] = useState(false);
   const [searchValue, setSearchValue] = useState('');
+  const [searchSuggestions, setSearchSuggestions] = useState<{ id: string; name: string; set_name: string; current_price: number }[]>([]);
+  const searchTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const [recap, setRecap] = useState<WeeklyRecapResponse | null>(null);
   const [indexHistory, setIndexHistory] = useState<{ week: string; avg: number }[]>([]);
   const [topFlips, setTopFlips] = useState<ScreenerCard[]>([]);
@@ -101,42 +103,81 @@ export default function Dashboard() {
           )}
         </Box>
 
-        {/* Hero Search */}
-        <TextField
-          fullWidth
-          placeholder="Search any Pokemon card..."
-          value={searchValue}
-          onChange={(e) => setSearchValue(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && searchValue.trim()) {
-              navigate(`/explore?q=${encodeURIComponent(searchValue.trim())}`);
+        {/* Hero Search with Autocomplete */}
+        <Autocomplete
+          freeSolo
+          options={searchSuggestions}
+          getOptionLabel={(opt) => typeof opt === 'string' ? opt : opt.name}
+          filterOptions={(x) => x}
+          inputValue={searchValue}
+          onInputChange={(_, val) => {
+            setSearchValue(val);
+            if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+            if (val.trim().length >= 2) {
+              searchTimerRef.current = setTimeout(() => {
+                api.getCards({ q: val.trim(), page_size: '6' }).then(res => setSearchSuggestions(res.data.map(c => ({ id: c.id, name: c.name, set_name: c.set_name, current_price: c.current_price })))).catch(() => {});
+              }, 300);
+            } else {
+              setSearchSuggestions([]);
             }
           }}
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchIcon sx={{ color: '#555' }} />
-              </InputAdornment>
-            ),
+          onChange={(_, val) => {
+            if (val && typeof val !== 'string') {
+              navigate(`/card/${val.id}`);
+            }
           }}
-          sx={{
-            mb: 2,
-            '& .MuiOutlinedInput-root': {
-              fontSize: '1rem',
-              '& fieldset': { borderColor: '#222' },
-              '&:hover fieldset': { borderColor: '#333' },
-              '&.Mui-focused fieldset': { borderColor: '#00ff41' },
-            },
-          }}
+          renderOption={(props, opt) => (
+            <li {...props} key={typeof opt === 'string' ? opt : opt.id}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+                <Box>
+                  <Typography sx={{ fontSize: '0.8rem', color: '#ccc' }}>{typeof opt === 'string' ? opt : opt.name}</Typography>
+                  {typeof opt !== 'string' && <Typography sx={{ fontSize: '0.6rem', color: '#666' }}>{opt.set_name}</Typography>}
+                </Box>
+                {typeof opt !== 'string' && <Typography sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.75rem', color: '#00ff41', fontWeight: 700 }}>${opt.current_price?.toFixed(2)}</Typography>}
+              </Box>
+            </li>
+          )}
+          componentsProps={{ paper: { sx: { bgcolor: '#111', border: '1px solid #333', '& .MuiAutocomplete-option': { '&:hover': { bgcolor: '#1a2a1a' } } } } }}
+          renderInput={(params) => (
+            <TextField
+              {...params}
+              fullWidth
+              placeholder="Search any Pokemon card..."
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && searchValue.trim()) {
+                  navigate(`/explore?q=${encodeURIComponent(searchValue.trim())}`);
+                }
+              }}
+              InputProps={{
+                ...params.InputProps,
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon sx={{ color: '#555' }} />
+                  </InputAdornment>
+                ),
+              }}
+              sx={{
+                mb: 2,
+                '& .MuiOutlinedInput-root': {
+                  fontSize: '1rem',
+                  '& fieldset': { borderColor: '#222' },
+                  '&:hover fieldset': { borderColor: '#333' },
+                  '&.Mui-focused fieldset': { borderColor: '#00ff41' },
+                },
+              }}
+            />
+          )}
         />
 
         {/* Market Index */}
         <Paper sx={{ p: 2, mb: 2 }}>
           <Grid container spacing={2} alignItems="center">
             <Grid size={{ xs: 12, md: 5 }}>
-              <Typography sx={{ color: '#666', textTransform: 'uppercase', fontSize: '0.6rem', fontFamily: '"JetBrains Mono", monospace', letterSpacing: 1, mb: 0.5 }} title="Average price across all tracked Pokemon cards — shows overall market health">
-                Market Index
-              </Typography>
+              <Tooltip title="Average price across all tracked Pokemon cards — shows overall market health" arrow placement="top">
+                <Typography sx={{ color: '#666', textTransform: 'uppercase', fontSize: '0.6rem', fontFamily: '"JetBrains Mono", monospace', letterSpacing: 1, mb: 0.5, cursor: 'help', borderBottom: '1px dotted #444' }}>
+                  Market Index
+                </Typography>
+              </Tooltip>
               <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, mb: 0.5 }}>
                 <Typography sx={{ color: '#00ff41', fontWeight: 700, fontFamily: '"JetBrains Mono", monospace', fontSize: '2rem', lineHeight: 1 }}>
                   ${index?.avg_price?.toFixed(2) || '—'}
@@ -163,13 +204,13 @@ export default function Dashboard() {
               </Box>
               <Box sx={{ display: 'flex', gap: 3, mt: 1 }}>
                 <Box>
-                  <Typography sx={{ color: '#555', fontSize: '0.55rem', textTransform: 'uppercase', fontFamily: '"JetBrains Mono", monospace' }}>Catalog Value</Typography>
+                  <Tooltip title="Total value of all cards we track, added together" arrow><Typography sx={{ color: '#555', fontSize: '0.55rem', textTransform: 'uppercase', fontFamily: '"JetBrains Mono", monospace', cursor: 'help', borderBottom: '1px dotted #333' }}>Catalog Value</Typography></Tooltip>
                   <Typography sx={{ color: '#00bcd4', fontWeight: 700, fontFamily: '"JetBrains Mono", monospace', fontSize: '1rem' }}>
                     ${index?.total_market_cap ? (index.total_market_cap > 1000 ? `${(index.total_market_cap / 1000).toFixed(1)}K` : index.total_market_cap.toFixed(0)) : '—'}
                   </Typography>
                 </Box>
                 <Box>
-                  <Typography sx={{ color: '#555', fontSize: '0.55rem', textTransform: 'uppercase', fontFamily: '"JetBrains Mono", monospace' }}>Cards Tracked</Typography>
+                  <Tooltip title="Number of Pokemon cards with price data in our database" arrow><Typography sx={{ color: '#555', fontSize: '0.55rem', textTransform: 'uppercase', fontFamily: '"JetBrains Mono", monospace', cursor: 'help', borderBottom: '1px dotted #333' }}>Cards Tracked</Typography></Tooltip>
                   <Typography sx={{ fontWeight: 700, fontFamily: '"JetBrains Mono", monospace', fontSize: '1rem' }}>
                     {index?.total_cards?.toLocaleString() || '—'}
                   </Typography>
@@ -208,11 +249,17 @@ export default function Dashboard() {
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
               <LocalFireDepartmentIcon sx={{ color: '#ff9800', fontSize: 16 }} />
-              <Typography sx={{
-                fontFamily: '"JetBrains Mono", monospace', fontSize: '0.7rem',
-                color: '#ff9800', textTransform: 'uppercase', letterSpacing: 1, fontWeight: 700,
-              }}>
-                Top Flips
+              <Tooltip title="Cards you can buy now and resell for a profit (after seller fees)" arrow>
+                <Typography sx={{
+                  fontFamily: '"JetBrains Mono", monospace', fontSize: '0.7rem',
+                  color: '#ff9800', textTransform: 'uppercase', letterSpacing: 1, fontWeight: 700,
+                  cursor: 'help',
+                }}>
+                  Top Profit Picks
+                </Typography>
+              </Tooltip>
+              <Typography sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.55rem', color: '#666', ml: 0.5 }}>
+                Buy low, sell higher — profit shown after 12.55% fees
               </Typography>
             </Box>
             <Link
@@ -267,22 +314,26 @@ export default function Dashboard() {
                       {profit !== null ? `+$${profit.toFixed(2)}` : '--'}
                     </Typography>
                     {roi !== null && (
-                      <Box sx={{
-                        px: 0.7, py: 0.1, borderRadius: '3px',
-                        bgcolor: roi >= 0 ? 'rgba(0,255,65,0.12)' : 'rgba(255,23,68,0.12)',
-                        border: `1px solid ${roi >= 0 ? 'rgba(0,255,65,0.25)' : 'rgba(255,23,68,0.25)'}`,
-                      }}>
-                        <Typography sx={{
-                          fontFamily: '"JetBrains Mono", monospace', fontSize: '0.6rem', fontWeight: 700,
-                          color: roi >= 0 ? '#00ff41' : '#ff1744',
+                      <Tooltip title="Return on Investment — profit as % of purchase price" arrow>
+                        <Box sx={{
+                          px: 0.7, py: 0.1, borderRadius: '3px',
+                          bgcolor: roi >= 0 ? 'rgba(0,255,65,0.12)' : 'rgba(255,23,68,0.12)',
+                          border: `1px solid ${roi >= 0 ? 'rgba(0,255,65,0.25)' : 'rgba(255,23,68,0.25)'}`,
                         }}>
-                          {roi >= 0 ? '+' : ''}{roi.toFixed(0)}% ROI
-                        </Typography>
-                      </Box>
+                          <Typography sx={{
+                            fontFamily: '"JetBrains Mono", monospace', fontSize: '0.6rem', fontWeight: 700,
+                            color: roi >= 0 ? '#00ff41' : '#ff1744',
+                          }}>
+                            {roi >= 0 ? '+' : ''}{roi.toFixed(0)}% ROI
+                          </Typography>
+                        </Box>
+                      </Tooltip>
                     )}
-                    <Typography sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.6rem', color: '#888' }}>
-                      {card.sales_per_day !== null ? `${card.sales_per_day.toFixed(1)}/day` : '--'}
-                    </Typography>
+                    <Tooltip title="Sales per day — how often this card sells" arrow>
+                      <Typography sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.6rem', color: '#888', cursor: 'help' }}>
+                        {card.sales_per_day !== null ? `${card.sales_per_day.toFixed(1)}/day` : '--'}
+                      </Typography>
+                    </Tooltip>
                   </Box>
                 </Paper>
               );

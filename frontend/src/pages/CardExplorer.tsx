@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import {
   Box, Paper, Typography, TextField, Grid, Avatar,
   Pagination, InputAdornment, Select, MenuItem, FormControl,
-  InputLabel, Chip, LinearProgress, Skeleton, Autocomplete,
+  InputLabel, Chip, LinearProgress, Skeleton, Autocomplete, Tooltip,
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import WhatshotIcon from '@mui/icons-material/Whatshot';
@@ -96,7 +96,7 @@ function HotCardsSection() {
         </Typography>
       </Box>
       <Typography variant="body2" sx={{ color: '#555', mb: 2, fontSize: '0.7rem' }}>
-        Highest volatility, price movement, and bid-ask spread activity
+        Cards with the most buying and selling action right now
       </Typography>
 
       <Grid container spacing={1.5}>
@@ -153,12 +153,14 @@ function HotCardsSection() {
 
               {/* Activity score bar */}
               <Box sx={{ mt: 0.5 }}>
+                <Tooltip title="How much this card is being bought and sold — higher means more popular right now" arrow placement="top">
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.3 }}>
                   <Typography variant="body2" sx={{ fontSize: '0.6rem', color: '#888' }}>Activity</Typography>
                   <Typography variant="body2" sx={{ fontSize: '0.6rem', color: '#ff6d00', fontWeight: 700 }}>
                     {card.activity_score.toFixed(0)}
                   </Typography>
                 </Box>
+                </Tooltip>
                 <LinearProgress
                   variant="determinate"
                   value={Math.min(100, card.activity_score)}
