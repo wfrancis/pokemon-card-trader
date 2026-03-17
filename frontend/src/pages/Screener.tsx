@@ -52,7 +52,7 @@ function StatsBar({ stats }: { stats: ScreenerStats | null }) {
     { label: 'TRACKED', value: stats.total_tracked, color: '#e0e0e0', glossary: '' },
     { label: 'WITH LIQUIDITY', value: stats.with_liquidity_data, color: '#00bcd4', glossary: 'liquidity' },
     { label: 'WITH TREND DATA', value: stats.with_appreciation_data, color: '#ff9800', glossary: 'appreciation_slope' },
-    { label: 'INVESTMENT GRADE', value: stats.investment_grade_count, color: '#00ff41', glossary: 'investment_score' },
+    { label: 'INVESTMENT GRADE', value: stats.investment_grade_count, color: '#00ff41', glossary: 'investment_grade' },
   ];
 
   return (
@@ -457,6 +457,7 @@ function CardTable({ cards, page, onSort, sortBy, sortDir }: {
                 </TableCell>
                 <TableCell>
                   {card.regime && (
+                    <GlossaryTooltip term={card.regime === 'markup' ? 'uptrend' : card.regime === 'markdown' ? 'downtrend' : card.regime}>
                     <Chip
                       label={REGIME_LABELS[card.regime] || card.regime}
                       size="small"
@@ -468,6 +469,7 @@ function CardTable({ cards, page, onSort, sortBy, sortDir }: {
                         height: 18,
                       }}
                     />
+                    </GlossaryTooltip>
                   )}
                 </TableCell>
               </TableRow>

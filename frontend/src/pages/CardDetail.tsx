@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import {
   Box, Paper, Typography, Grid, Chip, Stack, ToggleButton, ToggleButtonGroup,
-  Button, IconButton, Tooltip, Dialog, DialogTitle, DialogContent, DialogActions, TextField,
+  Button, Dialog, DialogTitle, DialogContent, DialogActions, TextField,
   Menu, MenuItem,
 } from '@mui/material';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
@@ -351,7 +351,33 @@ export default function CardDetail() {
             )}
 
             {/* Action Buttons */}
-            <Stack direction="row" spacing={1} sx={{ mt: 2, justifyContent: 'center' }}>
+            <Stack direction="column" spacing={1} sx={{ mt: 2, alignItems: 'center' }}>
+              <Button
+                variant={isWatchlisted ? 'contained' : 'outlined'}
+                onClick={toggleWatchlist}
+                startIcon={isWatchlisted ? <BookmarkIcon /> : <BookmarkBorderIcon />}
+                sx={{
+                  width: '100%',
+                  maxWidth: 220,
+                  fontWeight: 700,
+                  fontSize: '0.75rem',
+                  fontFamily: 'monospace',
+                  ...(isWatchlisted
+                    ? {
+                        bgcolor: '#ffd70022',
+                        color: '#ffd700',
+                        border: '1px solid #ffd70055',
+                        '&:hover': { bgcolor: '#ffd70033', border: '1px solid #ffd700' },
+                      }
+                    : {
+                        color: '#ccc',
+                        borderColor: '#555',
+                        '&:hover': { borderColor: '#ffd700', color: '#ffd700', bgcolor: '#ffd70011' },
+                      }),
+                }}
+              >
+                {isWatchlisted ? 'Saved \u2713' : 'Save to Watchlist'}
+              </Button>
               {card.tcgplayer_product_id && (
                 <Button
                   variant="outlined"
@@ -367,11 +393,6 @@ export default function CardDetail() {
                   TCGPlayer
                 </Button>
               )}
-              <Tooltip title={isWatchlisted ? 'Watchlist options' : 'Add to Watchlist'}>
-                <IconButton onClick={toggleWatchlist} size="small" sx={{ color: isWatchlisted ? '#ffd700' : '#666' }}>
-                  {isWatchlisted ? <BookmarkIcon /> : <BookmarkBorderIcon />}
-                </IconButton>
-              </Tooltip>
             </Stack>
 
 

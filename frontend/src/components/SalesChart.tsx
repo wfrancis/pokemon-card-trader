@@ -1,7 +1,7 @@
 import { useMemo, useState, useCallback, useRef } from 'react';
 import {
   ResponsiveContainer, ComposedChart, Line, XAxis, YAxis,
-  CartesianGrid, Tooltip, ReferenceLine,
+  CartesianGrid, Tooltip, ReferenceLine, ReferenceArea,
 } from 'recharts';
 import { Box, Typography, Stack, Chip, ToggleButton, ToggleButtonGroup, IconButton, Tooltip as MuiTooltip } from '@mui/material';
 import DownloadIcon from '@mui/icons-material/Download';
@@ -43,6 +43,13 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
   const [range, setRange] = useState<TimeRange>('ALL');
   const [selectedConditions, setSelectedConditions] = useState<Set<string>>(new Set());
 
+  // Drag-to-zoom state
+  const [refAreaLeft, setRefAreaLeft] = useState<string>('');
+  const [refAreaRight, setRefAreaRight] = useState<string>('');
+  const [zoomLeft, setZoomLeft] = useState<number | null>(null);
+  const [zoomRight, setZoomRight] = useState<number | null>(null);
+  const [isZoomed, setIsZoomed] = useState(false);
+
   const handleExportPng = async () => {
     if (!chartRef.current) return;
     try {
@@ -55,6 +62,12 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
       console.error('Export failed:', err);
     }
   };
+
+  const resetZoom = useCallback(() => {
+    setZoomLeft(null);
+    setZoomRight(null);
+    setIsZoomed(false);
+  }, []);
 
   // Parse and prepare data
   const chartData = useMemo(() => {
@@ -102,6 +115,12 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
       .sort((a, b) => a.timestamp - b.timestamp);
   }, [sales, range, selectedConditions]);
 
+  // Apply zoom filter
+  const filteredData = useMemo(() => {
+    if (!isZoomed || zoomLeft == null || zoomRight == null) return chartData;
+    return chartData.filter(d => d.timestamp >= zoomLeft && d.timestamp <= zoomRight);
+  }, [chartData, isZoomed, zoomLeft, zoomRight]);
+
   // Get unique conditions present (remap aggregates)
   const conditions = useMemo(() => {
     const set = new Set(sales.map(s =>
@@ -133,13 +152,13 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
     }
   }, []);
 
-  // Compute SMA lines (30d and 180d) from daily medians
+  // Compute SMA lines (30d and 180d) from daily medians — use filteredData for zoom
   const smaData = useMemo(() => {
-    if (chartData.length < 2) return { sma30: [], sma180: [] };
+    if (filteredData.length < 2) return { sma30: [], sma180: [] };
 
     // Group by day → daily median
     const dayMap = new Map<string, number[]>();
-    for (const d of chartData) {
+    for (const d of filteredData) {
       const key = new Date(d.timestamp).toISOString().slice(0, 10);
       if (!dayMap.has(key)) dayMap.set(key, []);
       dayMap.get(key)!.push(d.price);
@@ -167,7 +186,7 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
       sma30: calcSMA(dailyMedians, 30),
       sma180: calcSMA(dailyMedians, 180),
     };
-  }, [chartData]);
+  }, [filteredData]);
 
   if (chartData.length === 0) {
     return (
@@ -179,10 +198,10 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
     );
   }
 
-  // Compute stats with outlier-aware Y-axis (IQR method)
-  const prices = chartData.map(d => d.price);
+  // Compute stats with outlier-aware Y-axis (IQR method) — use filteredData
+  const prices = filteredData.map(d => d.price);
   const sortedPrices = [...prices].sort((a, b) => a - b);
-  const median = sortedPrices[Math.floor(sortedPrices.length / 2)];
+  const median = sortedPrices.length > 0 ? sortedPrices[Math.floor(sortedPrices.length / 2)] : 0;
   const q1 = sortedPrices[Math.floor(sortedPrices.length * 0.25)];
   const q3 = sortedPrices[Math.floor(sortedPrices.length * 0.75)];
   const iqr = q3 - q1;
@@ -195,6 +214,26 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
     ? maxNormalized * 1.15 // Trim outliers from Y-axis
     : maxPrice;
   const padding = (yMax - minPrice) * 0.1 || yMax * 0.1;
+
+  // Zoom mouse handlers
+  const handleMouseDown = (e: any) => {
+    if (e && e.activeLabel != null) setRefAreaLeft(String(e.activeLabel));
+  };
+  const handleMouseMove = (e: any) => {
+    if (refAreaLeft && e && e.activeLabel != null) setRefAreaRight(String(e.activeLabel));
+  };
+  const handleMouseUp = () => {
+    if (refAreaLeft && refAreaRight) {
+      const [left, right] = [Number(refAreaLeft), Number(refAreaRight)].sort((a, b) => a - b);
+      if (left !== right) {
+        setZoomLeft(left);
+        setZoomRight(right);
+        setIsZoomed(true);
+      }
+    }
+    setRefAreaLeft('');
+    setRefAreaRight('');
+  };
 
   return (
     <Box ref={chartRef}>
@@ -209,11 +248,25 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
               <DownloadIcon fontSize="small" />
             </IconButton>
           </MuiTooltip>
+          {isZoomed && (
+            <Chip
+              label="Reset Zoom"
+              size="small"
+              onClick={resetZoom}
+              onDelete={resetZoom}
+              sx={{
+                fontSize: '0.65rem', fontWeight: 600, fontFamily: 'monospace',
+                bgcolor: 'rgba(0,188,212,0.15)', color: '#00bcd4',
+                borderColor: '#00bcd4', border: '1px solid',
+                '& .MuiChip-deleteIcon': { color: '#00bcd4', fontSize: 14 },
+              }}
+            />
+          )}
         </Box>
         <Typography variant="body2" sx={{ color: '#888', fontFamily: 'monospace' }}>
           {(() => {
-            const indiv = chartData.filter(d => !d.isAggregate).length;
-            const agg = chartData.filter(d => d.isAggregate).length;
+            const indiv = filteredData.filter(d => !d.isAggregate).length;
+            const agg = filteredData.filter(d => d.isAggregate).length;
             if (agg > 0 && indiv > 0) return `${indiv} individual + ${agg} daily avg`;
             if (agg > 0) return `${agg} daily avg`;
             return `${indiv} sale${indiv !== 1 ? 's' : ''}`;
@@ -266,41 +319,47 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
       </Box>
 
       {/* Line chart with condition-colored dots */}
-      <Box sx={{ height: { xs: 280, sm: 350, md: 420 } }}>
+      <Box sx={{ height: { xs: 280, sm: 350, md: 420 }, userSelect: 'none' }}>
       <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={(() => {
-          // Merge SMA data points into chartData by timestamp
-          const merged = chartData.map(d => ({ ...d, sma30: undefined as number | undefined, sma180: undefined as number | undefined }));
-          // Add SMA points (only at timestamps where we have data, or as separate points)
-          const sma30Map = new Map(smaData.sma30?.map(s => [s.timestamp, s.value]) || []);
-          const sma180Map = new Map(smaData.sma180?.map(s => [s.timestamp, s.value]) || []);
+        <ComposedChart
+          data={(() => {
+            // Merge SMA data points into filteredData by timestamp
+            const merged = filteredData.map(d => ({ ...d, sma30: undefined as number | undefined, sma180: undefined as number | undefined }));
+            // Add SMA points (only at timestamps where we have data, or as separate points)
+            const sma30Map = new Map(smaData.sma30?.map(s => [s.timestamp, s.value]) || []);
+            const sma180Map = new Map(smaData.sma180?.map(s => [s.timestamp, s.value]) || []);
 
-          // Create a combined timeline with all unique timestamps
-          const allTimestamps = new Set([
-            ...merged.map(d => d.timestamp),
-            ...(smaData.sma30?.map(s => s.timestamp) || []),
-            ...(smaData.sma180?.map(s => s.timestamp) || []),
-          ]);
+            // Create a combined timeline with all unique timestamps
+            const allTimestamps = new Set([
+              ...merged.map(d => d.timestamp),
+              ...(smaData.sma30?.map(s => s.timestamp) || []),
+              ...(smaData.sma180?.map(s => s.timestamp) || []),
+            ]);
 
-          const combined = Array.from(allTimestamps).sort((a, b) => a - b).map(ts => {
-            const existing = merged.find(d => d.timestamp === ts);
-            return {
-              ...(existing || { timestamp: ts, price: null }),
-              sma30: sma30Map.get(ts),
-              sma180: sma180Map.get(ts),
-            };
-          });
-          return combined;
-        })()} margin={{ top: 10, right: 10, bottom: 5, left: 5 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#1a1a1a" vertical={false} />
+            const combined = Array.from(allTimestamps).sort((a, b) => a - b).map(ts => {
+              const existing = merged.find(d => d.timestamp === ts);
+              return {
+                ...(existing || { timestamp: ts, price: null }),
+                sma30: sma30Map.get(ts),
+                sma180: sma180Map.get(ts),
+              };
+            });
+            return combined;
+          })()}
+          margin={{ top: 10, right: 10, bottom: 5, left: 5 }}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+        >
+          <CartesianGrid strokeDasharray="2 4" stroke="#222" vertical={false} />
 
           <XAxis
             dataKey="timestamp"
             type="number"
             domain={['dataMin', 'dataMax']}
-            tick={{ fill: '#555', fontSize: 10, fontFamily: 'monospace' }}
+            tick={{ fill: '#888', fontSize: 11, fontFamily: 'monospace' }}
             tickLine={false}
-            axisLine={{ stroke: '#222' }}
+            axisLine={{ stroke: '#333' }}
             tickFormatter={(ts: number) => {
               const d = new Date(ts);
               if (range === '1W' || range === '1M') {
@@ -314,7 +373,7 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
             dataKey="price"
             type="number"
             domain={[Math.max(0, minPrice - padding), yMax + padding]}
-            tick={{ fill: '#555', fontSize: 10, fontFamily: 'monospace' }}
+            tick={{ fill: '#888', fontSize: 11, fontFamily: 'monospace' }}
             tickLine={false}
             axisLine={false}
             tickFormatter={(v: number) => `$${v.toFixed(v >= 100 ? 0 : 2)}`}
@@ -322,19 +381,20 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
           />
 
           <Tooltip
-            cursor={{ strokeDasharray: '3 3', stroke: '#333' }}
+            cursor={{ strokeDasharray: '3 3', stroke: '#444' }}
             content={({ active, payload }: any) => {
               if (!active || !payload?.length) return null;
               const d = payload[0]?.payload;
-              if (!d) return null;
+              if (!d || d.price == null) return null;
               return (
                 <Box sx={{
                   bgcolor: '#111', border: '1px solid #333', borderRadius: 1,
                   p: 1.5, fontFamily: 'monospace', fontSize: 12, maxWidth: 280,
+                  boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
                 }}>
                   <Typography sx={{ fontWeight: 700, color: '#fff', fontSize: 14, mb: 0.5 }}>
                     ${d.price.toFixed(2)}
-                    {!d.isAggregate && d.shipping > 0 && (
+                    {!d.isAggregate && d.shipping != null && d.shipping > 0 && (
                       <Typography component="span" sx={{ color: '#666', fontSize: 11, ml: 1 }}>
                         +${d.shipping.toFixed(2)} ship
                       </Typography>
@@ -370,12 +430,14 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
               y={median}
               stroke="#ff9800"
               strokeDasharray="6 3"
-              strokeWidth={1}
+              strokeWidth={1.5}
               label={{
                 value: `Median $${median.toFixed(2)}`,
                 fill: '#ff9800',
-                fontSize: 10,
-                position: 'left',
+                fontSize: 11,
+                fontWeight: 600,
+                position: 'insideTopLeft',
+                offset: 5,
               }}
             />
           )}
@@ -391,7 +453,7 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
                 return (
                   <polygon
                     key={`dot-${payload.timestamp}`}
-                    points={`${cx},${cy-6} ${cx+6},${cy} ${cx},${cy+6} ${cx-6},${cy}`}
+                    points={`${cx},${cy-5} ${cx+5},${cy} ${cx},${cy+5} ${cx-5},${cy}`}
                     fill={color}
                     fillOpacity={0.7}
                     stroke={color}
@@ -407,7 +469,7 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
                   key={`dot-${payload.timestamp}`}
                   cx={cx}
                   cy={cy}
-                  r={7}
+                  r={5}
                   fill={color}
                   fillOpacity={0.85}
                   stroke={color}
@@ -440,7 +502,7 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
                   key={`adot-${payload.timestamp}`}
                   cx={cx}
                   cy={cy}
-                  r={10}
+                  r={8}
                   fill={color}
                   fillOpacity={1}
                   stroke="#fff"
@@ -459,7 +521,7 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
             <Line
               dataKey="sma30"
               stroke="#00bcd4"
-              strokeWidth={2}
+              strokeWidth={2.5}
               dot={false}
               connectNulls
               isAnimationActive={false}
@@ -472,11 +534,22 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
             <Line
               dataKey="sma180"
               stroke="#ff6d00"
-              strokeWidth={2}
+              strokeWidth={2.5}
               dot={false}
               connectNulls
               isAnimationActive={false}
               name="6mo SMA"
+            />
+          )}
+
+          {/* Drag-to-zoom highlight area */}
+          {refAreaLeft && refAreaRight && (
+            <ReferenceArea
+              x1={Number(refAreaLeft)}
+              x2={Number(refAreaRight)}
+              strokeOpacity={0.3}
+              fill="#00bcd4"
+              fillOpacity={0.1}
             />
           )}
         </ComposedChart>
@@ -484,9 +557,9 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
       </Box>
 
       {/* Legend */}
-      <Stack direction="row" spacing={{ xs: 1, md: 2 }} sx={{ mt: 1, justifyContent: 'center', flexWrap: 'wrap' }}>
+      <Stack direction="row" spacing={{ xs: 1, md: 2 }} sx={{ mt: 1, justifyContent: 'center', flexWrap: 'wrap', py: 0.5 }}>
         {Object.entries(CONDITION_COLORS).map(([cond, color]) => (
-          <Stack key={cond} direction="row" spacing={0.5} alignItems="center">
+          <Stack key={cond} direction="row" spacing={0.5} alignItems="center" sx={{ opacity: 0.9 }}>
             {cond === 'Daily Average' ? (
               <Box sx={{
                 width: 8, height: 8, bgcolor: color,
@@ -495,21 +568,21 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
             ) : (
               <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: color }} />
             )}
-            <Typography sx={{ fontSize: 10, color: '#666', fontFamily: 'monospace' }}>
+            <Typography sx={{ fontSize: 11, color: '#777', fontFamily: 'monospace', letterSpacing: 0.3 }}>
               {CONDITION_SHORT[cond] || cond}
             </Typography>
           </Stack>
         ))}
         {smaData.sma30 && smaData.sma30.length > 1 && (
-          <Stack direction="row" spacing={0.5} alignItems="center">
-            <Box sx={{ width: 16, height: 2, bgcolor: '#00bcd4', borderRadius: 1 }} />
-            <Typography sx={{ fontSize: 10, color: '#666', fontFamily: 'monospace' }}>30d SMA</Typography>
+          <Stack direction="row" spacing={0.5} alignItems="center" sx={{ opacity: 0.9 }}>
+            <Box sx={{ width: 18, height: 2.5, bgcolor: '#00bcd4', borderRadius: 1 }} />
+            <Typography sx={{ fontSize: 11, color: '#777', fontFamily: 'monospace', letterSpacing: 0.3 }}>30d SMA</Typography>
           </Stack>
         )}
         {smaData.sma180 && smaData.sma180.length > 1 && (
-          <Stack direction="row" spacing={0.5} alignItems="center">
-            <Box sx={{ width: 16, height: 2, bgcolor: '#ff6d00', borderRadius: 1 }} />
-            <Typography sx={{ fontSize: 10, color: '#666', fontFamily: 'monospace' }}>6mo SMA</Typography>
+          <Stack direction="row" spacing={0.5} alignItems="center" sx={{ opacity: 0.9 }}>
+            <Box sx={{ width: 18, height: 2.5, bgcolor: '#ff6d00', borderRadius: 1 }} />
+            <Typography sx={{ fontSize: 11, color: '#777', fontFamily: 'monospace', letterSpacing: 0.3 }}>6mo SMA</Typography>
           </Stack>
         )}
       </Stack>

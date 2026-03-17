@@ -47,4 +47,12 @@ export const GLOSSARY: Record<string, string> = {
   market_price: 'Current listed price from TCGPlayer marketplace',
   median_sold: 'Middle value of recent completed sales — half sold above, half below',
   condition_pricing: 'Median prices broken down by card condition (NM, LP, MP, HP, DMG)',
+  appreciation:
+    'The rate at which a card\'s price has been increasing over time',
+  accumulating:
+    'Market phase where buyers are steadily acquiring cards, often before a price increase',
+  distributing:
+    'Market phase where holders are selling cards, often before a price decrease',
+  investment_grade:
+    'Cards rated as top investment picks based on our scoring system — high liquidity, strong appreciation, and favorable market regime',
 };

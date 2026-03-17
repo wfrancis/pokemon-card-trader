@@ -117,7 +117,111 @@ All feature work is prioritized by 4 user personas who evaluate the live site vi
 | Alex (P3) | Content Creator | Charts, data stories, exportable visuals, fresh analysis |
 | Sam (P4) | Casual Newcomer | "Are my cards worth anything?", simple UX, no jargon |
 
-**Baseline scores (2026-03-16): avg 3.75/10** — all 4 reported broken scroll-snap navigation as #1 dealbreaker.
+**Score progression:** 3.75 → 5.5 → 7.25 → 8.125 (current, post-Sprint 3)
+
+### Current Sprint: Sprint 4 — Target 9.0-9.5
+
+**Goal:** Push all 4 personas to 9.0+ individual scores (avg 9.0-9.5). This is the "daily driver / would pay" threshold.
+
+---
+
+#### Phase 1: Quick Wins (Small complexity — implement first, parallel agents)
+
+| # | Feature | Persona | What to Build |
+|---|---------|---------|---------------|
+| 2 | First-Visit Onboarding | Sam +0.4 | Dismissible banner on Dashboard: "Found old Pokemon cards? Search any card to see what it's worth!" with quick-link examples (e.g. "Try: Charizard"). localStorage `pkmn_first_visit_dismissed` flag. Auto-dismiss after first card view. |
+| 7 | Labeled Watchlist Button | Sam +0.2 | Replace tiny bookmark icon on CardDetail with a visible MUI Button: "Save to Watchlist" / "Saved ✓" (filled). Add one-line explainer on Watchlist page header: "Cards you're tracking. Add cost basis to see your profit." |
+| 9 | Screener Glossary Tooltips | Sam +0.2 | Add `<GlossaryTooltip>` wrappers to Screener column headers: Invest Score, Liquidity, Appreciation, Regime. Also wrap regime tag chips (ACCUMULATING, DISTRIBUTING, UPTREND, DOWNTREND) with tooltips. Add terms to `glossary.ts` if missing. |
+
+#### Phase 2: Medium Features (implement with parallel agents)
+
+| # | Feature | Persona | What to Build |
+|---|---------|---------|---------------|
+| 1 | Dedicated Alerts Page | Jake, Maria, Alex | **Backend:** `GET /api/alerts/history` — return triggered alert log. **Frontend:** New `/alerts` page + nav item. Table of active alerts (card, thresholds, email, created date). History tab showing fired alerts. Global email config input at top (saves to localStorage, syncs to all alerts). **CardDetail:** Add prominent "Set Price Alert" button below spread analysis that opens alert dialog directly (not buried in bookmark menu). |
+| 3 | Plain-English Card Summary | Sam +0.3 | **Frontend:** New `<CardSummary>` component on CardDetail, placed below card image/name, above charts. Template: "This card is worth ~${nmPrice} in Near Mint condition. {salesCount > 0 ? `It sold ${salesCount} times in the last 30 days.` : `No recent sales recorded.`} {trend}." Replace any "run /api/sync" developer messages with "Sale data not yet available for this card." |
+| 5 | Velocity in Buy Zone | Jake +0.3 | **Backend:** Add `sales_per_day` to spread analysis response (sales_30d / 30). **Frontend:** Show "X.X sales/day" badge near spread analysis. Update Buy Zone logic: `TIGHT SPREAD` + velocity < 0.5/day → "LOW LIQUIDITY" (gray). Add velocity to Screener as sortable column + "Min Velocity" slider filter. |
+| 6 | Recap Export PNG | Alex +0.2 | Add "Export as Image" button to WeeklyRecap page header. Use html2canvas at 2x resolution with black bg. Add "PKMN TRADER • pokemon-card-trader.fly.dev" watermark text at bottom of captured area. Download as `pkmn_recap_{date}.png`. |
+| 10 | Similar Cards | Jake, Maria, Sam | **Backend:** `GET /api/cards/{id}/similar` — return up to 6 cards: first 3 = same Pokemon name (different sets), next 3 = same set (different Pokemon), sorted by price. **Frontend:** Horizontal scrollable row at bottom of CardDetail with card thumbnails, name, set, price, 7d change. Click navigates to that card. |
+
+#### Phase 3: Complex Feature
+
+| # | Feature | Persona | What to Build |
+|---|---------|---------|---------------|
+| 4 | Portfolio Value Chart | Maria +0.4 | **Frontend-only approach:** On Watchlist page, compute portfolio value from watchlist cards × quantities using price history data. Fetch price history for all watchlist card IDs via `GET /api/cards/{id}/prices`. Plot Recharts LineChart showing total value over last 30 days. Secondary dashed line for total cost basis (flat). Show "Portfolio up/down X% this month" summary stat. |
+| 8 | Watchlist Sparklines | Jake +0.2 | Fetch 14-day price history for each watchlist card. Render Recharts `<Sparkline>` (tiny 80x30px line chart) in a new column. Add "7d %" column showing 7-day price change with green/red coloring. |
+
+---
+
+#### Expected Score Impact
+
+| Persona | Current | Sprint 4 Items | Expected |
+|---------|---------|----------------|----------|
+| P1 Jake | 8.0 | #1 Alerts, #5 Velocity, #8 Sparklines, #10 Similar | 9.0-9.2 |
+| P2 Maria | 8.0 | #1 Alerts, #4 Portfolio Chart, #10 Similar | 9.0-9.2 |
+| P3 Alex | 8.5 | #1 Alerts, #6 Recap Export | 9.0-9.2 |
+| P4 Sam | 8.0 | #1 Alerts, #2 Onboarding, #3 Summary, #7 Button, #9 Tooltips, #10 Similar | 9.2-9.5 |
+
+#### Execution Plan
+
+Each phase follows a full cycle: implement → build check → deploy → QA → fix → deploy → persona eval → record scores.
+
+```
+=== PHASE 1: Quick Wins (#2, #7, #9) ===
+1a. IMPLEMENT  → 3 parallel agents (items #2, #7, #9)
+1b. BUILD      → TypeScript check, fix compile errors
+1c. DEPLOY     → fly deploy
+1d. QA/TEST    → Chrome MCP agent tests Phase 1 features on live site
+1e. FIX        → Developer agents fix all QA bugs
+1f. DEPLOY     → fly deploy (if fixes needed)
+1g. PERSONA    → Deploy all 4 persona agents to score via Chrome MCP
+1h. SCORE      → Record Phase 1 scores in tasks/scoring.md
+
+=== PHASE 2: Medium Features (#1, #3, #5, #6, #10) ===
+2a. IMPLEMENT  → 5 parallel agents (items #1, #3, #5, #6, #10)
+2b. BUILD      → TypeScript check, fix compile errors
+2c. DEPLOY     → fly deploy
+2d. QA/TEST    → Chrome MCP agent tests Phase 2 features on live site
+2e. FIX        → Developer agents fix all QA bugs
+2f. DEPLOY     → fly deploy (if fixes needed)
+2g. PERSONA    → Deploy all 4 persona agents to score via Chrome MCP
+2h. SCORE      → Record Phase 2 scores in tasks/scoring.md
+
+=== PHASE 3: Complex Features (#4, #8) ===
+3a. IMPLEMENT  → 2 parallel agents (items #4, #8)
+3b. BUILD      → TypeScript check, fix compile errors
+3c. DEPLOY     → fly deploy
+3d. QA/TEST    → Chrome MCP agent tests Phase 3 features on live site
+3e. FIX        → Developer agents fix all QA bugs
+3f. DEPLOY     → fly deploy (if fixes needed)
+3g. PERSONA    → Deploy all 4 persona agents to final score via Chrome MCP
+3h. SCORE      → Record final Sprint 4 scores in tasks/scoring.md
+3i. EVALUATE   → If any persona < 9.0, extract gaps, loop back
+```
+
+**Rules:**
+- Every persona score after every phase gets recorded (not just final)
+- QA bugs must hit zero before persona eval
+- Persona eval always on live Fly.io via Chrome MCP, never localhost
+- If Phase 1 personas flag regressions, fix before starting Phase 2
+
+---
+
+#### Deferred to Sprint 5
+
+- Flip P&L Tracker / Trade Journal (Jake) — medium
+- Multi-Lot Tracking per card (Maria) — medium
+- Social Card OG Image Previews (Alex) — medium
+- Simple/Pro Dashboard Toggle (Sam) — medium
+- Historical Recap Archive (Alex) — medium
+- Set-Level Analytics (Maria) — medium
+- Embeddable Chart Widgets (Alex) — large
+- Card Comparison View (Alex) — large
+- Mobile-Responsive Layout (Sam) — large
+
+**SMTP Configuration (already deployed):**
+```bash
+fly secrets set SMTP_HOST=smtp.gmail.com SMTP_PORT=465 SMTP_USER=wbfranci@gmail.com SMTP_PASS=<app-password> ALERT_EMAIL_FROM=wbfranci@gmail.com
+```
 
 ### Sprint Execution Loop
 

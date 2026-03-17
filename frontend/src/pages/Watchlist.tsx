@@ -97,6 +97,11 @@ export default function Watchlist() {
           {rows.length} cards
         </Typography>
       </Box>
+      <Box sx={{ mb: 2 }}>
+        <Typography variant="body2" sx={{ color: '#888', fontSize: '0.8rem' }}>
+          Cards you're tracking. Add a cost basis to see your profit.
+        </Typography>
+      </Box>
 
       {/* Portfolio Summary */}
       {rows.length > 0 && (
