@@ -7,6 +7,7 @@ import { Box, Typography, Stack, Chip, ToggleButton, ToggleButtonGroup, IconButt
 import DownloadIcon from '@mui/icons-material/Download';
 import html2canvas from 'html2canvas';
 import { SaleRecord } from '../services/api';
+import GlossaryTooltip from './GlossaryTooltip';
 
 interface Props {
   sales: SaleRecord[];
@@ -576,13 +577,13 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
         {smaData.sma30 && smaData.sma30.length > 1 && (
           <Stack direction="row" spacing={0.5} alignItems="center" sx={{ opacity: 0.9 }}>
             <Box sx={{ width: 18, height: 2.5, bgcolor: '#00bcd4', borderRadius: 1 }} />
-            <Typography sx={{ fontSize: 11, color: '#777', fontFamily: 'monospace', letterSpacing: 0.3 }}>30d SMA</Typography>
+            <Typography sx={{ fontSize: 11, color: '#777', fontFamily: 'monospace', letterSpacing: 0.3 }}><GlossaryTooltip term="sma_30d">30d SMA</GlossaryTooltip></Typography>
           </Stack>
         )}
         {smaData.sma180 && smaData.sma180.length > 1 && (
           <Stack direction="row" spacing={0.5} alignItems="center" sx={{ opacity: 0.9 }}>
             <Box sx={{ width: 18, height: 2.5, bgcolor: '#ff6d00', borderRadius: 1 }} />
-            <Typography sx={{ fontSize: 11, color: '#777', fontFamily: 'monospace', letterSpacing: 0.3 }}>6mo SMA</Typography>
+            <Typography sx={{ fontSize: 11, color: '#777', fontFamily: 'monospace', letterSpacing: 0.3 }}><GlossaryTooltip term="sma_180d">6mo SMA</GlossaryTooltip></Typography>
           </Stack>
         )}
       </Stack>

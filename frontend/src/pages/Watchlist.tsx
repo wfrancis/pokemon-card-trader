@@ -211,7 +211,7 @@ export default function Watchlist() {
                 </Typography>
               </Paper>
               <Paper sx={{ p: 1.5, flex: 1, minWidth: 120, textAlign: 'center' }}>
-                <Typography sx={{ color: '#666', fontSize: '0.6rem', textTransform: 'uppercase', fontFamily: 'monospace' }}>P&L</Typography>
+                <Typography sx={{ color: '#666', fontSize: '0.6rem', textTransform: 'uppercase', fontFamily: 'monospace' }}><GlossaryTooltip term="pnl">P&L</GlossaryTooltip></Typography>
                 <Typography sx={{
                   color: totalPnL != null && totalPnL >= 0 ? '#00ff41' : '#ff1744',
                   fontWeight: 700, fontFamily: '"JetBrains Mono", monospace', fontSize: '1.2rem',
@@ -261,13 +261,13 @@ export default function Watchlist() {
                 {totalCost > 0 && (
                   <>
                     <Box>
-                      <Typography sx={{ color: '#555', fontFamily: 'monospace', fontSize: '0.6rem', textTransform: 'uppercase' }}>Cost Basis</Typography>
+                      <Typography sx={{ color: '#555', fontFamily: 'monospace', fontSize: '0.6rem', textTransform: 'uppercase' }}><GlossaryTooltip term="cost_basis">Cost Basis</GlossaryTooltip></Typography>
                       <Typography sx={{ color: '#888', fontFamily: '"JetBrains Mono", monospace', fontWeight: 700, fontSize: '1rem' }}>
                         ${totalCost.toFixed(2)}
                       </Typography>
                     </Box>
                     <Box>
-                      <Typography sx={{ color: '#555', fontFamily: 'monospace', fontSize: '0.6rem', textTransform: 'uppercase' }}>P&L</Typography>
+                      <Typography sx={{ color: '#555', fontFamily: 'monospace', fontSize: '0.6rem', textTransform: 'uppercase' }}><GlossaryTooltip term="pnl">P&L</GlossaryTooltip></Typography>
                       <Typography sx={{
                         fontFamily: '"JetBrains Mono", monospace', fontWeight: 700, fontSize: '1rem',
                         color: totalPnL != null && totalPnL >= 0 ? '#00ff41' : '#ff1744',
@@ -302,7 +302,7 @@ export default function Watchlist() {
                       tick={{ fill: '#555', fontSize: 10, fontFamily: 'monospace' }}
                       tickFormatter={(v: number) => `$${v.toFixed(0)}`}
                       stroke="#333"
-                      domain={['auto', 'auto']}
+                      domain={totalCost > 0 ? [Math.min(totalCost * 0.9, Math.min(...chartData.map(d => d.value))), 'auto'] : ['auto', 'auto']}
                     />
                     <Tooltip
                       contentStyle={{ backgroundColor: '#0a0a1a', border: '1px solid #333', fontFamily: '"JetBrains Mono", monospace', fontSize: 12 }}
