@@ -4,6 +4,7 @@ import {
   Pagination, Select, MenuItem, FormControl, InputLabel, Slider,
   Tooltip, Skeleton, TextField, InputAdornment, ToggleButtonGroup, ToggleButton,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TableSortLabel,
+  Switch,
 } from '@mui/material';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import WaterDropIcon from '@mui/icons-material/WaterDrop';
@@ -13,6 +14,10 @@ import ViewModuleIcon from '@mui/icons-material/ViewModule';
 import ViewListIcon from '@mui/icons-material/ViewList';
 import DiamondIcon from '@mui/icons-material/Diamond';
 import StarIcon from '@mui/icons-material/Star';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import CancelIcon from '@mui/icons-material/Cancel';
+import MonetizationOnIcon from '@mui/icons-material/MonetizationOn';
+import ClearIcon from '@mui/icons-material/Clear';
 import { useNavigate } from 'react-router-dom';
 import { api, ScreenerCard, ScreenerStats } from '../services/api';
 import GlossaryTooltip from '../components/GlossaryTooltip';
@@ -165,6 +170,93 @@ function TimeToSellBadge({ value }: { value: { estimated_days: number; confidenc
         }}
       />
     </Tooltip>
+  );
+}
+
+function getValueBadge(card: ScreenerCard): { label: string; color: string; bgcolor: string } {
+  const score = card.investment_score ?? 0;
+  const slope = card.breakeven_adjusted_slope;
+  if (score >= 70 && slope !== null && slope > 0) {
+    return { label: 'Good Value', color: '#000', bgcolor: '#00ff41' };
+  }
+  if (score < 30 || (slope !== null && slope < -0.1)) {
+    return { label: 'Overpriced', color: '#fff', bgcolor: '#ff1744' };
+  }
+  return { label: 'Fair', color: '#000', bgcolor: '#ff9800' };
+}
+
+function isGoodBuy(card: ScreenerCard): boolean {
+  return (card.investment_score ?? 0) >= 70 && card.breakeven_adjusted_slope !== null && card.breakeven_adjusted_slope > 0;
+}
+
+function SimpleCardTile({ card }: { card: ScreenerCard }) {
+  const navigate = useNavigate();
+  const badge = getValueBadge(card);
+  const trend7d = card.appreciation_slope !== null ? card.appreciation_slope * 7 : null;
+
+  return (
+    <Paper
+      sx={{
+        p: 1,
+        cursor: 'pointer',
+        transition: 'all 0.15s',
+        border: '1px solid #1e1e1e',
+        '&:hover': {
+          borderColor: '#00bcd4',
+          transform: 'translateY(-2px)',
+        },
+      }}
+      onClick={() => navigate(`/card/${card.id}`)}
+    >
+      {/* Card image */}
+      <Box sx={{ textAlign: 'center', mb: 0.5 }}>
+        <Avatar
+          src={card.image_small}
+          variant="rounded"
+          sx={{ width: '100%', height: 'auto', aspectRatio: '2.5/3.5', mx: 'auto' }}
+          imgProps={{ loading: 'lazy' }}
+        />
+      </Box>
+
+      {/* Name + Set */}
+      <Typography variant="body2" sx={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: '0.75rem' }}>
+        {card.name}
+      </Typography>
+      <Typography variant="body2" sx={{ color: '#666', fontSize: '0.6rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        {card.set_name}
+      </Typography>
+
+      {/* Price */}
+      <Typography variant="body1" sx={{ fontWeight: 700, color: '#00ff41', mt: 0.5, fontSize: '0.95rem', fontFamily: 'monospace' }}>
+        ${card.current_price.toFixed(2)}
+      </Typography>
+
+      {/* 7d trend */}
+      {trend7d !== null && (
+        <Typography variant="body2" sx={{
+          fontSize: '0.7rem',
+          fontFamily: 'monospace',
+          color: trend7d >= 0 ? '#00ff41' : '#ff1744',
+          mt: 0.3,
+        }}>
+          {trend7d >= 0 ? '+' : ''}{trend7d.toFixed(1)}% / 7d
+        </Typography>
+      )}
+
+      {/* Value badge */}
+      <Chip
+        label={badge.label}
+        size="small"
+        sx={{
+          mt: 0.5,
+          bgcolor: badge.bgcolor,
+          color: badge.color,
+          fontWeight: 700,
+          fontSize: '0.65rem',
+          height: 22,
+        }}
+      />
+    </Paper>
   );
 }
 
@@ -350,6 +442,103 @@ function CardTile({ card, rank }: { card: ScreenerCard; rank: number }) {
   );
 }
 
+function SimpleCardTable({ cards, page, onSort, sortBy, sortDir }: {
+  cards: ScreenerCard[];
+  page: number;
+  onSort: (col: string) => void;
+  sortBy: string;
+  sortDir: string;
+}) {
+  const navigate = useNavigate();
+  const columns: { id: string; label: string; width?: number; sortable?: boolean }[] = [
+    { id: 'rank', label: '#', width: 40 },
+    { id: 'name', label: 'Card', sortable: true },
+    { id: 'current_price', label: 'Price', width: 80, sortable: true },
+    { id: 'trend', label: '7d Trend', width: 90 },
+    { id: 'good_buy', label: 'Good Buy?', width: 90 },
+  ];
+
+  return (
+    <TableContainer component={Paper} sx={{ bgcolor: '#0a0a0a', border: '1px solid #1a1a1a' }}>
+      <Table size="small" sx={{ '& td, & th': { borderColor: '#1a1a1a', py: 0.75 } }}>
+        <TableHead>
+          <TableRow>
+            {columns.map((col) => (
+              <TableCell
+                key={col.id}
+                sx={{ color: '#888', fontSize: '0.7rem', fontWeight: 600, width: col.width }}
+              >
+                {col.sortable ? (
+                  <TableSortLabel
+                    active={sortBy === col.id}
+                    direction={sortBy === col.id ? (sortDir as 'asc' | 'desc') : 'desc'}
+                    onClick={() => onSort(col.id)}
+                    sx={{ color: '#888 !important', '& .MuiTableSortLabel-icon': { color: '#666 !important' } }}
+                  >
+                    {col.label}
+                  </TableSortLabel>
+                ) : col.label}
+              </TableCell>
+            ))}
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {cards.map((card, idx) => {
+            const rank = (page - 1) * 48 + idx + 1;
+            const trend7d = card.appreciation_slope !== null ? card.appreciation_slope * 7 : null;
+            const goodBuy = isGoodBuy(card);
+            return (
+              <TableRow
+                key={card.id}
+                hover
+                sx={{ cursor: 'pointer', '&:hover': { bgcolor: '#111' } }}
+                onClick={() => navigate(`/card/${card.id}`)}
+              >
+                <TableCell sx={{ color: '#888', fontWeight: 700, fontSize: '0.75rem' }}>
+                  {rank}
+                </TableCell>
+                <TableCell>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Avatar src={card.image_small} variant="rounded" sx={{ width: 32, height: 44 }} imgProps={{ loading: 'lazy' }} />
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.75rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {card.name}
+                      </Typography>
+                      <Typography variant="body2" sx={{ color: '#555', fontSize: '0.6rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {card.set_name}
+                      </Typography>
+                    </Box>
+                  </Box>
+                </TableCell>
+                <TableCell sx={{ color: '#00ff41', fontWeight: 700, fontSize: '0.85rem', fontFamily: 'monospace' }}>
+                  ${card.current_price.toFixed(2)}
+                </TableCell>
+                <TableCell sx={{
+                  fontFamily: 'monospace', fontSize: '0.75rem', fontWeight: 600,
+                  color: trend7d !== null ? (trend7d >= 0 ? '#00ff41' : '#ff1744') : '#444',
+                }}>
+                  {trend7d !== null ? `${trend7d >= 0 ? '+' : ''}${trend7d.toFixed(1)}%` : '--'}
+                </TableCell>
+                <TableCell>
+                  {goodBuy ? (
+                    <Tooltip title="High investment score with positive growth after fees">
+                      <CheckCircleIcon sx={{ color: '#00ff41', fontSize: 22 }} />
+                    </Tooltip>
+                  ) : (
+                    <Tooltip title="Does not meet Good Buy criteria (score 70+ and positive growth after fees)">
+                      <CancelIcon sx={{ color: '#444', fontSize: 18 }} />
+                    </Tooltip>
+                  )}
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </TableContainer>
+  );
+}
+
 function CardTable({ cards, page, onSort, sortBy, sortDir }: {
   cards: ScreenerCard[];
   page: number;
@@ -504,6 +693,15 @@ export default function Screener() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
+  const [simpleMode, setSimpleMode] = useState<boolean>(() => {
+    const stored = localStorage.getItem('pkmn_screener_mode');
+    return stored === null ? true : stored === 'simple';
+  });
+
+  const handleSimpleModeToggle = (checked: boolean) => {
+    setSimpleMode(checked);
+    localStorage.setItem('pkmn_screener_mode', checked ? 'simple' : 'advanced');
+  };
 
   // Filters
   const [minLiquidity, setMinLiquidity] = useState(0);
@@ -516,6 +714,7 @@ export default function Screener() {
   const [search, setSearch] = useState('');
   const [minVelocity, setMinVelocity] = useState(0);
   const [investmentGradeOnly, setInvestmentGradeOnly] = useState(false);
+  const [flipFinderActive, setFlipFinderActive] = useState(false);
 
   useEffect(() => {
     document.title = 'Screener | PKMN Trader';
@@ -584,6 +783,36 @@ export default function Screener() {
     setPage(1);
   };
 
+  const activateFlipFinder = () => {
+    setFlipFinderActive(true);
+    setInvestmentGradeOnly(false);
+    setSortBy('liquidity_score');
+    setSortDir('desc');
+    setMinLiquidity(30);
+    setMinVelocity(0.5);
+    setMinAppreciation(0);
+    setRegime('');
+    setMinPrice(2);
+    setMaxPrice('');
+    setSearch('');
+    setPage(1);
+  };
+
+  const clearAllFilters = () => {
+    setFlipFinderActive(false);
+    setInvestmentGradeOnly(false);
+    setMinLiquidity(0);
+    setMinAppreciation(0);
+    setRegime('');
+    setMinPrice(10);
+    setMaxPrice('');
+    setSortBy('investment_score');
+    setSortDir('desc');
+    setSearch('');
+    setMinVelocity(0);
+    setPage(1);
+  };
+
   return (
     <Box sx={{ p: { xs: 1, md: 2 } }}>
       {/* Header */}
@@ -597,32 +826,108 @@ export default function Screener() {
         Find cards that are consistently liquid AND have steady price appreciation. Sorted by combined investment score.
       </Typography>
 
+      {/* Simple / Advanced Mode Toggle */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+        <Typography variant="body2" sx={{ color: simpleMode ? '#666' : '#00ff41', fontSize: '0.75rem', fontWeight: simpleMode ? 400 : 700 }}>
+          Advanced
+        </Typography>
+        <Switch
+          checked={simpleMode}
+          onChange={(e) => handleSimpleModeToggle(e.target.checked)}
+          size="small"
+          sx={{
+            '& .MuiSwitch-switchBase.Mui-checked': { color: '#00bcd4' },
+            '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: '#00bcd4' },
+            '& .MuiSwitch-track': { bgcolor: '#333' },
+          }}
+        />
+        <Typography variant="body2" sx={{ color: simpleMode ? '#00bcd4' : '#666', fontSize: '0.75rem', fontWeight: simpleMode ? 700 : 400 }}>
+          Simple
+        </Typography>
+        {simpleMode && (
+          <Typography variant="body2" sx={{ color: '#555', fontSize: '0.65rem', ml: 1 }}>
+            Showing simplified view — toggle Advanced for full data
+          </Typography>
+        )}
+      </Box>
+
       {/* Stats */}
-      <StatsBar stats={stats} />
+      {!simpleMode && <StatsBar stats={stats} />}
 
       {/* Filters */}
       <Paper sx={{ p: 2, mb: 2, bgcolor: '#0a0a0a', border: '1px solid #1a1a1a' }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
           <FilterListIcon sx={{ color: '#666', fontSize: 18 }} />
           <Typography variant="body2" sx={{ color: '#888', fontWeight: 600 }}>FILTERS</Typography>
-          <Chip
-            label="Investment Grade"
-            size="small"
-            onClick={() => { setInvestmentGradeOnly(!investmentGradeOnly); setPage(1); }}
-            sx={{
-              bgcolor: investmentGradeOnly ? '#00ff41' : 'transparent',
-              color: investmentGradeOnly ? '#000' : '#00ff41',
-              border: '1px solid #00ff41',
-              fontWeight: 600,
-              fontSize: '0.6rem',
-              height: 24,
-              cursor: 'pointer',
-            }}
-          />
+          {simpleMode && (
+            <Typography variant="body2" sx={{ color: '#555', fontSize: '0.6rem' }}>
+              (Search + price only — switch to Advanced for more)
+            </Typography>
+          )}
+          {!simpleMode && (
+            <Chip
+              icon={<MonetizationOnIcon sx={{ fontSize: 14, color: flipFinderActive ? '#000' : '#00ff41' }} />}
+              label="FLIP FINDER"
+              size="small"
+              onClick={() => { if (flipFinderActive) { clearAllFilters(); } else { activateFlipFinder(); } }}
+              sx={{
+                bgcolor: flipFinderActive ? '#00ff41' : 'transparent',
+                color: flipFinderActive ? '#000' : '#00ff41',
+                border: '1px solid #00ff41',
+                fontWeight: 700,
+                fontSize: '0.6rem',
+                height: 24,
+                cursor: 'pointer',
+                '&:hover': { bgcolor: flipFinderActive ? '#00cc33' : '#00ff4118' },
+              }}
+            />
+          )}
+          {!simpleMode && (
+            <Chip
+              label="Investment Grade"
+              size="small"
+              onClick={() => { setInvestmentGradeOnly(!investmentGradeOnly); setFlipFinderActive(false); setPage(1); }}
+              sx={{
+                bgcolor: investmentGradeOnly ? '#00ff41' : 'transparent',
+                color: investmentGradeOnly ? '#000' : '#00ff41',
+                border: '1px solid #00ff41',
+                fontWeight: 600,
+                fontSize: '0.6rem',
+                height: 24,
+                cursor: 'pointer',
+              }}
+            />
+          )}
+          {(flipFinderActive || investmentGradeOnly || minLiquidity > 0 || minAppreciation > 0 || regime || minVelocity > 0 || minPrice !== 10 || maxPrice !== '' || search) && (
+            <Chip
+              icon={<ClearIcon sx={{ fontSize: 14, color: '#ff1744' }} />}
+              label="CLEAR FILTERS"
+              size="small"
+              onClick={clearAllFilters}
+              sx={{
+                bgcolor: 'transparent',
+                color: '#ff1744',
+                border: '1px solid #ff174466',
+                fontWeight: 600,
+                fontSize: '0.6rem',
+                height: 24,
+                cursor: 'pointer',
+                '&:hover': { bgcolor: '#ff174418' },
+              }}
+            />
+          )}
         </Box>
+        {!simpleMode && flipFinderActive && (
+          <Box sx={{ mb: 1.5, p: 1, bgcolor: '#00ff4110', border: '1px solid #00ff4133', borderRadius: 1 }}>
+            <Typography variant="body2" sx={{ color: '#00ff41', fontSize: '0.65rem', fontWeight: 600 }}>
+              <MonetizationOnIcon sx={{ fontSize: 13, mr: 0.5, verticalAlign: 'middle' }} />
+              Showing cards where you can buy below median sale price with decent sales velocity. Min 0.5 sales/day, liquidity 30+.
+            </Typography>
+          </Box>
+        )}
         <Grid container spacing={2} alignItems="center">
           {/* Search */}
-          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+          <Grid size={{ xs: 12, sm: 6, md: simpleMode ? 6 : 3 }}>
             <TextField
               placeholder="Search cards..."
               size="small"
@@ -638,89 +943,8 @@ export default function Screener() {
             />
           </Grid>
 
-          {/* Min Liquidity */}
-          <Grid size={{ xs: 6, sm: 3, md: 2 }}>
-            <Typography variant="body2" sx={{ color: '#888', fontSize: '0.6rem', mb: 0.5 }}>
-              <WaterDropIcon sx={{ fontSize: 12, mr: 0.3, verticalAlign: 'middle' }} />
-              Min <GlossaryTooltip term="liquidity_score">Liquidity</GlossaryTooltip>: {minLiquidity}
-            </Typography>
-            <Slider
-              value={minLiquidity}
-              onChange={(_, v) => { setMinLiquidity(v as number); setPage(1); }}
-              min={0} max={100} step={5}
-              size="small"
-              sx={{ color: '#00bcd4' }}
-            />
-          </Grid>
-
-          {/* Min Appreciation */}
-          <Grid size={{ xs: 6, sm: 3, md: 2 }}>
-            <Typography variant="body2" sx={{ color: '#888', fontSize: '0.6rem', mb: 0.5 }}>
-              <TrendingUpIcon sx={{ fontSize: 12, mr: 0.3, verticalAlign: 'middle' }} />
-              Min <GlossaryTooltip term="appreciation_slope">Appreciation</GlossaryTooltip>: {minAppreciation}
-            </Typography>
-            <Slider
-              value={minAppreciation}
-              onChange={(_, v) => { setMinAppreciation(v as number); setPage(1); }}
-              min={0} max={100} step={5}
-              size="small"
-              sx={{ color: '#ff9800' }}
-            />
-          </Grid>
-
-          {/* Min Velocity */}
-          <Grid size={{ xs: 6, sm: 3, md: 2 }}>
-            <Typography variant="body2" sx={{ color: '#888', fontSize: '0.6rem', mb: 0.5 }}>
-              Min Velocity: {minVelocity} sales/day
-            </Typography>
-            <Slider
-              value={minVelocity}
-              onChange={(_, v) => { setMinVelocity(v as number); setPage(1); }}
-              min={0} max={5} step={0.5}
-              size="small"
-              sx={{ color: '#e040fb' }}
-            />
-          </Grid>
-
-          {/* Regime */}
-          <Grid size={{ xs: 6, sm: 3, md: 1.5 }}>
-            <FormControl size="small" fullWidth>
-              <InputLabel><GlossaryTooltip term="regime">Regime</GlossaryTooltip></InputLabel>
-              <Select
-                value={regime}
-                label="Regime"
-                onChange={(e) => { setRegime(e.target.value); setPage(1); }}
-              >
-                <MenuItem value="">All</MenuItem>
-                <MenuItem value="markup">Uptrend</MenuItem>
-                <MenuItem value="accumulation">Accumulating</MenuItem>
-                <MenuItem value="distribution">Distributing</MenuItem>
-                <MenuItem value="markdown">Downtrend</MenuItem>
-              </Select>
-            </FormControl>
-          </Grid>
-
-          {/* Sort */}
-          <Grid size={{ xs: 6, sm: 3, md: 1.5 }}>
-            <FormControl size="small" fullWidth>
-              <InputLabel>Sort By</InputLabel>
-              <Select
-                value={sortBy}
-                label="Sort By"
-                onChange={(e) => { setSortBy(e.target.value); setPage(1); }}
-              >
-                <MenuItem value="investment_score"><GlossaryTooltip term="investment_score">Investment Score</GlossaryTooltip></MenuItem>
-                <MenuItem value="liquidity_score"><GlossaryTooltip term="liquidity_score">Liquidity</GlossaryTooltip></MenuItem>
-                <MenuItem value="appreciation_score"><GlossaryTooltip term="appreciation_slope">Appreciation</GlossaryTooltip></MenuItem>
-                <MenuItem value="appreciation_consistency"><GlossaryTooltip term="appreciation_consistency">Consistency (R²)</GlossaryTooltip></MenuItem>
-                <MenuItem value="appreciation_slope"><GlossaryTooltip term="appreciation_slope">Daily Growth</GlossaryTooltip></MenuItem>
-                <MenuItem value="current_price">Price</MenuItem>
-              </Select>
-            </FormControl>
-          </Grid>
-
-          {/* Min Price */}
-          <Grid size={{ xs: 3, sm: 2, md: 1 }}>
+          {/* Min Price — always visible */}
+          <Grid size={{ xs: 3, sm: 2, md: simpleMode ? 3 : 1 }}>
             <FormControl size="small" fullWidth>
               <InputLabel>Min $</InputLabel>
               <Select
@@ -737,8 +961,8 @@ export default function Screener() {
             </FormControl>
           </Grid>
 
-          {/* Max Price */}
-          <Grid size={{ xs: 3, sm: 2, md: 1 }}>
+          {/* Max Price — always visible */}
+          <Grid size={{ xs: 3, sm: 2, md: simpleMode ? 3 : 1 }}>
             <FormControl size="small" fullWidth>
               <InputLabel>Max $</InputLabel>
               <Select
@@ -755,6 +979,92 @@ export default function Screener() {
               </Select>
             </FormControl>
           </Grid>
+
+          {/* Advanced-only filters */}
+          {!simpleMode && (
+            <>
+              {/* Min Liquidity */}
+              <Grid size={{ xs: 6, sm: 3, md: 2 }}>
+                <Typography variant="body2" sx={{ color: '#888', fontSize: '0.6rem', mb: 0.5 }}>
+                  <WaterDropIcon sx={{ fontSize: 12, mr: 0.3, verticalAlign: 'middle' }} />
+                  Min <GlossaryTooltip term="liquidity_score">Liquidity</GlossaryTooltip>: {minLiquidity}
+                </Typography>
+                <Slider
+                  value={minLiquidity}
+                  onChange={(_, v) => { setMinLiquidity(v as number); setPage(1); }}
+                  min={0} max={100} step={5}
+                  size="small"
+                  sx={{ color: '#00bcd4' }}
+                />
+              </Grid>
+
+              {/* Min Appreciation */}
+              <Grid size={{ xs: 6, sm: 3, md: 2 }}>
+                <Typography variant="body2" sx={{ color: '#888', fontSize: '0.6rem', mb: 0.5 }}>
+                  <TrendingUpIcon sx={{ fontSize: 12, mr: 0.3, verticalAlign: 'middle' }} />
+                  Min <GlossaryTooltip term="appreciation_slope">Appreciation</GlossaryTooltip>: {minAppreciation}
+                </Typography>
+                <Slider
+                  value={minAppreciation}
+                  onChange={(_, v) => { setMinAppreciation(v as number); setPage(1); }}
+                  min={0} max={100} step={5}
+                  size="small"
+                  sx={{ color: '#ff9800' }}
+                />
+              </Grid>
+
+              {/* Min Velocity */}
+              <Grid size={{ xs: 6, sm: 3, md: 2 }}>
+                <Typography variant="body2" sx={{ color: '#888', fontSize: '0.6rem', mb: 0.5 }}>
+                  Min Velocity: {minVelocity} sales/day
+                </Typography>
+                <Slider
+                  value={minVelocity}
+                  onChange={(_, v) => { setMinVelocity(v as number); setPage(1); }}
+                  min={0} max={5} step={0.5}
+                  size="small"
+                  sx={{ color: '#e040fb' }}
+                />
+              </Grid>
+
+              {/* Regime */}
+              <Grid size={{ xs: 6, sm: 3, md: 1.5 }}>
+                <FormControl size="small" fullWidth>
+                  <InputLabel><GlossaryTooltip term="regime">Regime</GlossaryTooltip></InputLabel>
+                  <Select
+                    value={regime}
+                    label="Regime"
+                    onChange={(e) => { setRegime(e.target.value); setPage(1); }}
+                  >
+                    <MenuItem value="">All</MenuItem>
+                    <MenuItem value="markup">Uptrend</MenuItem>
+                    <MenuItem value="accumulation">Accumulating</MenuItem>
+                    <MenuItem value="distribution">Distributing</MenuItem>
+                    <MenuItem value="markdown">Downtrend</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+
+              {/* Sort */}
+              <Grid size={{ xs: 6, sm: 3, md: 1.5 }}>
+                <FormControl size="small" fullWidth>
+                  <InputLabel>Sort By</InputLabel>
+                  <Select
+                    value={sortBy}
+                    label="Sort By"
+                    onChange={(e) => { setSortBy(e.target.value); setPage(1); }}
+                  >
+                    <MenuItem value="investment_score"><GlossaryTooltip term="investment_score">Investment Score</GlossaryTooltip></MenuItem>
+                    <MenuItem value="liquidity_score"><GlossaryTooltip term="liquidity_score">Liquidity</GlossaryTooltip></MenuItem>
+                    <MenuItem value="appreciation_score"><GlossaryTooltip term="appreciation_slope">Appreciation</GlossaryTooltip></MenuItem>
+                    <MenuItem value="appreciation_consistency"><GlossaryTooltip term="appreciation_consistency">Consistency (R²)</GlossaryTooltip></MenuItem>
+                    <MenuItem value="appreciation_slope"><GlossaryTooltip term="appreciation_slope">Daily Growth</GlossaryTooltip></MenuItem>
+                    <MenuItem value="current_price">Price</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+            </>
+          )}
         </Grid>
       </Paper>
 
@@ -814,10 +1124,16 @@ export default function Screener() {
         <Grid container spacing={1.5}>
           {cards.map((card, idx) => (
             <Grid size={{ xs: 6, sm: 4, md: 3, lg: 2 }} key={card.id}>
-              <CardTile card={card} rank={(page - 1) * 48 + idx + 1} />
+              {simpleMode ? (
+                <SimpleCardTile card={card} />
+              ) : (
+                <CardTile card={card} rank={(page - 1) * 48 + idx + 1} />
+              )}
             </Grid>
           ))}
         </Grid>
+      ) : simpleMode ? (
+        <SimpleCardTable cards={cards} page={page} onSort={handleTableSort} sortBy={sortBy} sortDir={sortDir} />
       ) : (
         <CardTable cards={cards} page={page} onSort={handleTableSort} sortBy={sortBy} sortDir={sortDir} />
       )}

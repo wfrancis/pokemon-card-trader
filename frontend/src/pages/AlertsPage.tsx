@@ -1,13 +1,16 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   Box, Paper, Typography, TextField, Button, Tabs, Tab,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
-  IconButton, Avatar, Stack, Snackbar, Alert,
+  IconButton, Avatar, Stack, Snackbar, Alert, CircularProgress,
+  InputAdornment,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import SaveIcon from '@mui/icons-material/Save';
+import SearchIcon from '@mui/icons-material/Search';
+import AddAlertIcon from '@mui/icons-material/AddAlert';
 import { Link } from 'react-router-dom';
-import { api, PriceAlertResponse, AlertHistoryItem } from '../services/api';
+import { api, Card, PriceAlertResponse, AlertHistoryItem } from '../services/api';
 
 const mono = '"JetBrains Mono", monospace';
 
@@ -19,6 +22,16 @@ export default function AlertsPage() {
   const [history, setHistory] = useState<AlertHistoryItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [snack, setSnack] = useState<string | null>(null);
+
+  // Quick Add Alert state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<Card[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [selectedCard, setSelectedCard] = useState<Card | null>(null);
+  const [alertAbove, setAlertAbove] = useState('');
+  const [alertBelow, setAlertBelow] = useState('');
+  const [creating, setCreating] = useState(false);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchAlerts = useCallback(async (e: string) => {
     if (!e) return;
@@ -56,6 +69,61 @@ export default function AlertsPage() {
       setSnack('Alert deleted');
     } catch {
       setSnack('Failed to delete alert');
+    }
+  };
+
+  const handleSearchChange = (value: string) => {
+    setSearchQuery(value);
+    setSelectedCard(null);
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    if (!value.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    searchTimerRef.current = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const result = await api.getCards({ q: value.trim(), page_size: '8' });
+        setSearchResults(result.data);
+      } catch {
+        setSearchResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 350);
+  };
+
+  const handleSelectCard = (card: Card) => {
+    setSelectedCard(card);
+    setSearchResults([]);
+    setSearchQuery(card.name);
+    setAlertAbove('');
+    setAlertBelow('');
+  };
+
+  const handleCreateAlert = async () => {
+    if (!selectedCard || !savedEmail) return;
+    const above = parseFloat(alertAbove);
+    const below = parseFloat(alertBelow);
+    if (isNaN(above) && isNaN(below)) return;
+    setCreating(true);
+    try {
+      await api.createAlert({
+        card_id: selectedCard.id,
+        email: savedEmail,
+        threshold_above: !isNaN(above) && above > 0 ? above : null,
+        threshold_below: !isNaN(below) && below > 0 ? below : null,
+      });
+      setSnack(`Alert created for ${selectedCard.name}`);
+      setSelectedCard(null);
+      setSearchQuery('');
+      setAlertAbove('');
+      setAlertBelow('');
+      fetchAlerts(savedEmail);
+    } catch {
+      setSnack('Failed to create alert');
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -112,6 +180,142 @@ export default function AlertsPage() {
         )}
       </Paper>
 
+      {/* Quick Add Alert */}
+      {savedEmail && (
+        <Paper sx={{ p: 2, mb: 3, bgcolor: '#111', border: '1px solid #1e1e1e' }}>
+          <Typography sx={{ color: '#888', fontSize: '0.8rem', fontFamily: mono, mb: 1.5 }}>
+            QUICK ADD ALERT
+          </Typography>
+
+          {/* Search input */}
+          <TextField
+            size="small"
+            fullWidth
+            placeholder="Search for a card by name..."
+            value={searchQuery}
+            onChange={(e) => handleSearchChange(e.target.value)}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  {searching ? (
+                    <CircularProgress size={16} sx={{ color: '#555' }} />
+                  ) : (
+                    <SearchIcon sx={{ color: '#555', fontSize: 18 }} />
+                  )}
+                </InputAdornment>
+              ),
+            }}
+            sx={{
+              maxWidth: 500,
+              '& .MuiOutlinedInput-root': { fontFamily: mono, fontSize: '0.85rem' },
+            }}
+          />
+
+          {/* Search results dropdown */}
+          {searchResults.length > 0 && !selectedCard && (
+            <Paper sx={{ mt: 0.5, maxWidth: 500, bgcolor: '#0a0a0a', border: '1px solid #222', maxHeight: 280, overflow: 'auto' }}>
+              {searchResults.map((card) => (
+                <Box
+                  key={card.id}
+                  onClick={() => handleSelectCard(card)}
+                  sx={{
+                    display: 'flex', alignItems: 'center', gap: 1.5, px: 1.5, py: 1,
+                    cursor: 'pointer', '&:hover': { bgcolor: '#1a1a2e' },
+                    borderBottom: '1px solid #1a1a1a',
+                  }}
+                >
+                  {card.image_small && (
+                    <Avatar src={card.image_small} variant="rounded" sx={{ width: 28, height: 38 }} />
+                  )}
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Typography sx={{ color: '#ccc', fontFamily: mono, fontSize: '0.8rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {card.name}
+                    </Typography>
+                    <Typography sx={{ color: '#555', fontFamily: mono, fontSize: '0.65rem' }}>
+                      {card.set_name} &middot; {card.rarity || 'Unknown'}
+                    </Typography>
+                  </Box>
+                  <Typography sx={{ color: card.current_price ? '#00ff41' : '#333', fontFamily: mono, fontSize: '0.8rem', fontWeight: 700 }}>
+                    {card.current_price != null ? `$${card.current_price.toFixed(2)}` : '--'}
+                  </Typography>
+                </Box>
+              ))}
+            </Paper>
+          )}
+
+          {/* Selected card + threshold inputs */}
+          {selectedCard && (
+            <Box sx={{ mt: 2, p: 1.5, bgcolor: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: 1, maxWidth: 500 }}>
+              <Stack direction="row" alignItems="center" spacing={1.5} sx={{ mb: 2 }}>
+                {selectedCard.image_small && (
+                  <Avatar src={selectedCard.image_small} variant="rounded" sx={{ width: 36, height: 50 }} />
+                )}
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                  <Typography sx={{ color: '#00bcd4', fontFamily: mono, fontSize: '0.85rem', fontWeight: 700 }}>
+                    {selectedCard.name}
+                  </Typography>
+                  <Typography sx={{ color: '#555', fontFamily: mono, fontSize: '0.7rem' }}>
+                    {selectedCard.set_name} &middot; {selectedCard.rarity || 'Unknown'}
+                  </Typography>
+                </Box>
+                <Typography sx={{ color: '#00ff41', fontFamily: mono, fontSize: '1rem', fontWeight: 700 }}>
+                  {selectedCard.current_price != null ? `$${selectedCard.current_price.toFixed(2)}` : '--'}
+                </Typography>
+              </Stack>
+
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems="flex-start">
+                <TextField
+                  size="small"
+                  label="Alert when price rises above"
+                  type="number"
+                  value={alertAbove}
+                  onChange={(e) => setAlertAbove(e.target.value)}
+                  InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }}
+                  sx={{
+                    flex: 1,
+                    '& .MuiOutlinedInput-root': { fontFamily: mono, fontSize: '0.85rem' },
+                    '& .MuiInputLabel-root': { fontSize: '0.75rem' },
+                  }}
+                />
+                <TextField
+                  size="small"
+                  label="Alert when price drops below"
+                  type="number"
+                  value={alertBelow}
+                  onChange={(e) => setAlertBelow(e.target.value)}
+                  InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }}
+                  sx={{
+                    flex: 1,
+                    '& .MuiOutlinedInput-root': { fontFamily: mono, fontSize: '0.85rem' },
+                    '& .MuiInputLabel-root': { fontSize: '0.75rem' },
+                  }}
+                />
+                <Button
+                  variant="contained"
+                  startIcon={creating ? <CircularProgress size={14} sx={{ color: '#00ff41' }} /> : <AddAlertIcon />}
+                  onClick={handleCreateAlert}
+                  disabled={creating || (isNaN(parseFloat(alertAbove)) && isNaN(parseFloat(alertBelow)))}
+                  sx={{
+                    bgcolor: '#00ff4122',
+                    color: '#00ff41',
+                    border: '1px solid #00ff4133',
+                    fontFamily: mono,
+                    fontWeight: 700,
+                    fontSize: '0.75rem',
+                    whiteSpace: 'nowrap',
+                    minWidth: 140,
+                    '&:hover': { bgcolor: '#00ff4133' },
+                    '&.Mui-disabled': { color: '#00ff4144', borderColor: '#00ff4111' },
+                  }}
+                >
+                  Create Alert
+                </Button>
+              </Stack>
+            </Box>
+          )}
+        </Paper>
+      )}
+
       {/* Tabs */}
       <Tabs
         value={tab}
@@ -147,7 +351,7 @@ export default function AlertsPage() {
           {activeAlerts.length === 0 ? (
             <Box sx={{ p: 3, textAlign: 'center' }}>
               <Typography sx={{ color: '#666', fontFamily: mono, fontSize: '0.85rem' }}>
-                No active alerts. Set alerts from any card detail page.
+                No active alerts. Use Quick Add above or set alerts from any card detail page.
               </Typography>
             </Box>
           ) : (

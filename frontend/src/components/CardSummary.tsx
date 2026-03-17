@@ -49,6 +49,21 @@ export default function CardSummary({ card, sales, medianPrice, analysis }: Card
       }
     }
 
+    // Sentence 4: actionable guidance
+    if (price != null && card.current_price != null) {
+      const spread = ((card.current_price - price) / price) * 100;
+      const velocity = analysis?.sales_per_day;
+      if (spread < -10 && velocity != null && velocity >= 0.5) {
+        parts.push('This looks like a good buying opportunity — listed below recent sale prices with steady demand.');
+      } else if (spread > 50) {
+        parts.push('Currently listed well above recent sales — consider waiting for a price drop or shopping around.');
+      } else if (velocity != null && velocity < 0.2) {
+        parts.push('This card sells infrequently, so it may take a while to find a buyer if you sell.');
+      } else if (spread >= -10 && spread <= 20) {
+        parts.push('The listing price is close to recent sale values — fairly priced right now.');
+      }
+    }
+
     return parts.join(' ');
   };
 
