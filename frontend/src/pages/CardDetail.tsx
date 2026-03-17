@@ -71,7 +71,7 @@ export default function CardDetail() {
     compareSearchTimer.current = setTimeout(async () => {
       setCompareSearching(true);
       try {
-        const result = await api.getCards({ search: query.trim(), limit: '10' });
+        const result = await api.getCards({ q: query.trim(), page_size: '10' });
         // Exclude current card from results
         setCompareSearchResults(result.data.filter(c => c.id !== parseInt(id || '0')));
       } catch {
