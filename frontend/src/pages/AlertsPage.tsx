@@ -165,7 +165,7 @@ export default function AlertsPage() {
         <Typography sx={{ color: '#888', fontSize: '0.8rem', fontFamily: mono, mb: 1 }}>
           NOTIFICATION EMAIL
         </Typography>
-        <Stack direction="row" spacing={1} alignItems="center">
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }}>
           <TextField
             size="small"
             type="email"
@@ -175,7 +175,7 @@ export default function AlertsPage() {
             onKeyDown={(e) => { if (e.key === 'Enter') handleSaveEmail(); }}
             sx={{
               flex: 1,
-              maxWidth: 400,
+              maxWidth: { xs: 'none', sm: 400 },
               '& .MuiInputLabel-root': { color: '#666' },
               '& .MuiOutlinedInput-root': { fontFamily: mono, fontSize: '0.85rem' },
             }}
@@ -206,12 +206,12 @@ export default function AlertsPage() {
 
       {/* Quick Add Alert */}
       <Paper sx={{ p: 2.5, mb: 3, bgcolor: '#111', border: '1px solid #00bcd433' }}>
-        <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2 }}>
+        <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2, flexWrap: 'wrap' }}>
           <AddAlertIcon sx={{ color: '#00bcd4', fontSize: 22 }} />
           <Typography sx={{ color: '#00bcd4', fontSize: '0.9rem', fontFamily: mono, fontWeight: 700, letterSpacing: 1 }}>
             CREATE NEW ALERT
           </Typography>
-          <Typography sx={{ color: '#555', fontSize: '0.75rem', fontFamily: mono }}>
+          <Typography sx={{ color: '#555', fontSize: '0.75rem', fontFamily: mono, display: { xs: 'none', sm: 'block' } }}>
             Search for any card and set price thresholds
           </Typography>
         </Stack>

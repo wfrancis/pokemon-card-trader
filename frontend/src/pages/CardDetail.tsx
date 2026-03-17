@@ -268,12 +268,16 @@ export default function CardDetail() {
     }).catch(() => {});
   }, [id]);
 
-  // Re-fetch prices when condition changes
+  // Re-fetch prices when condition changes — keep existing data if new fetch returns empty
   useEffect(() => {
     if (!id) return;
     const cardId = parseInt(id);
     if (isNaN(cardId)) return;
-    api.getCardPrices(cardId, condition).then(data => setPrices(data.data)).catch(() => {});
+    api.getCardPrices(cardId, condition).then(data => {
+      if (data.data && data.data.length > 0) {
+        setPrices(data.data);
+      }
+    }).catch(() => {});
   }, [id, condition]);
 
   if (loading) {
@@ -308,7 +312,7 @@ export default function CardDetail() {
                 component="img"
                 src={card.image_large || card.image_small}
                 alt={card.name}
-                sx={{ width: '100%', maxWidth: { xs: 200, sm: 300 }, borderRadius: 2 }}
+                sx={{ width: '100%', maxWidth: { xs: 180, sm: 300 }, borderRadius: 2, mx: 'auto', display: 'block' }}
               />
             ) : (
               <Box sx={{
@@ -453,21 +457,96 @@ export default function CardDetail() {
                           }}
                         />
                       )}
-                      {analysis?.sma_30 != null && analysis?.sma_90 != null && (
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3 }}>
-                          {analysis.sma_30 > analysis.sma_90 ? (
-                            <TrendingUpIcon sx={{ fontSize: 14, color: '#00ff41' }} />
-                          ) : (
-                            <TrendingDownIcon sx={{ fontSize: 14, color: '#ff1744' }} />
-                          )}
-                          <Typography sx={{ fontSize: '0.55rem', fontFamily: 'monospace', color: analysis.sma_30 > analysis.sma_90 ? '#00ff41' : '#ff1744' }}>
-                            {analysis.sma_30 > analysis.sma_90 ? 'Trending Up' : 'Trending Down'}
-                          </Typography>
-                        </Box>
-                      )}
+                      {analysis?.sma_30 != null && analysis?.sma_90 != null && (() => {
+                        const pctDiff = analysis.sma_90 > 0 ? ((analysis.sma_30 - analysis.sma_90) / analysis.sma_90) * 100 : 0;
+                        const isSideways = Math.abs(pctDiff) < 5;
+                        const isUp = pctDiff >= 5;
+                        const color = isSideways ? '#888' : isUp ? '#00ff41' : '#ff1744';
+                        const label = isSideways ? 'Sideways' : isUp ? 'Trending Up' : 'Trending Down';
+                        return (
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3 }}>
+                            {isSideways ? null : isUp ? (
+                              <TrendingUpIcon sx={{ fontSize: 14, color }} />
+                            ) : (
+                              <TrendingDownIcon sx={{ fontSize: 14, color }} />
+                            )}
+                            <Typography sx={{ fontSize: '0.55rem', fontFamily: 'monospace', color }}>
+                              {label}
+                            </Typography>
+                          </Box>
+                        );
+                      })()}
                     </Box>
+                    {/* Buy on TCGPlayer Button */}
+                    {(() => {
+                      const tcgUrl = card.tcgplayer_product_id
+                        ? `https://www.tcgplayer.com/product/${card.tcgplayer_product_id}`
+                        : `https://www.tcgplayer.com/search/pokemon/product?q=${encodeURIComponent(card.name + ' ' + card.set_name)}`;
+                      return (
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          href={tcgUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          endIcon={<OpenInNewIcon sx={{ fontSize: '14px !important' }} />}
+                          sx={{
+                            mt: 0.5,
+                            width: '100%',
+                            height: 28,
+                            fontSize: '0.65rem',
+                            fontWeight: 700,
+                            fontFamily: '"JetBrains Mono", monospace',
+                            color: '#ff9800',
+                            borderColor: '#ff980066',
+                            textTransform: 'none',
+                            '&:hover': {
+                              borderColor: '#ff9800',
+                              bgcolor: '#ff980011',
+                            },
+                          }}
+                        >
+                          Buy on TCGPlayer
+                        </Button>
+                      );
+                    })()}
                   </Box>
                 </Box>
+              );
+            })()}
+
+            {/* Standalone Buy on TCGPlayer - shows when spread analysis is hidden */}
+            {!(card.current_price != null && card.current_price > 0 && medianPrice != null && medianPrice > 0) && (() => {
+              const tcgUrl = card.tcgplayer_product_id
+                ? `https://www.tcgplayer.com/product/${card.tcgplayer_product_id}`
+                : `https://www.tcgplayer.com/search/pokemon/product?q=${encodeURIComponent(card.name + ' ' + card.set_name)}`;
+              return (
+                <Button
+                  variant="outlined"
+                  size="small"
+                  href={tcgUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  endIcon={<OpenInNewIcon sx={{ fontSize: '14px !important' }} />}
+                  sx={{
+                    mt: 1.5,
+                    width: '100%',
+                    maxWidth: 220,
+                    height: 32,
+                    fontSize: '0.7rem',
+                    fontWeight: 700,
+                    fontFamily: '"JetBrains Mono", monospace',
+                    color: '#ff9800',
+                    borderColor: '#ff980066',
+                    textTransform: 'none',
+                    '&:hover': {
+                      borderColor: '#ff9800',
+                      bgcolor: '#ff980011',
+                    },
+                  }}
+                >
+                  Buy on TCGPlayer
+                </Button>
               );
             })()}
 
@@ -1135,7 +1214,7 @@ export default function CardDetail() {
               <MuiCard
                 key={sc.id}
                 sx={{
-                  minWidth: 160, maxWidth: 180, bgcolor: '#0a0a1a', border: '1px solid #222',
+                  minWidth: { xs: 140, sm: 160 }, maxWidth: 180, bgcolor: '#0a0a1a', border: '1px solid #222',
                   flexShrink: 0, '&:hover': { borderColor: '#00bcd4' },
                 }}
               >

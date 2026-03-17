@@ -841,13 +841,14 @@ export default function Screener() {
     localStorage.removeItem('pkmn_screener_mode');
     localStorage.removeItem('pkmn_screener_mode_v2');
     localStorage.removeItem('pkmn_screener_mode_v3');
-    const stored = localStorage.getItem('pkmn_screener_mode_v4');
+    localStorage.removeItem('pkmn_screener_mode_v4');
+    const stored = localStorage.getItem('pkmn_screener_mode_v5');
     return stored === null ? true : stored === 'simple';
   });
 
   const handleSimpleModeToggle = (checked: boolean) => {
     setSimpleMode(checked);
-    localStorage.setItem('pkmn_screener_mode_v4', checked ? 'simple' : 'advanced');
+    localStorage.setItem('pkmn_screener_mode_v5', checked ? 'simple' : 'advanced');
   };
 
   // Filters
@@ -1082,7 +1083,7 @@ export default function Screener() {
 
       {/* Filters */}
       <Paper sx={{ p: 2, mb: 2, bgcolor: '#0a0a0a', border: '1px solid #1a1a1a' }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5, flexWrap: 'wrap' }}>
           <FilterListIcon sx={{ color: '#666', fontSize: 18 }} />
           <Typography variant="body2" sx={{ color: '#888', fontWeight: 600 }}>FILTERS</Typography>
           {simpleMode && !flipFinderActive && (
@@ -1321,7 +1322,7 @@ export default function Screener() {
       </Paper>
 
       {/* Results count + view toggle */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1, flexWrap: 'wrap', gap: 1 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <Typography variant="body2" sx={{ color: '#666' }}>
             {total.toLocaleString()} cards

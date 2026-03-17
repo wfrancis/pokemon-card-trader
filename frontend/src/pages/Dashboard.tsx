@@ -179,7 +179,7 @@ export default function Dashboard() {
                 </Typography>
               </Tooltip>
               <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, mb: 0.5 }}>
-                <Typography sx={{ color: '#00ff41', fontWeight: 700, fontFamily: '"JetBrains Mono", monospace', fontSize: '2rem', lineHeight: 1 }}>
+                <Typography sx={{ color: '#00ff41', fontWeight: 700, fontFamily: '"JetBrains Mono", monospace', fontSize: { xs: '1.5rem', md: '2rem' }, lineHeight: 1 }}>
                   ${index?.avg_price?.toFixed(2) || '—'}
                 </Typography>
                 {recap?.market_index?.change_pct != null && (
@@ -246,7 +246,7 @@ export default function Dashboard() {
 
         {/* Top Flip Opportunities */}
         <Box sx={{ mb: 2 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5, flexWrap: 'wrap', gap: 0.5 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
               <LocalFireDepartmentIcon sx={{ color: '#ff9800', fontSize: 16 }} />
               <Tooltip title="Cards you can buy now and resell for a profit (after seller fees)" arrow>
@@ -258,7 +258,7 @@ export default function Dashboard() {
                   Top Profit Picks
                 </Typography>
               </Tooltip>
-              <Typography sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.55rem', color: '#666', ml: 0.5 }}>
+              <Typography sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: { xs: '0.5rem', sm: '0.55rem' }, color: '#666', ml: 0.5, display: { xs: 'none', sm: 'block' } }}>
                 Buy low, sell higher — profit shown after 12.55% fees
               </Typography>
             </Box>
@@ -309,7 +309,7 @@ export default function Dashboard() {
                       </Typography>
                     </Typography>
                   </Box>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 1, sm: 2 }, flexShrink: 0 }}>
                     <Typography sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.65rem', color: '#00ff41', fontWeight: 700 }}>
                       {profit !== null ? `+$${profit.toFixed(2)}` : '--'}
                     </Typography>
@@ -330,7 +330,7 @@ export default function Dashboard() {
                       </Tooltip>
                     )}
                     <Tooltip title="Sales per day — how often this card sells" arrow>
-                      <Typography sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.6rem', color: '#888', cursor: 'help' }}>
+                      <Typography sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.6rem', color: '#888', cursor: 'help', display: { xs: 'none', sm: 'block' } }}>
                         {card.sales_per_day !== null ? `${card.sales_per_day.toFixed(1)}/day` : '--'}
                       </Typography>
                     </Tooltip>

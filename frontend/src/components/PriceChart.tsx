@@ -192,7 +192,7 @@ export default function PriceChart({ priceData, cardName, compareData, onRemoveC
   if (chartData.length === 0) {
     return (
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300, color: '#666' }}>
-        <Typography>No price data available. Sync data to see charts.</Typography>
+        <Typography>Price history not yet available for this card.</Typography>
       </Box>
     );
   }

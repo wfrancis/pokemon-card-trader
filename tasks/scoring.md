@@ -358,14 +358,17 @@ All 4 personas again report "routing bug" — pages render wrong content when cl
 | **Sprint 8** | **8.9** | **9.0** | **9.0** | **8.7** | **8.9** |
 | Round 6 | 7.2 | 8.6 | 7.8 | 8.4 | 8.0 |
 | **Round 7** | **8.8** | **8.8** | **8.7** | **8.8** | **8.775** |
+| **Round 8** | **9.1** | **8.8** | **8.7** | **8.6** | **8.8** |
 
 #### Remaining Gaps to 9.5+
-1. **Screener Simple mode default persistence** — localStorage issue where existing browsers retain Advanced mode. Need fresh-browser mechanism or force-reset.
-2. **Sort by ROI% in Flip Finder** — Jake's #1 remaining ask
-3. **Velocity-based alerts** — Jake: "alert when sales/day spikes"
+1. **Screener Simple mode default persistence** — localStorage issue where existing browsers retain Advanced mode
+2. **TCGPlayer buy links** — Jake's #1 remaining gap
+3. **Dashboard jargon** — Sam: ROI, Market Index, velocity need tooltips/explainers
 4. **Multi-lot tracking** — Maria: "bought 3 Charizards at different prices"
 5. **Embeddable chart widgets** — Alex: iframe-ready charts for blogs
-6. **Explorer search results above Hot Cards** — Sam: search results buried below 12 Hot Cards
+6. **Technical indicators on price chart** — Alex: Bollinger Bands, RSI, MACD
+7. **Missing card images** — some cards show gray placeholder silhouettes
+8. **Search autocomplete** — Sam: instant feedback while typing
 
 ---
 

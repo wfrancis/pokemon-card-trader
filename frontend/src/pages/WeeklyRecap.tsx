@@ -156,8 +156,8 @@ export default function WeeklyRecap() {
   return (
     <Box ref={recapRef} sx={{ p: { xs: 2, md: 4 }, maxWidth: 1100, mx: 'auto' }}>
       {/* Header */}
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-        <Typography variant="h4" sx={{ color: '#00bcd4', fontWeight: 700, letterSpacing: 3 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5, flexWrap: 'wrap' }}>
+        <Typography variant="h4" sx={{ color: '#00bcd4', fontWeight: 700, letterSpacing: { xs: 1, sm: 3 }, fontSize: { xs: '1.1rem', sm: '1.25rem' } }}>
           WEEKLY MARKET RECAP
         </Typography>
         <Tooltip title="Export as Image">

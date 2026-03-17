@@ -303,12 +303,12 @@ export default function Watchlist() {
         </Typography>
       </Box>
       {rows.length > 0 && (
-        <Paper sx={{ p: 1.5, mb: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', bgcolor: '#111', border: '1px solid #1e1e1e' }}>
+        <Paper sx={{ p: 1.5, mb: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', bgcolor: '#111', border: '1px solid #1e1e1e', flexWrap: 'wrap', gap: 1 }}>
           <Box>
             <Typography sx={{ color: '#4fc3f7', fontFamily: '"JetBrains Mono", monospace', fontSize: '0.75rem', fontWeight: 700 }}>
               EXPORT PORTFOLIO
             </Typography>
-            <Typography sx={{ color: '#666', fontSize: '0.7rem', fontFamily: '"JetBrains Mono", monospace' }}>
+            <Typography sx={{ color: '#666', fontSize: '0.7rem', fontFamily: '"JetBrains Mono", monospace', display: { xs: 'none', sm: 'block' } }}>
               Download your portfolio as a spreadsheet
             </Typography>
           </Box>
@@ -320,14 +320,14 @@ export default function Watchlist() {
               color: '#4fc3f7',
               borderColor: '#4fc3f7',
               fontFamily: '"JetBrains Mono", monospace',
-              fontSize: '0.8rem',
+              fontSize: { xs: '0.7rem', sm: '0.8rem' },
               textTransform: 'none',
-              px: 3,
+              px: { xs: 2, sm: 3 },
               py: 1,
               '&:hover': { borderColor: '#81d4fa', bgcolor: 'rgba(79, 195, 247, 0.08)' },
             }}
           >
-            Export Portfolio CSV
+            Export CSV
           </Button>
         </Paper>
       )}
@@ -471,8 +471,8 @@ export default function Watchlist() {
 
       {/* Portfolio Summary */}
       {rows.length > 0 && (
-        <Box sx={{ display: 'flex', gap: 2, mb: 2, flexWrap: 'wrap' }}>
-          <Paper sx={{ p: 1.5, flex: 1, minWidth: 120, textAlign: 'center' }}>
+        <Box sx={{ display: 'flex', gap: { xs: 1, sm: 2 }, mb: 2, flexWrap: 'wrap' }}>
+          <Paper sx={{ p: 1.5, flex: '1 1 auto', minWidth: { xs: '45%', sm: 120 }, textAlign: 'center' }}>
             <Typography sx={{ color: '#666', fontSize: '0.6rem', textTransform: 'uppercase', fontFamily: 'monospace' }}>Total Value</Typography>
             <Typography sx={{ color: '#00ff41', fontWeight: 700, fontFamily: '"JetBrains Mono", monospace', fontSize: '1.2rem' }}>
               ${totalValue.toFixed(2)}
@@ -480,13 +480,13 @@ export default function Watchlist() {
           </Paper>
           {totalCost > 0 && (
             <>
-              <Paper sx={{ p: 1.5, flex: 1, minWidth: 120, textAlign: 'center' }}>
+              <Paper sx={{ p: 1.5, flex: '1 1 auto', minWidth: { xs: '45%', sm: 120 }, textAlign: 'center' }}>
                 <Typography sx={{ color: '#666', fontSize: '0.6rem', textTransform: 'uppercase', fontFamily: 'monospace' }}>Total Cost</Typography>
                 <Typography sx={{ color: '#888', fontWeight: 700, fontFamily: '"JetBrains Mono", monospace', fontSize: '1.2rem' }}>
                   ${totalCost.toFixed(2)}
                 </Typography>
               </Paper>
-              <Paper sx={{ p: 1.5, flex: 1, minWidth: 120, textAlign: 'center' }}>
+              <Paper sx={{ p: 1.5, flex: '1 1 auto', minWidth: { xs: '45%', sm: 120 }, textAlign: 'center' }}>
                 <Typography sx={{ color: '#666', fontSize: '0.6rem', textTransform: 'uppercase', fontFamily: 'monospace' }}><GlossaryTooltip term="pnl">Profit/Loss</GlossaryTooltip></Typography>
                 <Typography sx={{
                   color: totalPnL != null && totalPnL >= 0 ? '#00ff41' : '#ff1744',
@@ -714,8 +714,8 @@ export default function Watchlist() {
           </Typography>
         </Paper>
       ) : (
-        <TableContainer component={Paper}>
-          <Table size="small">
+        <TableContainer component={Paper} sx={{ overflowX: 'auto' }}>
+          <Table size="small" sx={{ minWidth: 900 }}>
             <TableHead>
               <TableRow>
                 <TableCell sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}>CARD</TableCell>

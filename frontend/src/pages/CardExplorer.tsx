@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   Box, Paper, Typography, TextField, Grid, Avatar,
   Pagination, InputAdornment, Select, MenuItem, FormControl,
@@ -263,7 +263,7 @@ export default function CardExplorer() {
     fetchCards();
   }, [fetchCards]);
 
-  // Debounced search
+  // Debounced full-grid search
   const [searchTimeout, setSearchTimeout] = useState<NodeJS.Timeout | null>(null);
   const handleSearchChange = (value: string) => {
     if (searchTimeout) clearTimeout(searchTimeout);
@@ -271,6 +271,32 @@ export default function CardExplorer() {
       setSearch(value);
       setPage(1);
     }, 300));
+  };
+
+  // Autocomplete suggestions state
+  const [suggestions, setSuggestions] = useState<Card[]>([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const [inputValue, setInputValue] = useState(initialQuery);
+  const suggestTimer = useRef<NodeJS.Timeout | null>(null);
+
+  const fetchSuggestions = (query: string) => {
+    if (suggestTimer.current) clearTimeout(suggestTimer.current);
+    if (query.trim().length < 2) {
+      setSuggestions([]);
+      setSuggestionsLoading(false);
+      return;
+    }
+    setSuggestionsLoading(true);
+    suggestTimer.current = setTimeout(async () => {
+      try {
+        const result = await api.getCards({ q: query.trim(), page_size: '8', has_price: 'true' });
+        setSuggestions(result.data);
+      } catch {
+        setSuggestions([]);
+      } finally {
+        setSuggestionsLoading(false);
+      }
+    }, 300);
   };
 
   return (
@@ -283,20 +309,129 @@ export default function CardExplorer() {
       {!search && <HotCardsSection />}
 
       {/* Filters */}
-      <Box sx={{ display: 'flex', gap: 2, mb: 2, alignItems: 'center', flexWrap: 'wrap' }}>
-        <TextField
-          placeholder="Search cards..."
+      <Box sx={{ display: 'flex', gap: { xs: 1, sm: 2 }, mb: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+        <Autocomplete
+          freeSolo
           size="small"
-          defaultValue={initialQuery}
-          onChange={(e) => handleSearchChange(e.target.value)}
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchIcon sx={{ color: '#666' }} />
-              </InputAdornment>
-            ),
+          options={suggestions}
+          loading={suggestionsLoading}
+          inputValue={inputValue}
+          filterOptions={(x) => x}
+          getOptionLabel={(option) =>
+            typeof option === 'string' ? option : option.name
+          }
+          onInputChange={(_e, value, reason) => {
+            setInputValue(value);
+            if (reason === 'input') {
+              fetchSuggestions(value);
+              handleSearchChange(value);
+            }
+            if (reason === 'clear') {
+              setSuggestions([]);
+              handleSearchChange('');
+            }
           }}
-          sx={{ flex: 1, maxWidth: { xs: 'none', sm: 400 }, width: { xs: '100%', sm: 'auto' } }}
+          onChange={(_e, value) => {
+            if (value && typeof value !== 'string') {
+              navigate(`/card/${value.id}`);
+            }
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              // Let default autocomplete selection happen if highlight is active;
+              // otherwise the freeSolo Enter triggers handleSearchChange via onInputChange
+            }
+          }}
+          renderOption={(props, option) => (
+            <Box
+              component="li"
+              {...props}
+              key={option.id}
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1.5,
+                py: 0.75,
+                px: 1.5,
+              }}
+            >
+              {option.image_small ? (
+                <Avatar
+                  src={option.image_small}
+                  variant="rounded"
+                  sx={{ width: 32, height: 44 }}
+                />
+              ) : (
+                <Box sx={{ width: 32, height: 44, bgcolor: '#111', borderRadius: 1 }} />
+              )}
+              <Box sx={{ minWidth: 0, flex: 1 }}>
+                <Typography
+                  variant="body2"
+                  sx={{
+                    fontWeight: 600,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    color: '#e0e0e0',
+                  }}
+                >
+                  {option.name}
+                </Typography>
+                <Typography
+                  variant="body2"
+                  sx={{
+                    fontSize: '0.65rem',
+                    color: '#888',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
+                  {option.set_name}
+                </Typography>
+              </Box>
+              <Typography
+                variant="body2"
+                sx={{
+                  fontWeight: 700,
+                  color: option.current_price ? '#00ff41' : '#666',
+                  fontFamily: 'monospace',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {option.current_price ? `$${option.current_price.toFixed(2)}` : '—'}
+              </Typography>
+            </Box>
+          )}
+          renderInput={(params) => (
+            <TextField
+              {...params}
+              placeholder="Search cards..."
+              InputProps={{
+                ...params.InputProps,
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon sx={{ color: '#666' }} />
+                  </InputAdornment>
+                ),
+              }}
+            />
+          )}
+          sx={{ flex: { xs: '1 1 100%', sm: '1 1 auto' }, maxWidth: { xs: 'none', sm: 400 } }}
+          slotProps={{
+            paper: {
+              sx: {
+                bgcolor: '#111',
+                border: '1px solid #1e1e1e',
+                '& .MuiAutocomplete-option': {
+                  fontSize: '0.85rem',
+                  '&:hover': { bgcolor: '#1a1a1a' },
+                  '&[aria-selected="true"]': { bgcolor: '#0d2f33' },
+                },
+                '& .MuiAutocomplete-loading': { color: '#666' },
+              },
+            },
+          }}
         />
         <Autocomplete
           size="small"
@@ -315,7 +450,8 @@ export default function CardExplorer() {
             />
           )}
           sx={{
-            minWidth: 200,
+            minWidth: { xs: '48%', sm: 200 },
+            flex: { xs: '1 1 48%', sm: '0 0 auto' },
             '& .MuiAutocomplete-clearIndicator': { color: '#666' },
             '& .MuiAutocomplete-popupIndicator': { color: '#666' },
           }}
@@ -350,7 +486,8 @@ export default function CardExplorer() {
             />
           )}
           sx={{
-            minWidth: 180,
+            minWidth: { xs: '48%', sm: 180 },
+            flex: { xs: '1 1 48%', sm: '0 0 auto' },
             '& .MuiAutocomplete-clearIndicator': { color: '#666' },
             '& .MuiAutocomplete-popupIndicator': { color: '#666' },
           }}
@@ -368,7 +505,7 @@ export default function CardExplorer() {
             },
           }}
         />
-        <FormControl size="small" sx={{ minWidth: 150 }}>
+        <FormControl size="small" sx={{ minWidth: { xs: '48%', sm: 150 }, flex: { xs: '1 1 48%', sm: '0 0 auto' } }}>
           <InputLabel>Sort By</InputLabel>
           <Select value={sortBy} label="Sort By" onChange={(e) => setSortBy(e.target.value)}>
             <MenuItem value="current_price">Price</MenuItem>
@@ -377,7 +514,7 @@ export default function CardExplorer() {
             <MenuItem value="rarity">Rarity</MenuItem>
           </Select>
         </FormControl>
-        <FormControl size="small" sx={{ minWidth: 100 }}>
+        <FormControl size="small" sx={{ minWidth: { xs: '48%', sm: 100 }, flex: { xs: '1 1 48%', sm: '0 0 auto' } }}>
           <InputLabel>Order</InputLabel>
           <Select value={sortDir} label="Order" onChange={(e) => setSortDir(e.target.value)}>
             <MenuItem value="desc">High to Low</MenuItem>
