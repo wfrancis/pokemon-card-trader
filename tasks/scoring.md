@@ -212,6 +212,41 @@ If we discount the Chrome MCP artifacts (recap loading delay, tooltip hover fail
 
 ---
 
+### Post-Sprint 5 — 2026-03-16
+
+| Persona | Stickiness (1-10) | Delta | Notes |
+|---------|-------------------|-------|-------|
+| P1 Jake | **8.8/10** | +0.3 | Flip Finder "exactly what I asked for — one click and I get 34 cards I can actually flip" (A). Quick Add Alert "smooth" (A-). Actionable summary "saves me analysis time" (A-). Bug: Flip Finder state doesn't persist on scroll/view toggle. Wants: spread-based alerts, drag-to-zoom, fee calc on screener results |
+| P2 Maria | **9.0/10** | +0.5 | Alert creation from /alerts "executed perfectly — number one ask" (A+). Portfolio chart cost basis line "functional" (B+). Actionable summary "very useful for buy/hold decisions" (A). Wants: portfolio allocation chart, historical P&L tracking, condition-specific watchlist |
+| P3 Alex | **8.0/10** | +0.5 | Recap page "loads correctly — big improvement" (A-). Flip Finder "content-worthy for a 'cards to flip right now' segment" (A-). Chart export confirmed (A-). Wants: drag-to-zoom, chart compare mode, embeddable chart URLs |
+| P4 Sam | **8.5/10** | +0.5 | Simple Mode "WAY less overwhelming — I actually feel comfortable browsing" (A). Actionable summary "single best feature for me" (A+). Glossary tooltips "I don't have to Google every abbreviation" (A). Wants: quick collection add flow, condition helper guide, welcome banner quick links |
+
+**Average: 8.575/10 (delta: +0.45)** — Approaching 9.0 target
+
+#### Sprint 5 Features Delivered (4 items + enhancements)
+- **Flip Finder Preset**: Green chip on Screener, one-click filter for flip opportunities (negative spread + velocity > 0.5). Jake: "exactly what I asked for" (A)
+- **Alert Creation from /alerts**: Card search + threshold inputs + CREATE ALERT. Maria: "executed perfectly" (A+)
+- **Simple Mode Toggle**: Advanced/Simple switch on Screener, simplified columns for newcomers. Sam: "WAY less overwhelming" (A)
+- **Actionable Card Summary**: Guidance text (buy opportunity, overpriced, low liquidity, fair value). Sam: "single best feature" (A+)
+- **Glossary tooltip expansion**: SMA legend, Watchlist P&L/Cost Basis summary labels
+- **Portfolio chart Y-axis fix**: Now includes cost basis reference line in visible range
+
+#### Bugs Found
+1. **Flip Finder state doesn't persist** — Jake reported preset resets on scroll/view toggle. State management issue in Screener component
+
+#### Sprint 6 Candidates (To reach 9.0+ average)
+1. **Drag-to-zoom on charts** — Jake and Alex both asking (#1 for Alex). Implemented but agents can't test drag gestures
+2. **Chart compare mode** — Alex: overlay two cards' price histories. Would be "a video unto itself"
+3. **Spread-based alerts** — Jake: alert when spread drops below threshold
+4. **Fee calc on screener results** — Jake: show est. profit per card in Flip Finder results
+5. **Embeddable chart URLs** — Alex: iframe-ready charts for Substack
+6. **Quick collection add flow** — Sam: one-button add from search results
+7. **Condition helper guide** — Sam: visual guide to determine card condition
+8. **Portfolio allocation breakdown** — Maria: pie chart showing % per card
+9. **Fix Flip Finder persistence** — Jake's bug report
+
+---
+
 ## Target Scores
 
 | Milestone | Avg Stickiness | Key Unlock |
@@ -221,4 +256,5 @@ If we discount the Chrome MCP artifacts (recap loading delay, tooltip hover fail
 | Sprint 2 | 7.25 (target 7.0+) ✅ | Spread data, SMA overlays, alerts, onboarding, glossary tooltips |
 | Sprint 3 | 8.125 (target 8.0+) ✅ | Buy zone, chart export, weekly recap, quantity tracking, email alerts backend |
 | Sprint 4 | 8.125 raw / ~8.875 adjusted (target 9.0+) | Alerts page, velocity, similar cards, portfolio chart, sparklines, recap export, card summary |
+| Sprint 5 | 8.575 (target 9.0+) | Flip Finder, alert creation, simple mode, actionable guidance |
 | V1.0 Launch | 9.0+ | All personas would recommend to a friend |
