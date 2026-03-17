@@ -424,6 +424,7 @@ def get_investment_candidates(
         # Time to sell estimate
         time_to_sell = None
         sales_per_day = 0
+        median_sold = None
         if card.current_price:
             # Use sales counts from liquidity data if available
             from server.models.sale import Sale as SaleModel
@@ -438,6 +439,19 @@ def get_investment_candidates(
             tts = estimate_time_to_sell(card.current_price, s90, s30)
             time_to_sell = tts
             sales_per_day = round(s30 / 30, 2) if s30 else 0
+
+            # Median sold price (for flip profit calculation)
+            if s90 > 0:
+                sale_prices = [
+                    row[0] for row in
+                    db.query(SaleModel.purchase_price)
+                    .filter(SaleModel.card_id == card.id, SaleModel.order_date >= d90, SaleModel.purchase_price > 0)
+                    .order_by(SaleModel.purchase_price.asc())
+                    .all()
+                ]
+                if sale_prices:
+                    n = len(sale_prices)
+                    median_sold = round((sale_prices[n // 2] + sale_prices[(n - 1) // 2]) / 2, 2)
 
         # Investment score: soft gate model
         # Liquidity scales smoothly from 0→1.0 using sigmoid-like curve
@@ -468,6 +482,7 @@ def get_investment_candidates(
             "liquidity_score": card.liquidity_score,
             "sales_per_day": sales_per_day,
             "time_to_sell": time_to_sell,
+            "median_sold": median_sold,
             # Appreciation
             "appreciation_slope": card.appreciation_slope,
             "appreciation_consistency": card.appreciation_consistency,

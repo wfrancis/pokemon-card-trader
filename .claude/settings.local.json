@@ -9,7 +9,10 @@
       "Bash(git status:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(grep -r \"mail\\\\|email\\\\|smtp\" /Users/william/pokemon-card-trader/server --include=*.py)",
+      "Bash(grep -r \"html2canvas\\\\|download\\\\|PNG\\\\|export\" /Users/william/pokemon-card-trader/frontend --include=*.tsx --include=*.ts)",
+      "Bash(grep -r \"APScheduler\\\\|schedule\" /Users/william/pokemon-card-trader/server --include=*.py)"
     ]
   }
 }

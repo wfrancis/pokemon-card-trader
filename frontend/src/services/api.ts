@@ -573,6 +573,7 @@ export interface ScreenerCard {
   liquidity_score: number | null;
   sales_per_day: number | null;
   time_to_sell: { estimated_days: number; confidence: string; price_tier: string; sales_90d: number; sales_30d: number } | null;
+  median_sold: number | null;
   // Appreciation
   appreciation_slope: number | null;
   appreciation_consistency: number | null;

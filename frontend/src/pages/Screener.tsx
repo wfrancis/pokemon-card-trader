@@ -189,7 +189,13 @@ function isGoodBuy(card: ScreenerCard): boolean {
   return (card.investment_score ?? 0) >= 70 && card.breakeven_adjusted_slope !== null && card.breakeven_adjusted_slope > 0;
 }
 
-function SimpleCardTile({ card }: { card: ScreenerCard }) {
+function calcFlipProfit(card: ScreenerCard): number | null {
+  if (card.median_sold == null || card.current_price == null) return null;
+  // 12.55% seller fees
+  return card.median_sold - (card.current_price * 1.1255);
+}
+
+function SimpleCardTile({ card, flipFinderActive }: { card: ScreenerCard; flipFinderActive?: boolean }) {
   const navigate = useNavigate();
   const badge = getValueBadge(card);
   const trend7d = card.appreciation_slope !== null ? card.appreciation_slope * 7 : null;
@@ -231,6 +237,23 @@ function SimpleCardTile({ card }: { card: ScreenerCard }) {
         ${card.current_price.toFixed(2)}
       </Typography>
 
+      {/* Flip profit (shown when Flip Finder is active) */}
+      {flipFinderActive && (() => {
+        const profit = calcFlipProfit(card);
+        if (profit === null) return null;
+        return (
+          <Typography variant="body2" sx={{
+            fontSize: '0.65rem',
+            fontFamily: 'monospace',
+            fontWeight: 600,
+            color: profit >= 0 ? '#00ff41' : '#ff1744',
+            mt: 0.2,
+          }}>
+            Est. profit: {profit >= 0 ? '+' : ''}${profit.toFixed(2)}
+          </Typography>
+        );
+      })()}
+
       {/* 7d trend */}
       {trend7d !== null && (
         <Typography variant="body2" sx={{
@@ -260,7 +283,7 @@ function SimpleCardTile({ card }: { card: ScreenerCard }) {
   );
 }
 
-function CardTile({ card, rank }: { card: ScreenerCard; rank: number }) {
+function CardTile({ card, rank, flipFinderActive }: { card: ScreenerCard; rank: number; flipFinderActive?: boolean }) {
   const navigate = useNavigate();
   const regimeColor = REGIME_COLORS[card.regime || 'unknown'] || '#666';
   const isTopTier = (card.investment_score || 0) >= 50;
@@ -353,6 +376,23 @@ function CardTile({ card, rank }: { card: ScreenerCard; rank: number }) {
         ${card.current_price.toFixed(2)}
       </Typography>
 
+      {/* Flip profit (shown when Flip Finder is active) */}
+      {flipFinderActive && (() => {
+        const profit = calcFlipProfit(card);
+        if (profit === null) return null;
+        return (
+          <Typography variant="body2" sx={{
+            fontSize: '0.65rem',
+            fontFamily: 'monospace',
+            fontWeight: 600,
+            color: profit >= 0 ? '#00ff41' : '#ff1744',
+            mt: 0.2,
+          }}>
+            Est. profit: {profit >= 0 ? '+' : ''}${profit.toFixed(2)}
+          </Typography>
+        );
+      })()}
+
       {/* Time to sell + Velocity */}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
         <TimeToSellBadge value={card.time_to_sell} />
@@ -442,21 +482,29 @@ function CardTile({ card, rank }: { card: ScreenerCard; rank: number }) {
   );
 }
 
-function SimpleCardTable({ cards, page, onSort, sortBy, sortDir }: {
+function SimpleCardTable({ cards, page, onSort, sortBy, sortDir, flipFinderActive }: {
   cards: ScreenerCard[];
   page: number;
   onSort: (col: string) => void;
   sortBy: string;
   sortDir: string;
+  flipFinderActive?: boolean;
 }) {
   const navigate = useNavigate();
-  const columns: { id: string; label: string; width?: number; sortable?: boolean }[] = [
+  const baseColumns: { id: string; label: string; width?: number; sortable?: boolean }[] = [
     { id: 'rank', label: '#', width: 40 },
     { id: 'name', label: 'Card', sortable: true },
     { id: 'current_price', label: 'Price', width: 80, sortable: true },
     { id: 'trend', label: '7d Trend', width: 90 },
     { id: 'good_buy', label: 'Good Buy?', width: 90 },
   ];
+  const columns = flipFinderActive
+    ? [
+        ...baseColumns.slice(0, 3),
+        { id: 'est_profit', label: 'Est. Profit', width: 90 },
+        ...baseColumns.slice(3),
+      ]
+    : baseColumns;
 
   return (
     <TableContainer component={Paper} sx={{ bgcolor: '#0a0a0a', border: '1px solid #1a1a1a' }}>
@@ -513,6 +561,17 @@ function SimpleCardTable({ cards, page, onSort, sortBy, sortDir }: {
                 <TableCell sx={{ color: '#00ff41', fontWeight: 700, fontSize: '0.85rem', fontFamily: 'monospace' }}>
                   ${card.current_price.toFixed(2)}
                 </TableCell>
+                {flipFinderActive && (() => {
+                  const profit = calcFlipProfit(card);
+                  return (
+                    <TableCell sx={{
+                      fontFamily: 'monospace', fontSize: '0.75rem', fontWeight: 700,
+                      color: profit !== null ? (profit >= 0 ? '#00ff41' : '#ff1744') : '#444',
+                    }}>
+                      {profit !== null ? `${profit >= 0 ? '+' : ''}$${profit.toFixed(2)}` : '--'}
+                    </TableCell>
+                  );
+                })()}
                 <TableCell sx={{
                   fontFamily: 'monospace', fontSize: '0.75rem', fontWeight: 600,
                   color: trend7d !== null ? (trend7d >= 0 ? '#00ff41' : '#ff1744') : '#444',
@@ -539,15 +598,16 @@ function SimpleCardTable({ cards, page, onSort, sortBy, sortDir }: {
   );
 }
 
-function CardTable({ cards, page, onSort, sortBy, sortDir }: {
+function CardTable({ cards, page, onSort, sortBy, sortDir, flipFinderActive }: {
   cards: ScreenerCard[];
   page: number;
   onSort: (col: string) => void;
   sortBy: string;
   sortDir: string;
+  flipFinderActive?: boolean;
 }) {
   const navigate = useNavigate();
-  const columns: { id: string; label: string; width?: number; glossary?: string }[] = [
+  const baseColumns: { id: string; label: string; width?: number; glossary?: string }[] = [
     { id: 'rank', label: '#', width: 40 },
     { id: 'name', label: 'Card' },
     { id: 'current_price', label: 'Price', width: 75 },
@@ -561,6 +621,14 @@ function CardTable({ cards, page, onSort, sortBy, sortDir }: {
     { id: 'time_to_sell', label: 'TTS', width: 75, glossary: 'time_to_sell' },
     { id: 'regime', label: 'Regime', width: 85, glossary: 'regime' },
   ];
+  // Insert Est. Profit column after Price when Flip Finder is active
+  const columns = flipFinderActive
+    ? [
+        ...baseColumns.slice(0, 3),
+        { id: 'est_profit', label: 'Est. Profit', width: 85 },
+        ...baseColumns.slice(3),
+      ]
+    : baseColumns;
 
   const sortable = ['name', 'current_price', 'investment_score', 'liquidity_score', 'appreciation_score', 'appreciation_consistency', 'appreciation_slope'];
 
@@ -623,6 +691,17 @@ function CardTable({ cards, page, onSort, sortBy, sortDir }: {
                 <TableCell sx={{ color: '#00ff41', fontWeight: 700, fontSize: '0.75rem', fontFamily: 'monospace' }}>
                   ${card.current_price.toFixed(2)}
                 </TableCell>
+                {flipFinderActive && (() => {
+                  const profit = calcFlipProfit(card);
+                  return (
+                    <TableCell sx={{
+                      fontFamily: 'monospace', fontSize: '0.75rem', fontWeight: 700,
+                      color: profit !== null ? (profit >= 0 ? '#00ff41' : '#ff1744') : '#444',
+                    }}>
+                      {profit !== null ? `${profit >= 0 ? '+' : ''}$${profit.toFixed(2)}` : '--'}
+                    </TableCell>
+                  );
+                })()}
                 <TableCell sx={{ color: scoreColor, fontWeight: 800, fontSize: '0.8rem', fontFamily: 'monospace' }}>
                   {card.investment_score !== null ? card.investment_score.toFixed(0) : '--'}
                 </TableCell>
@@ -715,6 +794,8 @@ export default function Screener() {
   const [minVelocity, setMinVelocity] = useState(0);
   const [investmentGradeOnly, setInvestmentGradeOnly] = useState(false);
   const [flipFinderActive, setFlipFinderActive] = useState(false);
+  // Ref mirrors flipFinderActive to avoid stale closures in fetchCards
+  const flipFinderRef = useRef(false);
 
   useEffect(() => {
     document.title = 'Screener | PKMN Trader';
@@ -725,25 +806,38 @@ export default function Screener() {
   const fetchCards = useCallback(async () => {
     setLoading(true);
     try {
+      // When Flip Finder is active, always use its preset values
+      // regardless of what individual filter state says (prevents drift)
+      const isFlip = flipFinderRef.current;
+      const effectiveSortBy = isFlip ? 'liquidity_score' : sortBy;
+      const effectiveSortDir = isFlip ? 'desc' : sortDir;
+      const effectiveMinPrice = isFlip ? 2 : minPrice;
+      const effectiveMinLiquidity = isFlip ? 30 : minLiquidity;
+      const effectiveMinVelocity = isFlip ? 0.5 : minVelocity;
+      const effectiveMinAppreciation = isFlip ? 0 : minAppreciation;
+      const effectiveRegime = isFlip ? '' : regime;
+      const effectiveMaxPrice = isFlip ? '' : maxPrice;
+      const effectiveSearch = isFlip ? '' : search;
+
       const params: Record<string, string> = {
         page: String(page),
         page_size: '48',
-        sort_by: sortBy,
-        sort_dir: sortDir,
-        min_price: String(minPrice),
+        sort_by: effectiveSortBy,
+        sort_dir: effectiveSortDir,
+        min_price: String(effectiveMinPrice),
       };
       // Investment Grade preset overrides individual liquidity/appreciation filters
-      if (investmentGradeOnly) {
+      if (!isFlip && investmentGradeOnly) {
         params.min_liquidity = '30';
         params.min_appreciation = '40';
       } else {
-        if (minLiquidity > 0) params.min_liquidity = String(minLiquidity);
-        if (minAppreciation > 0) params.min_appreciation = String(minAppreciation);
+        if (effectiveMinLiquidity > 0) params.min_liquidity = String(effectiveMinLiquidity);
+        if (effectiveMinAppreciation > 0) params.min_appreciation = String(effectiveMinAppreciation);
       }
-      if (regime) params.regime = regime;
-      if (maxPrice !== '' && Number(maxPrice) > 0) params.max_price = maxPrice;
-      if (search) params.q = search;
-      if (minVelocity > 0) params.min_velocity = String(minVelocity);
+      if (effectiveRegime) params.regime = effectiveRegime;
+      if (effectiveMaxPrice !== '' && Number(effectiveMaxPrice) > 0) params.max_price = effectiveMaxPrice;
+      if (effectiveSearch) params.q = effectiveSearch;
+      if (effectiveMinVelocity > 0) params.min_velocity = String(effectiveMinVelocity);
 
       const result = await api.getScreenerCards(params);
       setCards(result.data);
@@ -784,6 +878,7 @@ export default function Screener() {
   };
 
   const activateFlipFinder = () => {
+    flipFinderRef.current = true;
     setFlipFinderActive(true);
     setInvestmentGradeOnly(false);
     setSortBy('liquidity_score');
@@ -799,6 +894,7 @@ export default function Screener() {
   };
 
   const clearAllFilters = () => {
+    flipFinderRef.current = false;
     setFlipFinderActive(false);
     setInvestmentGradeOnly(false);
     setMinLiquidity(0);
@@ -886,7 +982,7 @@ export default function Screener() {
             <Chip
               label="Investment Grade"
               size="small"
-              onClick={() => { setInvestmentGradeOnly(!investmentGradeOnly); setFlipFinderActive(false); setPage(1); }}
+              onClick={() => { setInvestmentGradeOnly(!investmentGradeOnly); flipFinderRef.current = false; setFlipFinderActive(false); setPage(1); }}
               sx={{
                 bgcolor: investmentGradeOnly ? '#00ff41' : 'transparent',
                 color: investmentGradeOnly ? '#000' : '#00ff41',
@@ -1125,17 +1221,17 @@ export default function Screener() {
           {cards.map((card, idx) => (
             <Grid size={{ xs: 6, sm: 4, md: 3, lg: 2 }} key={card.id}>
               {simpleMode ? (
-                <SimpleCardTile card={card} />
+                <SimpleCardTile card={card} flipFinderActive={flipFinderActive} />
               ) : (
-                <CardTile card={card} rank={(page - 1) * 48 + idx + 1} />
+                <CardTile card={card} rank={(page - 1) * 48 + idx + 1} flipFinderActive={flipFinderActive} />
               )}
             </Grid>
           ))}
         </Grid>
       ) : simpleMode ? (
-        <SimpleCardTable cards={cards} page={page} onSort={handleTableSort} sortBy={sortBy} sortDir={sortDir} />
+        <SimpleCardTable cards={cards} page={page} onSort={handleTableSort} sortBy={sortBy} sortDir={sortDir} flipFinderActive={flipFinderActive} />
       ) : (
-        <CardTable cards={cards} page={page} onSort={handleTableSort} sortBy={sortBy} sortDir={sortDir} />
+        <CardTable cards={cards} page={page} onSort={handleTableSort} sortBy={sortBy} sortDir={sortDir} flipFinderActive={flipFinderActive} />
       )}
 
       {/* Pagination */}

@@ -1,12 +1,16 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   Box, Paper, Typography, Avatar, IconButton, TextField, Collapse,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
+  InputAdornment, CircularProgress, Snackbar, ClickAwayListener,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import BookmarkIcon from '@mui/icons-material/Bookmark';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import SearchIcon from '@mui/icons-material/Search';
+import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import { useNavigate } from 'react-router-dom';
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis,
@@ -89,6 +93,62 @@ export default function Watchlist() {
     localStorage.setItem('pkmn_watchlist', JSON.stringify(updated));
     setRows(prev => prev.map(r => r.cardId === cardId ? { ...r, quantity: qty } : r));
   };
+
+  // Quick Add state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<Card[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [snackMsg, setSnackMsg] = useState<string | null>(null);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const watchlistIds = useMemo(() => new Set(rows.map(r => r.cardId)), [rows]);
+
+  const handleSearch = useCallback((query: string) => {
+    setSearchQuery(query);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    if (query.trim().length < 2) {
+      setSearchResults([]);
+      setShowDropdown(false);
+      return;
+    }
+    searchTimer.current = setTimeout(async () => {
+      setSearchLoading(true);
+      try {
+        const res = await api.getCards({ q: query.trim(), page_size: '8' });
+        setSearchResults(res.data);
+        setShowDropdown(true);
+      } catch {
+        setSearchResults([]);
+      } finally {
+        setSearchLoading(false);
+      }
+    }, 300);
+  }, []);
+
+  const quickAdd = useCallback((card: Card) => {
+    const items: WatchlistItem[] = JSON.parse(localStorage.getItem('pkmn_watchlist') || '[]');
+    if (items.some(w => w.cardId === card.id)) {
+      setSnackMsg(`${card.name} is already on your watchlist`);
+      return;
+    }
+    const newItem: WatchlistItem = {
+      cardId: card.id,
+      costBasis: null,
+      alertAbove: null,
+      alertBelow: null,
+      quantity: 1,
+      addedAt: new Date().toISOString(),
+    };
+    items.push(newItem);
+    localStorage.setItem('pkmn_watchlist', JSON.stringify(items));
+    setRows(prev => [...prev, { ...newItem, card }]);
+    setSnackMsg(`Added ${card.name} to watchlist`);
+    setSearchQuery('');
+    setSearchResults([]);
+    setShowDropdown(false);
+  }, []);
 
   const [chartOpen, setChartOpen] = useState(true);
   const [chartData, setChartData] = useState<{ date: string; value: number }[]>([]);
@@ -192,6 +252,143 @@ export default function Watchlist() {
           Cards you're tracking. Add a cost basis to see your profit.
         </Typography>
       </Box>
+
+      {/* Quick Add Search */}
+      <Paper sx={{ p: 1.5, mb: 2, position: 'relative' }}>
+        <ClickAwayListener onClickAway={() => setShowDropdown(false)}>
+          <Box ref={dropdownRef}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+              <AddCircleOutlineIcon sx={{ color: '#ffd700', fontSize: 18 }} />
+              <Typography sx={{ color: '#ffd700', fontFamily: 'monospace', fontSize: '0.7rem', fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase' }}>
+                Quick Add
+              </Typography>
+            </Box>
+            <TextField
+              fullWidth
+              size="small"
+              placeholder="Search cards by name to add..."
+              value={searchQuery}
+              onChange={e => handleSearch(e.target.value)}
+              onFocus={() => { if (searchResults.length > 0) setShowDropdown(true); }}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon sx={{ color: '#555', fontSize: 18 }} />
+                  </InputAdornment>
+                ),
+                endAdornment: searchLoading ? (
+                  <InputAdornment position="end">
+                    <CircularProgress size={16} sx={{ color: '#555' }} />
+                  </InputAdornment>
+                ) : null,
+              }}
+              sx={{
+                '& .MuiInputBase-input': {
+                  fontFamily: '"JetBrains Mono", monospace',
+                  fontSize: '0.85rem',
+                  color: '#ccc',
+                },
+                '& .MuiOutlinedInput-root': {
+                  '& fieldset': { borderColor: '#333' },
+                  '&:hover fieldset': { borderColor: '#555' },
+                  '&.Mui-focused fieldset': { borderColor: '#ffd700' },
+                },
+              }}
+            />
+            {showDropdown && searchResults.length > 0 && (
+              <Paper
+                sx={{
+                  position: 'absolute',
+                  left: 0,
+                  right: 0,
+                  top: '100%',
+                  zIndex: 1200,
+                  maxHeight: 360,
+                  overflowY: 'auto',
+                  border: '1px solid #333',
+                  bgcolor: '#0d0d1a',
+                  mt: 0.5,
+                }}
+              >
+                {searchResults.map(card => {
+                  const alreadyAdded = watchlistIds.has(card.id);
+                  return (
+                    <Box
+                      key={card.id}
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 1.5,
+                        px: 1.5,
+                        py: 1,
+                        borderBottom: '1px solid #1a1a2e',
+                        '&:hover': { bgcolor: '#1a1a2e' },
+                        cursor: alreadyAdded ? 'default' : 'pointer',
+                        opacity: alreadyAdded ? 0.5 : 1,
+                      }}
+                      onClick={() => { if (!alreadyAdded) quickAdd(card); }}
+                    >
+                      <Avatar
+                        src={card.image_small}
+                        variant="rounded"
+                        sx={{ width: 32, height: 44, flexShrink: 0 }}
+                      />
+                      <Box sx={{ flex: 1, minWidth: 0 }}>
+                        <Typography sx={{ fontWeight: 600, fontSize: '0.8rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {card.name}
+                        </Typography>
+                        <Typography sx={{ color: '#666', fontSize: '0.65rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {card.set_name} &middot; {card.rarity}
+                        </Typography>
+                      </Box>
+                      <Typography sx={{
+                        fontFamily: '"JetBrains Mono", monospace',
+                        fontWeight: 700,
+                        fontSize: '0.85rem',
+                        color: '#00ff41',
+                        flexShrink: 0,
+                      }}>
+                        {card.current_price != null ? `$${card.current_price.toFixed(2)}` : '—'}
+                      </Typography>
+                      {alreadyAdded ? (
+                        <CheckCircleIcon sx={{ color: '#555', fontSize: 20, flexShrink: 0 }} />
+                      ) : (
+                        <IconButton
+                          size="small"
+                          onClick={e => { e.stopPropagation(); quickAdd(card); }}
+                          sx={{ color: '#ffd700', flexShrink: 0, '&:hover': { color: '#00ff41' } }}
+                        >
+                          <AddCircleOutlineIcon sx={{ fontSize: 20 }} />
+                        </IconButton>
+                      )}
+                    </Box>
+                  );
+                })}
+              </Paper>
+            )}
+            {showDropdown && searchResults.length === 0 && searchQuery.trim().length >= 2 && !searchLoading && (
+              <Paper
+                sx={{
+                  position: 'absolute',
+                  left: 0,
+                  right: 0,
+                  top: '100%',
+                  zIndex: 1200,
+                  border: '1px solid #333',
+                  bgcolor: '#0d0d1a',
+                  mt: 0.5,
+                  p: 2,
+                  textAlign: 'center',
+                }}
+              >
+                <Typography sx={{ color: '#555', fontFamily: 'monospace', fontSize: '0.8rem' }}>
+                  No cards found for "{searchQuery}"
+                </Typography>
+              </Paper>
+            )}
+          </Box>
+        </ClickAwayListener>
+      </Paper>
 
       {/* Portfolio Summary */}
       {rows.length > 0 && (
@@ -333,6 +530,72 @@ export default function Watchlist() {
                   No price history available
                 </Typography>
               )}
+
+              {/* Portfolio Allocation Bar */}
+              {(() => {
+                const ALLOC_COLORS = ['#4fc3f7', '#ffb74d', '#81c784', '#e57373', '#ba68c8', '#4db6ac', '#fff176', '#f06292', '#90a4ae', '#aed581'];
+                const cardsWithValue = rows
+                  .map((r, i) => ({
+                    name: r.card?.name || 'Unknown',
+                    value: (r.card?.current_price || 0) * (r.quantity ?? 1),
+                    color: ALLOC_COLORS[i % ALLOC_COLORS.length],
+                  }))
+                  .filter(c => c.value > 0);
+                if (cardsWithValue.length < 2 || totalValue <= 0) return null;
+                const allocations = cardsWithValue
+                  .map(c => ({ ...c, pct: (c.value / totalValue) * 100 }))
+                  .sort((a, b) => b.pct - a.pct);
+                return (
+                  <Box sx={{ mt: 2 }}>
+                    <Typography sx={{ color: '#555', fontFamily: 'monospace', fontSize: '0.6rem', textTransform: 'uppercase', mb: 0.5 }}>
+                      Portfolio Allocation
+                    </Typography>
+                    <Box sx={{ display: 'flex', width: '100%', height: 28, borderRadius: 1, overflow: 'hidden', border: '1px solid #333' }}>
+                      {allocations.map((a, i) => (
+                        <Box
+                          key={i}
+                          sx={{
+                            width: `${a.pct}%`,
+                            bgcolor: a.color,
+                            opacity: 0.75,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            overflow: 'hidden',
+                            minWidth: a.pct > 3 ? undefined : 0,
+                            '&:hover': { opacity: 1 },
+                            transition: 'opacity 0.2s',
+                          }}
+                          title={`${a.name}: ${a.pct.toFixed(1)}% ($${a.value.toFixed(2)})`}
+                        >
+                          {a.pct >= 10 && (
+                            <Typography sx={{
+                              color: '#000',
+                              fontFamily: '"JetBrains Mono", monospace',
+                              fontSize: '0.6rem',
+                              fontWeight: 700,
+                              whiteSpace: 'nowrap',
+                              px: 0.5,
+                            }}>
+                              {a.name.length > 12 ? a.name.slice(0, 11) + '\u2026' : a.name} {a.pct.toFixed(0)}%
+                            </Typography>
+                          )}
+                        </Box>
+                      ))}
+                    </Box>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, mt: 0.75 }}>
+                      {allocations.map((a, i) => (
+                        <Box key={i} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                          <Box sx={{ width: 8, height: 8, borderRadius: '2px', bgcolor: a.color, opacity: 0.75 }} />
+                          <Typography sx={{ color: '#888', fontFamily: '"JetBrains Mono", monospace', fontSize: '0.6rem' }}>
+                            {a.name} {a.pct.toFixed(1)}%
+                          </Typography>
+                        </Box>
+                      ))}
+                    </Box>
+                  </Box>
+                );
+              })()}
             </Box>
           </Collapse>
         </Paper>
@@ -520,6 +783,23 @@ export default function Watchlist() {
           </Table>
         </TableContainer>
       )}
+
+      <Snackbar
+        open={snackMsg !== null}
+        autoHideDuration={2500}
+        onClose={() => setSnackMsg(null)}
+        message={snackMsg}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        ContentProps={{
+          sx: {
+            bgcolor: '#1a1a2e',
+            border: '1px solid #333',
+            color: '#00ff41',
+            fontFamily: '"JetBrains Mono", monospace',
+            fontSize: '0.8rem',
+          },
+        }}
+      />
     </Box>
   );
 }

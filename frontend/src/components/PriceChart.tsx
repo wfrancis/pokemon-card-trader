@@ -6,12 +6,21 @@ import {
 import { Box, Typography, ToggleButton, ToggleButtonGroup, IconButton, Tooltip as MuiTooltip, Chip } from '@mui/material';
 import DownloadIcon from '@mui/icons-material/Download';
 import ZoomOutMapIcon from '@mui/icons-material/ZoomOutMap';
+import CloseIcon from '@mui/icons-material/Close';
 import html2canvas from 'html2canvas';
 import { PricePoint } from '../services/api';
+
+interface CompareData {
+  priceData: PricePoint[];
+  cardName: string;
+  currentPrice?: number | null;
+}
 
 interface Props {
   priceData: PricePoint[];
   cardName?: string;
+  compareData?: CompareData | null;
+  onRemoveCompare?: () => void;
 }
 
 type TimeRange = '1M' | '3M' | '6M' | '1Y' | 'ALL';
@@ -58,7 +67,7 @@ function cleanTickValue(v: number): string {
   return `$${v.toFixed(2)}`;
 }
 
-export default function PriceChart({ priceData, cardName }: Props) {
+export default function PriceChart({ priceData, cardName, compareData, onRemoveCompare }: Props) {
   const chartRef = useRef<HTMLDivElement>(null);
   const [range, setRange] = useState<TimeRange>('ALL');
 
@@ -68,6 +77,8 @@ export default function PriceChart({ priceData, cardName }: Props) {
   const [zoomLeft, setZoomLeft] = useState<string>('');
   const [zoomRight, setZoomRight] = useState<string>('');
   const [isZoomed, setIsZoomed] = useState(false);
+
+  const isComparing = !!(compareData && compareData.priceData.length > 0);
 
   const handleExportPng = async () => {
     if (!chartRef.current) return;
@@ -118,13 +129,57 @@ export default function PriceChart({ priceData, cardName }: Props) {
     }));
   }, [priceData]);
 
+  // Process compare card data
+  const fullCompareData = useMemo(() => {
+    if (!compareData || compareData.priceData.length === 0) return [];
+    const rawPrices = compareData.priceData.map(p => p.market_price);
+    const cleanedPrices = cleanOutliers(rawPrices);
+    return compareData.priceData.map((p, i) => ({
+      date: p.date,
+      price: cleanedPrices[i],
+    }));
+  }, [compareData]);
+
   const rangeData = useMemo(() => filterByRange(fullChartData, range), [fullChartData, range]);
+  const rangeCompareData = useMemo(() => filterByRange(fullCompareData, range), [fullCompareData, range]);
 
   // Apply zoom filter on top of range filter
   const chartData = useMemo(() => {
     if (!isZoomed || !zoomLeft || !zoomRight) return rangeData;
     return rangeData.filter(d => d.date >= zoomLeft && d.date <= zoomRight);
   }, [rangeData, isZoomed, zoomLeft, zoomRight]);
+
+  const compareChartData = useMemo(() => {
+    if (!isZoomed || !zoomLeft || !zoomRight) return rangeCompareData;
+    return rangeCompareData.filter(d => d.date >= zoomLeft && d.date <= zoomRight);
+  }, [rangeCompareData, isZoomed, zoomLeft, zoomRight]);
+
+  // Build normalized (% change) merged dataset for compare mode
+  const mergedCompareData = useMemo(() => {
+    if (!isComparing || chartData.length === 0 || compareChartData.length === 0) return [];
+    // Build lookup maps by date
+    const primaryMap = new Map(chartData.map(d => [d.date, d.price]));
+    const compareMap = new Map(compareChartData.map(d => [d.date, d.price]));
+    // Get all unique dates sorted
+    const allDates = Array.from(new Set([...chartData.map(d => d.date), ...compareChartData.map(d => d.date)])).sort();
+    // Find first date where both have data for baseline
+    const firstBothDate = allDates.find(d => primaryMap.has(d) && compareMap.has(d));
+    if (!firstBothDate) return [];
+    const primaryBaseline = primaryMap.get(firstBothDate)!;
+    const compareBaseline = compareMap.get(firstBothDate)!;
+    if (primaryBaseline === 0 || compareBaseline === 0) return [];
+    return allDates.map(date => {
+      const pPrice = primaryMap.get(date);
+      const cPrice = compareMap.get(date);
+      return {
+        date,
+        primaryPct: pPrice != null ? ((pPrice - primaryBaseline) / primaryBaseline) * 100 : undefined,
+        comparePct: cPrice != null ? ((cPrice - compareBaseline) / compareBaseline) * 100 : undefined,
+        primaryPrice: pPrice,
+        comparePrice: cPrice,
+      };
+    }).filter(d => d.primaryPct !== undefined || d.comparePct !== undefined);
+  }, [isComparing, chartData, compareChartData]);
 
   // Reset zoom when range changes
   const handleRangeChange = useCallback((_: any, v: TimeRange | null) => {
@@ -162,9 +217,26 @@ export default function PriceChart({ priceData, cardName }: Props) {
       : sortedPrices[Math.floor(sortedPrices.length / 2)]
     : 0;
 
-  const xTickInterval = chartData.length > 365 ? Math.floor(chartData.length / 12) :
-                         chartData.length > 90 ? Math.floor(chartData.length / 8) :
-                         Math.floor(chartData.length / 6);
+  // Compare card % change stats
+  const compareCurrentPrice = compareChartData.length > 0 ? compareChartData[compareChartData.length - 1]?.price : null;
+  const compareFirstPrice = compareChartData.length > 0 ? compareChartData[0]?.price : null;
+  const comparePctChange = compareFirstPrice ? ((compareCurrentPrice! - compareFirstPrice) / compareFirstPrice) * 100 : 0;
+
+  // Y domain for compare mode (% change)
+  const compareYDomain: [number, number] = (() => {
+    if (!isComparing || mergedCompareData.length === 0) return [-10, 10] as [number, number];
+    const allPcts = mergedCompareData.flatMap(d => [d.primaryPct, d.comparePct]).filter((v): v is number => v !== undefined);
+    if (allPcts.length === 0) return [-10, 10] as [number, number];
+    const minPct = Math.min(...allPcts);
+    const maxPct = Math.max(...allPcts);
+    const pctPadding = (maxPct - minPct) * 0.1 || 5;
+    return [minPct - pctPadding, maxPct + pctPadding];
+  })();
+
+  const activeData = isComparing ? mergedCompareData : chartData;
+  const xTickInterval = activeData.length > 365 ? Math.floor(activeData.length / 12) :
+                         activeData.length > 90 ? Math.floor(activeData.length / 8) :
+                         Math.floor(activeData.length / 6);
 
   return (
     <Box ref={chartRef}>
@@ -204,6 +276,38 @@ export default function PriceChart({ priceData, cardName }: Props) {
         )}
       </Box>
 
+      {/* Compare legend */}
+      {isComparing && compareData && (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1, flexWrap: 'wrap' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <Box sx={{ width: 12, height: 3, bgcolor: '#00ff41', borderRadius: 1 }} />
+            <Typography sx={{ color: '#ccc', fontSize: '0.7rem', fontFamily: 'monospace', fontWeight: 600 }}>
+              {cardName || 'Primary'} (${currentPrice?.toFixed(2)})
+            </Typography>
+            <Typography sx={{ color: pctChange >= 0 ? '#00ff41' : '#ff1744', fontSize: '0.65rem', fontFamily: 'monospace', fontWeight: 700 }}>
+              {pctChange >= 0 ? '+' : ''}{pctChange.toFixed(1)}%
+            </Typography>
+          </Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <Box sx={{ width: 12, height: 3, bgcolor: '#00bcd4', borderRadius: 1 }} />
+            <Typography sx={{ color: '#ccc', fontSize: '0.7rem', fontFamily: 'monospace', fontWeight: 600 }}>
+              {compareData.cardName} (${compareCurrentPrice?.toFixed(2)})
+            </Typography>
+            <Typography sx={{ color: comparePctChange >= 0 ? '#00ff41' : '#ff1744', fontSize: '0.65rem', fontFamily: 'monospace', fontWeight: 700 }}>
+              {comparePctChange >= 0 ? '+' : ''}{comparePctChange.toFixed(1)}%
+            </Typography>
+            {onRemoveCompare && (
+              <IconButton onClick={onRemoveCompare} size="small" sx={{ color: '#666', p: 0.2, '&:hover': { color: '#ff1744' } }}>
+                <CloseIcon sx={{ fontSize: 14 }} />
+              </IconButton>
+            )}
+          </Box>
+          <Typography sx={{ color: '#555', fontSize: '0.6rem', fontFamily: 'monospace' }}>
+            Normalized to % change
+          </Typography>
+        </Box>
+      )}
+
       {/* Time range toggles */}
       <Box sx={{ mb: 1 }}>
         <ToggleButtonGroup
@@ -229,114 +333,198 @@ export default function PriceChart({ priceData, cardName }: Props) {
       {/* Chart */}
       <Box sx={{ height: { xs: 280, sm: 350, md: 420 }, cursor: 'crosshair', userSelect: 'none' }}>
       <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart
-          data={chartData}
-          margin={{ top: 5, right: 10, bottom: 5, left: 5 }}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-        >
-          <defs>
-            <linearGradient id="priceGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={isPositive ? '#00ff41' : '#ff1744'} stopOpacity={0.35} />
-              <stop offset="15%" stopColor={isPositive ? '#00ff41' : '#ff1744'} stopOpacity={0.2} />
-              <stop offset="40%" stopColor={isPositive ? '#00ff41' : '#ff1744'} stopOpacity={0.1} />
-              <stop offset="70%" stopColor={isPositive ? '#00ff41' : '#ff1744'} stopOpacity={0.04} />
-              <stop offset="100%" stopColor={isPositive ? '#00ff41' : '#ff1744'} stopOpacity={0} />
-            </linearGradient>
-          </defs>
-
-          <CartesianGrid strokeDasharray="2 4" stroke="#222" vertical={false} />
-
-          <XAxis
-            dataKey="date"
-            tick={{ fill: '#888', fontSize: 11, fontFamily: 'monospace' }}
-            tickLine={false}
-            axisLine={{ stroke: '#222' }}
-            interval={xTickInterval}
-            tickFormatter={(d) => {
-              const dt = new Date(d + 'T00:00:00');
-              if (range === '1M' || range === '3M') {
-                return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-              }
-              return dt.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
-            }}
-          />
-          <YAxis
-            tick={{ fill: '#888', fontSize: 11, fontFamily: 'monospace' }}
-            tickLine={false}
-            axisLine={false}
-            domain={yDomain}
-            tickFormatter={cleanTickValue}
-            width={65}
-          />
-
-          {/* Median reference line */}
-          {medianPrice > 0 && (
-            <ReferenceLine
-              y={medianPrice}
-              stroke="#666"
-              strokeDasharray="4 4"
-              strokeWidth={1}
-              label={{
-                value: `Median $${medianPrice >= 100 ? Math.round(medianPrice) : medianPrice.toFixed(2)}`,
-                position: 'right',
-                fill: '#666',
-                fontSize: 10,
-                fontFamily: 'monospace',
+        {isComparing && mergedCompareData.length > 0 ? (
+          /* Compare mode: normalized % change chart */
+          <ComposedChart
+            data={mergedCompareData}
+            margin={{ top: 5, right: 10, bottom: 5, left: 5 }}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+          >
+            <CartesianGrid strokeDasharray="2 4" stroke="#222" vertical={false} />
+            <XAxis
+              dataKey="date"
+              tick={{ fill: '#888', fontSize: 11, fontFamily: 'monospace' }}
+              tickLine={false}
+              axisLine={{ stroke: '#222' }}
+              interval={xTickInterval}
+              tickFormatter={(d) => {
+                const dt = new Date(d + 'T00:00:00');
+                if (range === '1M' || range === '3M') {
+                  return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                }
+                return dt.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
               }}
             />
-          )}
-
-          <Tooltip
-            contentStyle={{
-              backgroundColor: '#111',
-              border: '1px solid #333',
-              borderRadius: 6,
-              fontSize: 13,
-              fontFamily: 'monospace',
-              padding: '10px 14px',
-              boxShadow: '0 4px 16px rgba(0,0,0,0.6)',
-            }}
-            labelStyle={{ color: '#ccc', fontSize: 12, fontWeight: 600, marginBottom: 4 }}
-            labelFormatter={(label) => formatDate(label as string)}
-            formatter={(value: any) => [`$${Number(value).toFixed(2)}`, 'Price']}
-          />
-
-          {/* Price fill gradient */}
-          <Area
-            type="monotone"
-            dataKey="price"
-            stroke="none"
-            fill="url(#priceGradient)"
-            fillOpacity={1}
-            isAnimationActive={false}
-            tooltipType="none"
-            name="priceFill"
-          />
-
-          {/* Main price line */}
-          <Line
-            type="monotone"
-            dataKey="price"
-            stroke={isPositive ? '#00ff41' : '#ff1744'}
-            strokeWidth={2.5}
-            dot={false}
-            activeDot={{ r: 4, fill: '#fff', stroke: isPositive ? '#00ff41' : '#ff1744', strokeWidth: 2 }}
-            isAnimationActive={false}
-          />
-
-          {/* Drag-to-zoom selection area */}
-          {refAreaLeft && refAreaRight && (
-            <ReferenceArea
-              x1={refAreaLeft}
-              x2={refAreaRight}
-              strokeOpacity={0.3}
-              fill="#00bcd4"
-              fillOpacity={0.1}
+            <YAxis
+              tick={{ fill: '#888', fontSize: 11, fontFamily: 'monospace' }}
+              tickLine={false}
+              axisLine={false}
+              domain={compareYDomain}
+              tickFormatter={(v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(0)}%`}
+              width={55}
             />
-          )}
-        </ComposedChart>
+            <ReferenceLine y={0} stroke="#444" strokeWidth={1} />
+            <Tooltip
+              contentStyle={{
+                backgroundColor: '#111',
+                border: '1px solid #333',
+                borderRadius: 6,
+                fontSize: 12,
+                fontFamily: 'monospace',
+                padding: '10px 14px',
+                boxShadow: '0 4px 16px rgba(0,0,0,0.6)',
+              }}
+              labelStyle={{ color: '#ccc', fontSize: 12, fontWeight: 600, marginBottom: 4 }}
+              labelFormatter={(label) => formatDate(label as string)}
+              formatter={(value: any, name: any) => {
+                if (name === 'primaryPct') return [`${Number(value) >= 0 ? '+' : ''}${Number(value).toFixed(1)}%`, cardName || 'Primary'];
+                if (name === 'comparePct') return [`${Number(value) >= 0 ? '+' : ''}${Number(value).toFixed(1)}%`, compareData?.cardName || 'Compare'];
+                return [value, name];
+              }}
+            />
+            <Line
+              type="monotone"
+              dataKey="primaryPct"
+              stroke="#00ff41"
+              strokeWidth={2.5}
+              dot={false}
+              activeDot={{ r: 4, fill: '#fff', stroke: '#00ff41', strokeWidth: 2 }}
+              isAnimationActive={false}
+              connectNulls
+            />
+            <Line
+              type="monotone"
+              dataKey="comparePct"
+              stroke="#00bcd4"
+              strokeWidth={2.5}
+              dot={false}
+              activeDot={{ r: 4, fill: '#fff', stroke: '#00bcd4', strokeWidth: 2 }}
+              isAnimationActive={false}
+              connectNulls
+            />
+            {refAreaLeft && refAreaRight && (
+              <ReferenceArea
+                x1={refAreaLeft}
+                x2={refAreaRight}
+                strokeOpacity={0.3}
+                fill="#00bcd4"
+                fillOpacity={0.1}
+              />
+            )}
+          </ComposedChart>
+        ) : (
+          /* Standard single-card chart */
+          <ComposedChart
+            data={chartData}
+            margin={{ top: 5, right: 10, bottom: 5, left: 5 }}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+          >
+            <defs>
+              <linearGradient id="priceGradient" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={isPositive ? '#00ff41' : '#ff1744'} stopOpacity={0.35} />
+                <stop offset="15%" stopColor={isPositive ? '#00ff41' : '#ff1744'} stopOpacity={0.2} />
+                <stop offset="40%" stopColor={isPositive ? '#00ff41' : '#ff1744'} stopOpacity={0.1} />
+                <stop offset="70%" stopColor={isPositive ? '#00ff41' : '#ff1744'} stopOpacity={0.04} />
+                <stop offset="100%" stopColor={isPositive ? '#00ff41' : '#ff1744'} stopOpacity={0} />
+              </linearGradient>
+            </defs>
+
+            <CartesianGrid strokeDasharray="2 4" stroke="#222" vertical={false} />
+
+            <XAxis
+              dataKey="date"
+              tick={{ fill: '#888', fontSize: 11, fontFamily: 'monospace' }}
+              tickLine={false}
+              axisLine={{ stroke: '#222' }}
+              interval={xTickInterval}
+              tickFormatter={(d) => {
+                const dt = new Date(d + 'T00:00:00');
+                if (range === '1M' || range === '3M') {
+                  return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                }
+                return dt.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+              }}
+            />
+            <YAxis
+              tick={{ fill: '#888', fontSize: 11, fontFamily: 'monospace' }}
+              tickLine={false}
+              axisLine={false}
+              domain={yDomain}
+              tickFormatter={cleanTickValue}
+              width={65}
+            />
+
+            {/* Median reference line */}
+            {medianPrice > 0 && (
+              <ReferenceLine
+                y={medianPrice}
+                stroke="#666"
+                strokeDasharray="4 4"
+                strokeWidth={1}
+                label={{
+                  value: `Median $${medianPrice >= 100 ? Math.round(medianPrice) : medianPrice.toFixed(2)}`,
+                  position: 'right',
+                  fill: '#666',
+                  fontSize: 10,
+                  fontFamily: 'monospace',
+                }}
+              />
+            )}
+
+            <Tooltip
+              contentStyle={{
+                backgroundColor: '#111',
+                border: '1px solid #333',
+                borderRadius: 6,
+                fontSize: 13,
+                fontFamily: 'monospace',
+                padding: '10px 14px',
+                boxShadow: '0 4px 16px rgba(0,0,0,0.6)',
+              }}
+              labelStyle={{ color: '#ccc', fontSize: 12, fontWeight: 600, marginBottom: 4 }}
+              labelFormatter={(label) => formatDate(label as string)}
+              formatter={(value: any) => [`$${Number(value).toFixed(2)}`, 'Price']}
+            />
+
+            {/* Price fill gradient */}
+            <Area
+              type="monotone"
+              dataKey="price"
+              stroke="none"
+              fill="url(#priceGradient)"
+              fillOpacity={1}
+              isAnimationActive={false}
+              tooltipType="none"
+              name="priceFill"
+            />
+
+            {/* Main price line */}
+            <Line
+              type="monotone"
+              dataKey="price"
+              stroke={isPositive ? '#00ff41' : '#ff1744'}
+              strokeWidth={2.5}
+              dot={false}
+              activeDot={{ r: 4, fill: '#fff', stroke: isPositive ? '#00ff41' : '#ff1744', strokeWidth: 2 }}
+              isAnimationActive={false}
+            />
+
+            {/* Drag-to-zoom selection area */}
+            {refAreaLeft && refAreaRight && (
+              <ReferenceArea
+                x1={refAreaLeft}
+                x2={refAreaRight}
+                strokeOpacity={0.3}
+                fill="#00bcd4"
+                fillOpacity={0.1}
+              />
+            )}
+          </ComposedChart>
+        )}
       </ResponsiveContainer>
       </Box>
     </Box>

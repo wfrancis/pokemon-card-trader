@@ -1,8 +1,11 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Box, Paper, Typography, Button, IconButton } from '@mui/material';
+import { Box, Paper, Typography, Button, IconButton, Chip } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import CatchingPokemonIcon from '@mui/icons-material/CatchingPokemon';
+import TrendingUpIcon from '@mui/icons-material/TrendingUp';
+import BookmarkBorderIcon from '@mui/icons-material/BookmarkBorder';
+import SummarizeIcon from '@mui/icons-material/Summarize';
 
 const STORAGE_KEY = 'pkmn_first_visit_dismissed';
 
@@ -10,6 +13,12 @@ const quickLinks = [
   { label: 'Charizard', query: 'Charizard' },
   { label: 'Pikachu', query: 'Pikachu' },
   { label: 'Mewtwo', query: 'Mewtwo' },
+];
+
+const navLinks = [
+  { label: 'Browse Top Cards', path: '/screener', icon: TrendingUpIcon },
+  { label: 'Track Your Cards', path: '/watchlist', icon: BookmarkBorderIcon },
+  { label: 'Weekly Report', path: '/recap', icon: SummarizeIcon },
 ];
 
 export default function OnboardingBanner() {
@@ -113,6 +122,40 @@ export default function OnboardingBanner() {
           >
             {label}
           </Button>
+        ))}
+      </Box>
+
+      {/* Explore more navigation links */}
+      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mt: 1.5, alignItems: 'center' }}>
+        <Typography sx={{
+          color: '#666',
+          fontSize: '0.75rem',
+          fontFamily: '"JetBrains Mono", monospace',
+          mr: 0.5,
+        }}>
+          Explore:
+        </Typography>
+        {navLinks.map(({ label, path, icon: Icon }) => (
+          <Chip
+            key={path}
+            label={label}
+            icon={<Icon sx={{ fontSize: 16, color: '#888 !important' }} />}
+            variant="outlined"
+            size="small"
+            onClick={() => navigate(path)}
+            sx={{
+              color: '#aaa',
+              borderColor: 'rgba(255, 255, 255, 0.12)',
+              fontFamily: '"JetBrains Mono", monospace',
+              fontSize: '0.7rem',
+              '&:hover': {
+                borderColor: 'rgba(0, 188, 212, 0.4)',
+                color: '#00bcd4',
+                bgcolor: 'rgba(0, 188, 212, 0.06)',
+                '& .MuiChip-icon': { color: '#00bcd4 !important' },
+              },
+            }}
+          />
         ))}
       </Box>
     </Paper>

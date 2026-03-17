@@ -1,17 +1,22 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box, Paper, Typography, Grid, Chip, Stack, ToggleButton, ToggleButtonGroup,
   Button, Dialog, DialogTitle, DialogContent, DialogActions, TextField,
   Menu, MenuItem, CardMedia, Card as MuiCard, CardContent, CardActionArea,
+  Collapse, List, ListItemButton, ListItemAvatar, Avatar, ListItemText,
+  InputAdornment, CircularProgress,
 } from '@mui/material';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import BookmarkBorderIcon from '@mui/icons-material/BookmarkBorder';
 import BookmarkIcon from '@mui/icons-material/Bookmark';
 import NotificationsIcon from '@mui/icons-material/Notifications';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
+import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
+import SearchIcon from '@mui/icons-material/Search';
 import { api, Card, PricePoint, SaleRecord, Analysis, SimilarCard } from '../services/api';
 import PriceChart from '../components/PriceChart';
 import SalesChart from '../components/SalesChart';
@@ -46,6 +51,57 @@ export default function CardDetail() {
   const [loading, setLoading] = useState(true);
   const [isWatchlisted, setIsWatchlisted] = useState(false);
 
+  // Compare mode state
+  const [compareDialogOpen, setCompareDialogOpen] = useState(false);
+  const [compareSearchQuery, setCompareSearchQuery] = useState('');
+  const [compareSearchResults, setCompareSearchResults] = useState<Card[]>([]);
+  const [compareSearching, setCompareSearching] = useState(false);
+  const [compareCard, setCompareCard] = useState<Card | null>(null);
+  const [comparePrices, setComparePrices] = useState<PricePoint[]>([]);
+  const compareSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Debounced compare card search
+  const handleCompareSearch = useCallback((query: string) => {
+    setCompareSearchQuery(query);
+    if (compareSearchTimer.current) clearTimeout(compareSearchTimer.current);
+    if (query.trim().length < 2) {
+      setCompareSearchResults([]);
+      return;
+    }
+    compareSearchTimer.current = setTimeout(async () => {
+      setCompareSearching(true);
+      try {
+        const result = await api.getCards({ search: query.trim(), limit: '10' });
+        // Exclude current card from results
+        setCompareSearchResults(result.data.filter(c => c.id !== parseInt(id || '0')));
+      } catch {
+        setCompareSearchResults([]);
+      } finally {
+        setCompareSearching(false);
+      }
+    }, 300);
+  }, [id]);
+
+  // Select a compare card
+  const handleSelectCompareCard = useCallback(async (selectedCard: Card) => {
+    setCompareDialogOpen(false);
+    setCompareCard(selectedCard);
+    setCompareSearchQuery('');
+    setCompareSearchResults([]);
+    try {
+      const priceData = await api.getCardPrices(selectedCard.id);
+      setComparePrices(priceData.data);
+    } catch {
+      setComparePrices([]);
+    }
+  }, []);
+
+  // Remove comparison
+  const handleRemoveCompare = useCallback(() => {
+    setCompareCard(null);
+    setComparePrices([]);
+  }, []);
+
   // Set page title
   useEffect(() => {
     document.title = card ? `${card.name} | PKMN Trader` : 'PKMN Trader';
@@ -67,6 +123,7 @@ export default function CardDetail() {
   const [quantityValue, setQuantityValue] = useState('1');
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  const [conditionGuideOpen, setConditionGuideOpen] = useState(false);
   const [alertDialogOpen, setAlertDialogOpen] = useState(false);
   const [alertDialogAbove, setAlertDialogAbove] = useState('');
   const [alertDialogBelow, setAlertDialogBelow] = useState('');
@@ -506,14 +563,80 @@ export default function CardDetail() {
                 });
               if (conditions.length === 0) return null;
               const LOW_SAMPLE_THRESHOLD = 5;
+              const conditionGuideData: { abbr: string; name: string; color: string; description: string; condKey: string }[] = [
+                { abbr: 'NM', name: 'Near Mint', color: '#00ff41', description: 'Card looks brand new. Sharp corners, clean edges, no scratches or whitening. Fresh from the pack.', condKey: 'Near Mint' },
+                { abbr: 'LP', name: 'Lightly Played', color: '#8bc34a', description: 'Minor edge wear or small scratches visible on close inspection. Still looks great in a binder.', condKey: 'Lightly Played' },
+                { abbr: 'MP', name: 'Moderately Played', color: '#ff9800', description: 'Noticeable wear on edges and corners. May have light creasing or surface scratches. Clearly played with.', condKey: 'Moderately Played' },
+                { abbr: 'HP', name: 'Heavily Played', color: '#f44336', description: 'Significant wear, creases, or bends. Edges are rough. Card has been well-loved.', condKey: 'Heavily Played' },
+                { abbr: 'DMG', name: 'Damaged', color: '#9e9e9e', description: 'Major damage: tears, water damage, heavy creases, or missing pieces. Still collectible but rough shape.', condKey: 'Damaged' },
+              ];
               return (
                 <Box sx={{ mt: 2.5 }}>
-                  <Typography variant="body2" sx={{
-                    color: '#00bcd4', fontWeight: 700, fontSize: '0.7rem', mb: 1,
-                    fontFamily: '"JetBrains Mono", monospace', letterSpacing: 1,
-                  }}>
-                    CONDITION PRICING
-                  </Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1, gap: 1 }}>
+                    <Typography variant="body2" sx={{
+                      color: '#00bcd4', fontWeight: 700, fontSize: '0.7rem',
+                      fontFamily: '"JetBrains Mono", monospace', letterSpacing: 1,
+                    }}>
+                      CONDITION PRICING
+                    </Typography>
+                    <Box
+                      component="button"
+                      onClick={() => setConditionGuideOpen(!conditionGuideOpen)}
+                      sx={{
+                        display: 'inline-flex', alignItems: 'center', gap: 0.3,
+                        background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+                        color: conditionGuideOpen ? '#00bcd4' : '#555',
+                        '&:hover': { color: '#00bcd4' },
+                        transition: 'color 0.2s',
+                      }}
+                    >
+                      <HelpOutlineIcon sx={{ fontSize: 13 }} />
+                      <Typography sx={{ fontSize: '0.6rem', fontFamily: 'monospace' }}>
+                        {conditionGuideOpen ? 'hide guide' : "what's my card's condition?"}
+                      </Typography>
+                    </Box>
+                  </Box>
+                  <Collapse in={conditionGuideOpen}>
+                    <Box sx={{ mb: 1.5, border: '1px solid #333', borderRadius: 1, bgcolor: '#0d0d1a', overflow: 'hidden' }}>
+                      <Box sx={{ px: 1.5, py: 1, borderBottom: '1px solid #222' }}>
+                        <Typography sx={{ color: '#aaa', fontSize: '0.65rem', fontFamily: 'monospace', fontWeight: 700, mb: 0.5 }}>
+                          QUICK CHECK
+                        </Typography>
+                        <Box sx={{ pl: 0.5 }}>
+                          <Typography sx={{ color: '#ccc', fontSize: '0.65rem', fontFamily: 'monospace', lineHeight: 1.8 }}>
+                            1. Any creases, bends, or tears? &rarr; <Box component="span" sx={{ color: '#f44336', fontWeight: 700 }}>HP</Box> or <Box component="span" sx={{ color: '#9e9e9e', fontWeight: 700 }}>DMG</Box>
+                          </Typography>
+                          <Typography sx={{ color: '#ccc', fontSize: '0.65rem', fontFamily: 'monospace', lineHeight: 1.8 }}>
+                            2. Edges white or worn? &rarr; <Box component="span" sx={{ color: '#ff9800', fontWeight: 700 }}>MP</Box> or <Box component="span" sx={{ color: '#8bc34a', fontWeight: 700 }}>LP</Box>
+                          </Typography>
+                          <Typography sx={{ color: '#ccc', fontSize: '0.65rem', fontFamily: 'monospace', lineHeight: 1.8 }}>
+                            3. Looks brand new, sharp corners? &rarr; <Box component="span" sx={{ color: '#00ff41', fontWeight: 700 }}>NM</Box>
+                          </Typography>
+                        </Box>
+                      </Box>
+                      {conditionGuideData.map((cg) => {
+                        const matchedCond = conditions.find(([c]) => c === cg.condKey);
+                        const medianVal = matchedCond ? getMedian(matchedCond[1].prices) : null;
+                        return (
+                          <Box key={cg.abbr} sx={{ px: 1.5, py: 0.8, borderBottom: '1px solid #1a1a2e', display: 'flex', gap: 1, alignItems: 'flex-start' }}>
+                            <Typography sx={{ color: cg.color, fontWeight: 700, fontSize: '0.7rem', fontFamily: '"JetBrains Mono", monospace', minWidth: 30 }}>
+                              {cg.abbr}
+                            </Typography>
+                            <Box sx={{ flex: 1 }}>
+                              <Typography sx={{ color: '#ccc', fontSize: '0.65rem', fontFamily: 'monospace' }}>
+                                <Box component="span" sx={{ fontWeight: 700 }}>{cg.name}</Box> &mdash; {cg.description}
+                              </Typography>
+                              {medianVal !== null && (
+                                <Typography sx={{ color: cg.color, fontSize: '0.6rem', fontFamily: '"JetBrains Mono", monospace', mt: 0.3 }}>
+                                  This card: ~${medianVal.toFixed(2)} median
+                                </Typography>
+                              )}
+                            </Box>
+                          </Box>
+                        );
+                      })}
+                    </Box>
+                  </Collapse>
                   <Box sx={{
                     border: '1px solid #333', borderRadius: 1, overflow: 'hidden',
                   }}>
@@ -680,6 +803,27 @@ export default function CardDetail() {
                   Sale data not yet available for this card.
                 </Typography>
               )}
+              {chartView === 'history' && (
+                <Button
+                  size="small"
+                  startIcon={<CompareArrowsIcon sx={{ fontSize: 16 }} />}
+                  onClick={() => { setCompareSearchQuery(''); setCompareSearchResults([]); setCompareDialogOpen(true); }}
+                  sx={{
+                    color: compareCard ? '#00bcd4' : '#888',
+                    borderColor: compareCard ? '#00bcd4' : '#333',
+                    fontSize: '0.7rem',
+                    fontWeight: 700,
+                    fontFamily: 'monospace',
+                    textTransform: 'none',
+                    px: 1.5,
+                    py: 0.3,
+                    border: '1px solid',
+                    '&:hover': { borderColor: '#00bcd4', color: '#00bcd4', bgcolor: 'rgba(0,188,212,0.08)' },
+                  }}
+                >
+                  {compareCard ? `vs ${compareCard.name}` : 'Compare'}
+                </Button>
+              )}
             </Box>
 
             {chartView === 'sales' ? (
@@ -689,7 +833,12 @@ export default function CardDetail() {
                 <Typography variant="h3" sx={{ mb: 1, color: '#00bcd4' }}>
                   PRICE HISTORY
                 </Typography>
-                <PriceChart priceData={prices} cardName={card.name} />
+                <PriceChart
+                  priceData={prices}
+                  cardName={card.name}
+                  compareData={compareCard ? { priceData: comparePrices, cardName: compareCard.name, currentPrice: compareCard.current_price } : null}
+                  onRemoveCompare={handleRemoveCompare}
+                />
               </>
             )}
           </Paper>
@@ -848,6 +997,86 @@ export default function CardDetail() {
             sx={{ color: '#ff9800', fontWeight: 700 }}
           >
             {alertSubmitting ? 'Saving...' : 'Create Alert'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Compare Card Search Dialog */}
+      <Dialog
+        open={compareDialogOpen}
+        onClose={() => setCompareDialogOpen(false)}
+        PaperProps={{ sx: { bgcolor: '#111', border: '1px solid #1e1e1e', minWidth: 380, maxHeight: '70vh' } }}
+      >
+        <DialogTitle sx={{ color: '#00bcd4', fontFamily: 'monospace', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: 1 }}>
+          <CompareArrowsIcon sx={{ fontSize: 20 }} />
+          Compare Price History
+        </DialogTitle>
+        <DialogContent>
+          <Typography sx={{ color: '#888', fontSize: '0.8rem', mb: 2 }}>
+            Search for a card to overlay on the price chart.
+          </Typography>
+          <TextField
+            autoFocus
+            fullWidth
+            size="small"
+            placeholder="Search cards by name..."
+            value={compareSearchQuery}
+            onChange={(e) => handleCompareSearch(e.target.value)}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon sx={{ color: '#555', fontSize: 18 }} />
+                </InputAdornment>
+              ),
+              endAdornment: compareSearching ? (
+                <InputAdornment position="end">
+                  <CircularProgress size={16} sx={{ color: '#00bcd4' }} />
+                </InputAdornment>
+              ) : null,
+            }}
+            sx={{ mb: 1, '& .MuiInputLabel-root': { color: '#666' } }}
+          />
+          {compareSearchResults.length > 0 && (
+            <List dense sx={{ maxHeight: 320, overflow: 'auto', '&::-webkit-scrollbar': { width: 4 }, '&::-webkit-scrollbar-thumb': { bgcolor: '#333', borderRadius: 2 } }}>
+              {compareSearchResults.map((c) => (
+                <ListItemButton
+                  key={c.id}
+                  onClick={() => handleSelectCompareCard(c)}
+                  sx={{
+                    borderRadius: 1,
+                    mb: 0.5,
+                    '&:hover': { bgcolor: 'rgba(0,188,212,0.08)' },
+                  }}
+                >
+                  <ListItemAvatar sx={{ minWidth: 44 }}>
+                    <Avatar
+                      src={c.image_small}
+                      variant="rounded"
+                      sx={{ width: 32, height: 44, bgcolor: '#1a1a2e' }}
+                    />
+                  </ListItemAvatar>
+                  <ListItemText
+                    primary={c.name}
+                    secondary={c.set_name}
+                    primaryTypographyProps={{ sx: { color: '#ccc', fontSize: '0.8rem', fontWeight: 600 } }}
+                    secondaryTypographyProps={{ sx: { color: '#666', fontSize: '0.65rem', fontFamily: 'monospace' } }}
+                  />
+                  <Typography sx={{ color: '#00ff41', fontSize: '0.8rem', fontFamily: '"JetBrains Mono", monospace', fontWeight: 700, ml: 1 }}>
+                    {c.current_price != null ? `$${c.current_price.toFixed(2)}` : '--'}
+                  </Typography>
+                </ListItemButton>
+              ))}
+            </List>
+          )}
+          {compareSearchQuery.trim().length >= 2 && !compareSearching && compareSearchResults.length === 0 && (
+            <Typography sx={{ color: '#555', fontSize: '0.8rem', fontFamily: 'monospace', textAlign: 'center', py: 2 }}>
+              No cards found
+            </Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCompareDialogOpen(false)} sx={{ color: '#666' }}>
+            Cancel
           </Button>
         </DialogActions>
       </Dialog>
