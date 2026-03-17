@@ -111,6 +111,101 @@ def hot_cards(
     return get_hot_cards(db, limit=limit)
 
 
+@router.get("/market/weekly-recap/archive")
+def weekly_recap_archive(db: Session = Depends(get_db)):
+    """Return list of available weekly recap periods based on price history data."""
+    from server.models.price_history import PriceHistory
+
+    earliest_date = db.query(func.min(PriceHistory.date)).scalar()
+    if not earliest_date:
+        return {"weeks": []}
+
+    today = datetime.now(timezone.utc).date()
+    weeks = []
+    # Generate weekly periods from most recent to earliest, up to 12 weeks
+    end = today
+    for _ in range(12):
+        start = end - timedelta(days=7)
+        if start < earliest_date:
+            # Include partial week if there's data
+            if end > earliest_date:
+                weeks.append({"start": str(earliest_date), "end": str(end)})
+            break
+        weeks.append({"start": str(start), "end": str(end)})
+        end = start
+
+    return {"weeks": weeks}
+
+
+@router.get("/market/weekly-recap/{start_date}")
+def weekly_recap_historical(start_date: str, db: Session = Depends(get_db)):
+    """Weekly recap for a specific start date (7-day period from that date)."""
+    from server.models.price_history import PriceHistory
+
+    try:
+        period_start = datetime.strptime(start_date, "%Y-%m-%d").date()
+    except ValueError:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
+
+    period_end = period_start + timedelta(days=7)
+
+    movers = get_top_movers(db, limit=5, days=7, ref_date=period_end)
+
+    # Avg price at period end
+    avg_price_end = db.query(
+        func.avg(PriceHistory.market_price)
+    ).filter(
+        PriceHistory.date == period_end,
+        PriceHistory.market_price.isnot(None),
+        PriceHistory.market_price > 0,
+    ).scalar()
+
+    # Fall back: use closest available date within the period
+    if not avg_price_end:
+        avg_price_end = db.query(
+            func.avg(PriceHistory.market_price)
+        ).filter(
+            PriceHistory.date >= period_start,
+            PriceHistory.date <= period_end,
+            PriceHistory.market_price.isnot(None),
+            PriceHistory.market_price > 0,
+        ).scalar()
+
+    avg_price_start = db.query(
+        func.avg(PriceHistory.market_price)
+    ).filter(
+        PriceHistory.date == period_start,
+        PriceHistory.market_price.isnot(None),
+        PriceHistory.market_price > 0,
+    ).scalar()
+
+    avg_price = round(avg_price_end, 2) if avg_price_end else 0
+    total_result = db.query(
+        func.count(Card.id).label("total_cards"),
+        func.sum(Card.current_price).label("total_market_cap"),
+    ).filter(Card.current_price.isnot(None), Card.current_price > 0, Card.is_tracked == True).first()
+    total_cards = total_result.total_cards or 0
+    total_market_cap = round(total_result.total_market_cap, 2) if total_result.total_market_cap else 0
+
+    change_pct = None
+    if avg_price_start and avg_price_start > 0 and avg_price_end:
+        change_pct = round((avg_price_end - avg_price_start) / avg_price_start * 100, 2)
+
+    return {
+        "period": {"start": str(period_start), "end": str(period_end)},
+        "market_index": {
+            "avg_price": avg_price,
+            "total_cards": total_cards,
+            "total_market_cap": total_market_cap,
+            "change_pct": change_pct,
+        },
+        "gainers": movers.get("gainers", []),
+        "losers": movers.get("losers", []),
+        "hottest": [],
+    }
+
+
 @router.get("/market/weekly-recap")
 def weekly_recap(db: Session = Depends(get_db)):
     """Weekly market recap — gainers, losers, hottest cards, and market index change."""

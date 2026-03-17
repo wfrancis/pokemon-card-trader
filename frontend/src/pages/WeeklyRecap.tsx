@@ -2,14 +2,20 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Box, Paper, Typography, Grid, Skeleton, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, Avatar, LinearProgress, IconButton, Tooltip,
+  Button, Chip, CircularProgress,
 } from '@mui/material';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import WhatshotIcon from '@mui/icons-material/Whatshot';
 import CameraAltIcon from '@mui/icons-material/CameraAlt';
+import HistoryIcon from '@mui/icons-material/History';
 import { useNavigate } from 'react-router-dom';
 import html2canvas from 'html2canvas';
-import { api, WeeklyRecapResponse } from '../services/api';
+import {
+  ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid,
+  Tooltip as RechartsTooltip,
+} from 'recharts';
+import { api, WeeklyRecapResponse, RecapArchiveResponse } from '../services/api';
 
 function formatDate(dateStr: string) {
   const d = new Date(dateStr + 'T00:00:00');
@@ -46,10 +52,20 @@ function LoadingSkeleton() {
   );
 }
 
+function formatWeekLabel(start: string, end: string) {
+  const s = new Date(start + 'T00:00:00');
+  const e = new Date(end + 'T00:00:00');
+  return `${s.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${e.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+}
+
 export default function WeeklyRecap() {
   const [data, setData] = useState<WeeklyRecapResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [archive, setArchive] = useState<RecapArchiveResponse | null>(null);
+  const [selectedWeek, setSelectedWeek] = useState<string | null>(null); // null = current week
+  const [weekLoading, setWeekLoading] = useState(false);
+  const [trendData, setTrendData] = useState<{ date: string; avg_price: number }[]>([]);
   const navigate = useNavigate();
   const recapRef = useRef<HTMLDivElement>(null);
 
@@ -73,12 +89,57 @@ export default function WeeklyRecap() {
     link.click();
   };
 
+  // Load current week recap + archive list on mount
   useEffect(() => {
-    api.getWeeklyRecap()
-      .then(setData)
+    Promise.all([
+      api.getWeeklyRecap(),
+      api.getRecapArchive(),
+    ])
+      .then(([recapData, archiveData]) => {
+        setData(recapData);
+        setArchive(archiveData);
+      })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
+
+  // Load market index trend from archive weeks
+  useEffect(() => {
+    if (!archive || archive.weeks.length < 2) return;
+    const weeks = archive.weeks;
+    Promise.allSettled(
+      weeks.map(w => api.getRecapForWeek(w.start))
+    ).then(results => {
+      const points: { date: string; avg_price: number }[] = [];
+      results.forEach((res, i) => {
+        if (res.status === 'fulfilled') {
+          points.push({
+            date: weeks[i].end,
+            avg_price: res.value.market_index.avg_price,
+          });
+        }
+      });
+      // Sort chronologically
+      points.sort((a, b) => a.date.localeCompare(b.date));
+      setTrendData(points);
+    });
+  }, [archive]);
+
+  // Load a specific historical week
+  const handleWeekSelect = (startDate: string | null) => {
+    if (startDate === selectedWeek) return;
+    setSelectedWeek(startDate);
+    setWeekLoading(true);
+
+    const fetchPromise = startDate
+      ? api.getRecapForWeek(startDate)
+      : api.getWeeklyRecap();
+
+    fetchPromise
+      .then(setData)
+      .catch(e => setError(e.message))
+      .finally(() => setWeekLoading(false));
+  };
 
   if (loading) return <LoadingSkeleton />;
   if (error) return (
@@ -107,12 +168,70 @@ export default function WeeklyRecap() {
           </IconButton>
         </Tooltip>
       </Box>
-      <Typography sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.85rem', mb: 3 }}>
+      <Typography sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.85rem', mb: 1.5 }}>
         {formatDate(period.start)} &mdash; {formatDate(period.end)}
       </Typography>
 
-      {/* Market Summary */}
-      <Grid container spacing={2} sx={{ mb: 3 }}>
+      {/* Week Selector */}
+      {archive && archive.weeks.length > 1 && (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3, flexWrap: 'wrap' }}>
+          <HistoryIcon sx={{ color: '#666', fontSize: 18 }} />
+          <Chip
+            label="This Week"
+            size="small"
+            onClick={() => handleWeekSelect(null)}
+            sx={{
+              fontFamily: 'monospace',
+              fontSize: '0.75rem',
+              bgcolor: selectedWeek === null ? '#00bcd4' : '#1a1a1a',
+              color: selectedWeek === null ? '#000' : '#888',
+              border: '1px solid',
+              borderColor: selectedWeek === null ? '#00bcd4' : '#333',
+              '&:hover': { bgcolor: selectedWeek === null ? '#00bcd4' : '#252525' },
+              fontWeight: selectedWeek === null ? 700 : 400,
+            }}
+          />
+          {archive.weeks.slice(1).map((week) => (
+            <Chip
+              key={week.start}
+              label={formatWeekLabel(week.start, week.end)}
+              size="small"
+              onClick={() => handleWeekSelect(week.start)}
+              sx={{
+                fontFamily: 'monospace',
+                fontSize: '0.75rem',
+                bgcolor: selectedWeek === week.start ? '#00bcd4' : '#1a1a1a',
+                color: selectedWeek === week.start ? '#000' : '#888',
+                border: '1px solid',
+                borderColor: selectedWeek === week.start ? '#00bcd4' : '#333',
+                '&:hover': { bgcolor: selectedWeek === week.start ? '#00bcd4' : '#252525' },
+                fontWeight: selectedWeek === week.start ? 700 : 400,
+              }}
+            />
+          ))}
+          {weekLoading && <CircularProgress size={16} sx={{ color: '#00bcd4', ml: 1 }} />}
+        </Box>
+      )}
+
+      {/* Plain-English Market Summary */}
+      <Paper sx={{ p: 2.5, mb: 2, bgcolor: '#0d0d0d', border: '1px solid #1e1e1e' }}>
+        <Typography sx={{ color: '#c0c0c0', fontFamily: 'monospace', fontSize: '0.95rem', lineHeight: 1.7 }}>
+          {(() => {
+            const pct = market_index.change_pct;
+            const direction = pct === null ? 'held steady' : pct >= 0 ? `rose ${pct.toFixed(1)}%` : `fell ${Math.abs(pct).toFixed(1)}%`;
+            const topGainer = gainers.length > 0
+              ? ` Top gainer: ${gainers[0].name} rose ${gainers[0].change_pct?.toFixed(1) ?? '?'}%.`
+              : '';
+            const topLoser = losers.length > 0
+              ? ` Top loser: ${losers[0].name} fell ${Math.abs(losers[0].change_pct ?? 0).toFixed(1)}%.`
+              : '';
+            return `The Pokemon card market ${direction} this week. ${market_index.total_cards.toLocaleString()} cards are tracked with an average price of $${market_index.avg_price.toFixed(2)}.${topGainer}${topLoser}`;
+          })()}
+        </Typography>
+      </Paper>
+
+      {/* Market Stats */}
+      <Grid container spacing={2} sx={{ mb: 1 }}>
         <Grid size={{ xs: 12, md: 4 }}>
           <Paper sx={{ p: 2.5, bgcolor: '#0d0d0d', border: '1px solid #1e1e1e', textAlign: 'center' }}>
             <Typography sx={{ color: '#666', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: 1, mb: 0.5 }}>
@@ -145,6 +264,70 @@ export default function WeeklyRecap() {
           </Paper>
         </Grid>
       </Grid>
+
+      {/* What This Means */}
+      <Paper sx={{ px: 2.5, py: 1.5, mb: 3, bgcolor: '#111', border: '1px solid #1e1e1e', borderLeft: '3px solid #00bcd4' }}>
+        <Typography sx={{ color: '#aaa', fontSize: '0.85rem', fontFamily: 'monospace' }}>
+          {market_index.change_pct === null
+            ? '\u{1F4CA} Not enough historical data yet for comparison.'
+            : market_index.change_pct > 2
+              ? '\u{1F4C8} Strong week \u2014 prices rose significantly. Good time to review your collection.'
+              : market_index.change_pct >= 0
+                ? '\u{1F4CA} Steady market \u2014 prices holding or slightly up.'
+                : market_index.change_pct < -2
+                  ? '\u{1F4C9} Down week \u2014 could be buying opportunities.'
+                  : '\u{1F4CA} Steady market \u2014 prices slightly down but stable.'}
+        </Typography>
+      </Paper>
+
+      {/* Market Index Trend */}
+      {trendData.length >= 2 && (
+        <Paper sx={{ p: 2.5, mb: 2, bgcolor: '#0d0d0d', border: '1px solid #1e1e1e' }}>
+          <Typography sx={{ color: '#00ff41', fontWeight: 700, letterSpacing: 1, fontSize: '0.85rem', mb: 0.5 }}>
+            MARKET INDEX TREND
+          </Typography>
+          <Typography sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.7rem', mb: 1.5 }}>
+            Average card price across tracked cards
+          </Typography>
+          <ResponsiveContainer width="100%" height={200}>
+            <LineChart data={trendData} margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#1a1a2e" />
+              <XAxis
+                dataKey="date"
+                tick={{ fill: '#555', fontSize: 10, fontFamily: 'monospace' }}
+                tickFormatter={(d: string) => {
+                  const dt = new Date(d + 'T00:00:00');
+                  return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                }}
+                stroke="#333"
+              />
+              <YAxis
+                tick={{ fill: '#555', fontSize: 10, fontFamily: 'monospace' }}
+                tickFormatter={(v: number) => `$${v.toFixed(2)}`}
+                stroke="#333"
+                domain={['auto', 'auto']}
+              />
+              <RechartsTooltip
+                contentStyle={{ backgroundColor: '#0a0a1a', border: '1px solid #333', fontFamily: '"JetBrains Mono", monospace', fontSize: 12 }}
+                labelStyle={{ color: '#888' }}
+                labelFormatter={(d: string) => {
+                  const dt = new Date(d + 'T00:00:00');
+                  return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                }}
+                formatter={(value: any) => [`$${Number(value).toFixed(2)}`, 'Avg Price']}
+              />
+              <Line
+                type="monotone"
+                dataKey="avg_price"
+                stroke="#00ff41"
+                strokeWidth={2}
+                dot={{ r: 3, fill: '#00ff41', stroke: '#0a0a1a', strokeWidth: 1 }}
+                activeDot={{ r: 5, stroke: '#00ff41', strokeWidth: 2, fill: '#0a0a1a' }}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </Paper>
+      )}
 
       {/* Top 5 Gainers */}
       <Paper sx={{ mb: 2, bgcolor: '#0d0d0d', border: '1px solid #1e1e1e' }}>
@@ -313,6 +496,27 @@ export default function WeeklyRecap() {
           </Table>
         </TableContainer>
       </Paper>
+
+      {/* Export Button */}
+      <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3, mb: 1 }}>
+        <Button
+          variant="outlined"
+          startIcon={<CameraAltIcon />}
+          onClick={handleExport}
+          sx={{
+            color: '#00bcd4',
+            borderColor: '#00bcd4',
+            fontFamily: 'monospace',
+            fontWeight: 700,
+            letterSpacing: 1,
+            px: 4,
+            py: 1.2,
+            '&:hover': { bgcolor: '#0d2a2f', borderColor: '#00e5ff' },
+          }}
+        >
+          Export as Image
+        </Button>
+      </Box>
     </Box>
   );
 }

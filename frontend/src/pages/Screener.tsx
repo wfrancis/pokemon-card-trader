@@ -38,6 +38,14 @@ const REGIME_LABELS: Record<string, string> = {
   unknown: 'UNKNOWN',
 };
 
+const REGIME_LABELS_SIMPLE: Record<string, string> = {
+  markup: 'Rising in value',
+  accumulation: 'Building momentum',
+  distribution: 'Cooling off',
+  markdown: 'Dropping in value',
+  unknown: 'Unknown',
+};
+
 function StatsBar({ stats }: { stats: ScreenerStats | null }) {
   if (!stats) {
     return (
@@ -195,6 +203,12 @@ function calcFlipProfit(card: ScreenerCard): number | null {
   return card.median_sold - (card.current_price * 1.1255);
 }
 
+function calcFlipROI(card: ScreenerCard): number | null {
+  const profit = calcFlipProfit(card);
+  if (profit === null || card.current_price == null || card.current_price === 0) return null;
+  return (profit / card.current_price) * 100;
+}
+
 function SimpleCardTile({ card, flipFinderActive }: { card: ScreenerCard; flipFinderActive?: boolean }) {
   const navigate = useNavigate();
   const badge = getValueBadge(card);
@@ -240,17 +254,28 @@ function SimpleCardTile({ card, flipFinderActive }: { card: ScreenerCard; flipFi
       {/* Flip profit (shown when Flip Finder is active) */}
       {flipFinderActive && (() => {
         const profit = calcFlipProfit(card);
+        const roi = calcFlipROI(card);
         if (profit === null) return null;
         return (
+          <>
           <Typography variant="body2" sx={{
             fontSize: '0.65rem',
-            fontFamily: 'monospace',
             fontWeight: 600,
+            color: '#888',
+            mt: 0.2,
+          }}>
+            Buy for <span style={{ color: '#00bcd4', fontFamily: 'monospace' }}>${card.current_price.toFixed(2)}</span>, sells for <span style={{ color: '#00ff41', fontFamily: 'monospace' }}>~${card.median_sold?.toFixed(2)}</span>
+          </Typography>
+          <Typography variant="body2" sx={{
+            fontSize: '0.65rem',
+            fontWeight: 700,
+            fontFamily: 'monospace',
             color: profit >= 0 ? '#00ff41' : '#ff1744',
             mt: 0.2,
           }}>
-            Est. profit: {profit >= 0 ? '+' : ''}${profit.toFixed(2)}
+            {profit >= 0 ? '+' : ''}${profit.toFixed(2)}{roi !== null && ` (${roi >= 0 ? '+' : ''}${roi.toFixed(0)}% ROI)`}
           </Typography>
+          </>
         );
       })()}
 
@@ -266,19 +291,33 @@ function SimpleCardTile({ card, flipFinderActive }: { card: ScreenerCard; flipFi
         </Typography>
       )}
 
-      {/* Value badge */}
-      <Chip
-        label={badge.label}
-        size="small"
-        sx={{
-          mt: 0.5,
-          bgcolor: badge.bgcolor,
-          color: badge.color,
-          fontWeight: 700,
-          fontSize: '0.65rem',
-          height: 22,
-        }}
-      />
+      {/* Value badge + Regime */}
+      <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mt: 0.5, alignItems: 'center' }}>
+        <Chip
+          label={badge.label}
+          size="small"
+          sx={{
+            bgcolor: badge.bgcolor,
+            color: badge.color,
+            fontWeight: 700,
+            fontSize: '0.65rem',
+            height: 22,
+          }}
+        />
+        {card.regime && (
+          <Chip
+            label={REGIME_LABELS_SIMPLE[card.regime] || card.regime}
+            size="small"
+            sx={{
+              bgcolor: 'transparent',
+              border: `1px solid ${REGIME_COLORS[card.regime || 'unknown'] || '#666'}`,
+              color: REGIME_COLORS[card.regime || 'unknown'] || '#666',
+              fontSize: '0.55rem',
+              height: 20,
+            }}
+          />
+        )}
+      </Box>
     </Paper>
   );
 }
@@ -379,6 +418,7 @@ function CardTile({ card, rank, flipFinderActive }: { card: ScreenerCard; rank: 
       {/* Flip profit (shown when Flip Finder is active) */}
       {flipFinderActive && (() => {
         const profit = calcFlipProfit(card);
+        const roi = calcFlipROI(card);
         if (profit === null) return null;
         return (
           <Typography variant="body2" sx={{
@@ -388,7 +428,7 @@ function CardTile({ card, rank, flipFinderActive }: { card: ScreenerCard; rank: 
             color: profit >= 0 ? '#00ff41' : '#ff1744',
             mt: 0.2,
           }}>
-            Est. profit: {profit >= 0 ? '+' : ''}${profit.toFixed(2)}
+            {profit >= 0 ? '+' : ''}${profit.toFixed(2)}{roi !== null && ` (${roi >= 0 ? '+' : ''}${roi.toFixed(0)}% ROI)`}
           </Typography>
         );
       })()}
@@ -397,6 +437,7 @@ function CardTile({ card, rank, flipFinderActive }: { card: ScreenerCard; rank: 
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
         <TimeToSellBadge value={card.time_to_sell} />
         {card.sales_per_day != null && (
+          <GlossaryTooltip term="sales_per_day">
           <Chip
             size="small"
             label={`${card.sales_per_day.toFixed(1)}/day`}
@@ -408,6 +449,7 @@ function CardTile({ card, rank, flipFinderActive }: { card: ScreenerCard; rank: 
               borderColor: card.sales_per_day >= 1 ? '#00bcd433' : card.sales_per_day >= 0.5 ? '#ff980033' : '#33333366',
             }}
           />
+          </GlossaryTooltip>
         )}
       </Box>
 
@@ -491,7 +533,7 @@ function SimpleCardTable({ cards, page, onSort, sortBy, sortDir, flipFinderActiv
   flipFinderActive?: boolean;
 }) {
   const navigate = useNavigate();
-  const baseColumns: { id: string; label: string; width?: number; sortable?: boolean }[] = [
+  const baseColumns: { id: string; label: string; width?: number; sortable?: boolean; glossary?: string }[] = [
     { id: 'rank', label: '#', width: 40 },
     { id: 'name', label: 'Card', sortable: true },
     { id: 'current_price', label: 'Price', width: 80, sortable: true },
@@ -501,7 +543,8 @@ function SimpleCardTable({ cards, page, onSort, sortBy, sortDir, flipFinderActiv
   const columns = flipFinderActive
     ? [
         ...baseColumns.slice(0, 3),
-        { id: 'est_profit', label: 'Est. Profit', width: 90 },
+        { id: 'est_profit', label: 'Est. Profit', width: 90, glossary: 'flip_profit' },
+        { id: 'roi_pct', label: 'ROI%', width: 70 },
         ...baseColumns.slice(3),
       ]
     : baseColumns;
@@ -523,9 +566,9 @@ function SimpleCardTable({ cards, page, onSort, sortBy, sortDir, flipFinderActiv
                     onClick={() => onSort(col.id)}
                     sx={{ color: '#888 !important', '& .MuiTableSortLabel-icon': { color: '#666 !important' } }}
                   >
-                    {col.label}
+                    {col.glossary ? <GlossaryTooltip term={col.glossary}>{col.label}</GlossaryTooltip> : col.label}
                   </TableSortLabel>
-                ) : col.label}
+                ) : col.glossary ? <GlossaryTooltip term={col.glossary}>{col.label}</GlossaryTooltip> : col.label}
               </TableCell>
             ))}
           </TableRow>
@@ -563,13 +606,23 @@ function SimpleCardTable({ cards, page, onSort, sortBy, sortDir, flipFinderActiv
                 </TableCell>
                 {flipFinderActive && (() => {
                   const profit = calcFlipProfit(card);
+                  const roi = calcFlipROI(card);
                   return (
+                    <>
+                    <TableCell sx={{ fontSize: '0.7rem' }}>
+                      {profit !== null ? (
+                        <span style={{ color: '#888' }}>
+                          Sells for <span style={{ color: '#00ff41', fontFamily: 'monospace', fontWeight: 700 }}>~${card.median_sold?.toFixed(2)}</span>
+                        </span>
+                      ) : '--'}
+                    </TableCell>
                     <TableCell sx={{
                       fontFamily: 'monospace', fontSize: '0.75rem', fontWeight: 700,
-                      color: profit !== null ? (profit >= 0 ? '#00ff41' : '#ff1744') : '#444',
+                      color: roi !== null ? (roi >= 0 ? '#00ff41' : '#ff1744') : '#444',
                     }}>
-                      {profit !== null ? `${profit >= 0 ? '+' : ''}$${profit.toFixed(2)}` : '--'}
+                      {roi !== null ? `${roi >= 0 ? '+' : ''}${roi.toFixed(0)}%` : '--'}
                     </TableCell>
+                    </>
                   );
                 })()}
                 <TableCell sx={{
@@ -621,11 +674,12 @@ function CardTable({ cards, page, onSort, sortBy, sortDir, flipFinderActive }: {
     { id: 'time_to_sell', label: 'TTS', width: 75, glossary: 'time_to_sell' },
     { id: 'regime', label: 'Regime', width: 85, glossary: 'regime' },
   ];
-  // Insert Est. Profit column after Price when Flip Finder is active
+  // Insert Est. Profit and ROI% columns after Price when Flip Finder is active
   const columns = flipFinderActive
     ? [
         ...baseColumns.slice(0, 3),
-        { id: 'est_profit', label: 'Est. Profit', width: 85 },
+        { id: 'est_profit', label: 'Est. Profit', width: 85, glossary: 'flip_profit' },
+        { id: 'roi_pct', label: 'ROI%', width: 65 },
         ...baseColumns.slice(3),
       ]
     : baseColumns;
@@ -693,13 +747,22 @@ function CardTable({ cards, page, onSort, sortBy, sortDir, flipFinderActive }: {
                 </TableCell>
                 {flipFinderActive && (() => {
                   const profit = calcFlipProfit(card);
+                  const roi = calcFlipROI(card);
                   return (
+                    <>
                     <TableCell sx={{
                       fontFamily: 'monospace', fontSize: '0.75rem', fontWeight: 700,
                       color: profit !== null ? (profit >= 0 ? '#00ff41' : '#ff1744') : '#444',
                     }}>
                       {profit !== null ? `${profit >= 0 ? '+' : ''}$${profit.toFixed(2)}` : '--'}
                     </TableCell>
+                    <TableCell sx={{
+                      fontFamily: 'monospace', fontSize: '0.75rem', fontWeight: 700,
+                      color: roi !== null ? (roi >= 0 ? '#00ff41' : '#ff1744') : '#444',
+                    }}>
+                      {roi !== null ? `${roi >= 0 ? '+' : ''}${roi.toFixed(0)}%` : '--'}
+                    </TableCell>
+                    </>
                   );
                 })()}
                 <TableCell sx={{ color: scoreColor, fontWeight: 800, fontSize: '0.8rem', fontFamily: 'monospace' }}>
@@ -773,13 +836,13 @@ export default function Screener() {
   const [totalPages, setTotalPages] = useState(1);
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [simpleMode, setSimpleMode] = useState<boolean>(() => {
-    const stored = localStorage.getItem('pkmn_screener_mode');
+    const stored = localStorage.getItem('pkmn_screener_mode_v2');
     return stored === null ? true : stored === 'simple';
   });
 
   const handleSimpleModeToggle = (checked: boolean) => {
     setSimpleMode(checked);
-    localStorage.setItem('pkmn_screener_mode', checked ? 'simple' : 'advanced');
+    localStorage.setItem('pkmn_screener_mode_v2', checked ? 'simple' : 'advanced');
   };
 
   // Filters
@@ -809,7 +872,7 @@ export default function Screener() {
       // When Flip Finder is active, always use its preset values
       // regardless of what individual filter state says (prevents drift)
       const isFlip = flipFinderRef.current;
-      const effectiveSortBy = isFlip ? 'liquidity_score' : sortBy;
+      const effectiveSortBy = isFlip ? 'est_profit' : sortBy;
       const effectiveSortDir = isFlip ? 'desc' : sortDir;
       const effectiveMinPrice = isFlip ? 2 : minPrice;
       const effectiveMinLiquidity = isFlip ? 30 : minLiquidity;
@@ -838,6 +901,7 @@ export default function Screener() {
       if (effectiveMaxPrice !== '' && Number(effectiveMaxPrice) > 0) params.max_price = effectiveMaxPrice;
       if (effectiveSearch) params.q = effectiveSearch;
       if (effectiveMinVelocity > 0) params.min_velocity = String(effectiveMinVelocity);
+      if (isFlip) params.min_profit = '0.01';
 
       const result = await api.getScreenerCards(params);
       setCards(result.data);
@@ -881,7 +945,7 @@ export default function Screener() {
     flipFinderRef.current = true;
     setFlipFinderActive(true);
     setInvestmentGradeOnly(false);
-    setSortBy('liquidity_score');
+    setSortBy('est_profit');
     setSortDir('desc');
     setMinLiquidity(30);
     setMinVelocity(0.5);
@@ -915,12 +979,14 @@ export default function Screener() {
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
         <TrendingUpIcon sx={{ color: '#00ff41', fontSize: 28 }} />
         <Typography variant="h2" sx={{ color: '#00ff41' }}>
-          INVESTMENT SCREENER
+          {simpleMode ? 'FIND VALUABLE CARDS' : 'INVESTMENT SCREENER'}
         </Typography>
       </Box>
-      <Typography variant="body2" sx={{ color: '#666', mb: 2, fontSize: '0.7rem' }}>
-        Find cards that are consistently liquid AND have steady price appreciation. Sorted by combined investment score.
-      </Typography>
+      {!simpleMode && (
+        <Typography variant="body2" sx={{ color: '#666', mb: 2, fontSize: '0.7rem' }}>
+          Find cards that are consistently liquid AND have steady price appreciation. Sorted by combined investment score.
+        </Typography>
+      )}
 
       {/* Simple / Advanced Mode Toggle */}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
@@ -947,6 +1013,17 @@ export default function Screener() {
         )}
       </Box>
 
+      {/* Simple mode explanation banner */}
+      {simpleMode && (
+        <Paper sx={{ p: 1.5, mb: 2, bgcolor: '#0a1a1a', border: '1px solid #00bcd433', borderRadius: 1 }}>
+          <Typography variant="caption" sx={{ color: '#888' }}>
+            {flipFinderActive
+              ? 'Find cards you can buy now and sell for a profit. We calculate fees (12.55%) so the profit shown is what you\'d actually make.'
+              : 'Find cards that are good investments \u2014 liquid (easy to sell) and trending up in price.'}
+          </Typography>
+        </Paper>
+      )}
+
       {/* Stats */}
       {!simpleMode && <StatsBar stats={stats} />}
 
@@ -955,29 +1032,27 @@ export default function Screener() {
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
           <FilterListIcon sx={{ color: '#666', fontSize: 18 }} />
           <Typography variant="body2" sx={{ color: '#888', fontWeight: 600 }}>FILTERS</Typography>
-          {simpleMode && (
+          {simpleMode && !flipFinderActive && (
             <Typography variant="body2" sx={{ color: '#555', fontSize: '0.6rem' }}>
               (Search + price only — switch to Advanced for more)
             </Typography>
           )}
-          {!simpleMode && (
-            <Chip
-              icon={<MonetizationOnIcon sx={{ fontSize: 14, color: flipFinderActive ? '#000' : '#00ff41' }} />}
-              label="FLIP FINDER"
-              size="small"
-              onClick={() => { if (flipFinderActive) { clearAllFilters(); } else { activateFlipFinder(); } }}
-              sx={{
-                bgcolor: flipFinderActive ? '#00ff41' : 'transparent',
-                color: flipFinderActive ? '#000' : '#00ff41',
-                border: '1px solid #00ff41',
-                fontWeight: 700,
-                fontSize: '0.6rem',
-                height: 24,
-                cursor: 'pointer',
-                '&:hover': { bgcolor: flipFinderActive ? '#00cc33' : '#00ff4118' },
-              }}
-            />
-          )}
+          <Chip
+            icon={<MonetizationOnIcon sx={{ fontSize: 14, color: flipFinderActive ? '#000' : '#00ff41' }} />}
+            label="FLIP FINDER"
+            size="small"
+            onClick={() => { if (flipFinderActive) { clearAllFilters(); } else { activateFlipFinder(); } }}
+            sx={{
+              bgcolor: flipFinderActive ? '#00ff41' : 'transparent',
+              color: flipFinderActive ? '#000' : '#00ff41',
+              border: '1px solid #00ff41',
+              fontWeight: 700,
+              fontSize: '0.6rem',
+              height: 24,
+              cursor: 'pointer',
+              '&:hover': { bgcolor: flipFinderActive ? '#00cc33' : '#00ff4118' },
+            }}
+          />
           {!simpleMode && (
             <Chip
               label="Investment Grade"
@@ -1017,7 +1092,7 @@ export default function Screener() {
           <Box sx={{ mb: 1.5, p: 1, bgcolor: '#00ff4110', border: '1px solid #00ff4133', borderRadius: 1 }}>
             <Typography variant="body2" sx={{ color: '#00ff41', fontSize: '0.65rem', fontWeight: 600 }}>
               <MonetizationOnIcon sx={{ fontSize: 13, mr: 0.5, verticalAlign: 'middle' }} />
-              Showing cards where you can buy below median sale price with decent sales velocity. Min 0.5 sales/day, liquidity 30+.
+              Showing cards with profitable flip opportunities, sorted by estimated profit (buy at market, sell at median, after 12.55% fees). Min 0.5 sales/day.
             </Typography>
           </Box>
         )}
@@ -1055,6 +1130,7 @@ export default function Screener() {
                 <MenuItem value={100}>$100+</MenuItem>
               </Select>
             </FormControl>
+            {simpleMode && <Typography variant="caption" sx={{ color: '#888', fontSize: '0.55rem', mt: 0.3, display: 'block' }}>Skip cheap cards</Typography>}
           </Grid>
 
           {/* Max Price — always visible */}
@@ -1112,7 +1188,7 @@ export default function Screener() {
               {/* Min Velocity */}
               <Grid size={{ xs: 6, sm: 3, md: 2 }}>
                 <Typography variant="body2" sx={{ color: '#888', fontSize: '0.6rem', mb: 0.5 }}>
-                  Min Velocity: {minVelocity} sales/day
+                  Min <GlossaryTooltip term="sales_per_day">Velocity</GlossaryTooltip>: {minVelocity} sales/day
                 </Typography>
                 <Slider
                   value={minVelocity}

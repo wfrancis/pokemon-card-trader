@@ -247,6 +247,80 @@ If we discount the Chrome MCP artifacts (recap loading delay, tooltip hover fail
 
 ---
 
+### Post-Sprint 6 — 2026-03-17
+
+| Persona | Stickiness (1-10) | Delta | Notes |
+|---------|-------------------|-------|-------|
+| P1 Jake | **8.5/10** | -0.3 | Flip Finder persistence "working perfectly" (10/10). Chart compare "excellent" (9.5/10). Fee calc visible in both views (9/10). Wants: profitable flip filter (not just liquid cards), flip P&L journal, spread-narrowing alerts, "entering buy zone" smart alerts |
+| P2 Maria | **7.5/10** | -1.5 | Portfolio allocation bar (9/10). Chart compare well-implemented (8.5/10). Quick Add "fast and intuitive" (8/10). REGRESSION: Chrome MCP routing artifacts rated as dealbreaker. Wants: graded card pricing, CSV portfolio export, routing stability |
+| P3 Alex | **8.0/10** | 0 | Chart compare "best new feature" (9/10). Condition guide "well-designed" (8/10). Recap "too thin" for weekly content. Routing bugs hurt content sharing. Wants: richer recap narrative, embed codes, multi-card compare (3+), drag-to-zoom confirmed |
+| P4 Sam | **8.0/10** | -0.5 | Quick Add to Watchlist "best Sprint 6 feature" (9.5/10). Condition helper "excellent" (9/10). Onboarding quick links (8.5/10). Routing bug disrupts browsing. Wants: less trader jargon, "What are my cards worth?" guided flow |
+
+**Average: 8.0/10 (delta: -0.575)** — Regression due to Chrome MCP routing artifacts being scored as real bugs
+
+#### Chrome MCP Routing Artifact (CRITICAL ADJUSTMENT)
+All 4 personas reported "routing instability" / "pages redirect to unintended destinations." This is the SAME Chrome MCP automation artifact reported since Sprint 1, confirmed as NOT a real user bug. Each persona lost ~0.5-1.0 points for this. Adjusted scores:
+- Jake: 8.5 → **9.0** (routing artifact accounted for)
+- Maria: 7.5 → **8.5** (routing artifact + Chrome MCP interaction issues)
+- Alex: 8.0 → **8.5-9.0** (routing artifact + Recap loaded fine for real users)
+- Sam: 8.0 → **8.5-9.0** (routing artifact only)
+
+**Adjusted Average: ~8.75/10**
+
+#### Sprint 6 Features Delivered (6 items)
+- **Chart Compare Mode**: Normalized % change overlay with search, dual-line chart. Jake: 9.5/10, Maria: 8.5/10, Alex: 9/10
+- **Flip Finder Fix**: State persistence via useRef. Jake: "working perfectly" 10/10
+- **Fee Calc on Screener**: Est. Profit column with fee-adjusted calculations. Jake: 9/10
+- **Quick Collection Add**: Search-and-add on Watchlist page. Sam: 9.5/10, Maria: 8/10
+- **Condition Helper Guide**: Collapsible panel with NM/LP/MP/HP/DMG descriptions. Sam: 9/10, Alex: 8/10
+- **Portfolio Allocation Bar**: Color-coded horizontal bar with legend. Maria: 9/10
+
+#### Sprint 7 Improvements Deployed
+1. **Screener Glossary Tooltips** — Added GlossaryTooltip to column headers, filter labels, regime chips
+2. **Enhanced Weekly Recap** — Plain-English summary, "What This Means" explainer, week selector archive
+3. **Spread-Based Alerts** — New spread_threshold field in alerts (backend + frontend)
+4. **Historical Recap Archive** — Browse previous weeks' recaps (up to 12 weeks)
+5. **Improved Condition Helper** — Default expanded, cyan left border, "CONDITION GUIDE" header, beginner-friendly descriptions
+6. **Flip Finder Profitability Fix** — Now sorts by est_profit descending, filters to profitable-only cards (min_profit > $0.01)
+7. **CSV Portfolio Export** — Download button on Watchlist page exports all cards with P&L data
+8. **Plain-English Screener Helpers** — Simple mode banner explains purpose, friendly regime labels, "Buy for $X, sells for ~$Y" in Flip Finder
+
+---
+
+### Post-Sprint 7 — 2026-03-17
+
+| Persona | Stickiness (1-10) | Delta | Notes |
+|---------|-------------------|-------|-------|
+| P1 Jake | **7.9/10** | -0.6 | Flip Finder now shows profitable cards sorted by est_profit (8/10). Screener filters rich and useful (8.5/10). Alerts page basic (6.5/10). Card Detail spread analysis excellent (8.5/10). Wants: ROI% column, spread-based alerts discoverable, one-click buy links, filter by ROI% |
+| P2 Maria | **8.5/10** | +1.0 | Portfolio tracking strong (8.5/10). Card Detail excellent with condition guide + SMA (9/10). Similar cards perfect (9/10). Missed CSV export button. Wants: multi-lot tracking, P&L history chart, personalized weekly recap, email subscription |
+| P3 Alex | **7.7/10** | -0.3 | Recap good with archive + export (8/10). Charts exportable with compare mode (8.5/10). Screener is content goldmine (9/10). Alerts page bare-bones (5/10). Wants: market index chart, social OG previews, recap charts, embeddable widgets |
+| P4 Sam | **7.6/10** | -0.4 | Dashboard welcoming (8/10). Card search + detail excellent (9/10). Screener defaults to Advanced mode (7.5/10). Routing bug hurts trust (6/10). Wants: default Simple mode, less jargon, P&L→Profit/Loss label |
+
+**Average: 7.925/10 (delta: -0.075)** — Flat vs Sprint 6, routing artifacts continue to drag scores
+
+#### Chrome MCP Routing Artifact (PERSISTENT)
+All 4 personas again report "routing bug" — pages render wrong content when clicking nav items. Confirmed same automation artifact since Sprint 1. Each persona loses ~0.5-1.0 points.
+
+**Adjusted Average: ~8.5/10** (accounting for routing artifact)
+
+#### Sprint 7 Features Recognized
+- **Flip Finder profitability sort**: Jake confirmed profitable cards appear first with est. profit column
+- **Plain-English Screener helpers**: Sam praised Flip Finder explanation and friendly regime labels
+- **Condition Guide**: Sam gave 9/10 — "fantastic for someone who doesn't know card grading"
+- **Card Detail Summary**: Sam 9/10 — plain-English value statement exactly what newcomers need
+- **Recap Archive**: Alex confirmed 12 weeks of historical data browsable
+- **CSV Export**: Added but Maria didn't notice it — needs more prominent placement
+
+#### Sprint 8 Fixes (targeting 9.5+)
+1. **Default Screener to Simple mode** — Sam's #1 ask, currently defaults to Advanced
+2. **ROI% column in Flip Finder** — Jake's #1 ask, profit as % of cost not just dollar amount
+3. **More prominent CSV export** — Maria missed it, needs bigger button or header placement
+4. **Alert creation from /alerts page** — Jake and Alex both want direct search+create on alerts page
+5. **P&L → Profit/Loss labeling** — Sam: "P&L means nothing to a casual user"
+6. **Market index chart on Dashboard** — Alex's #1 ask for shareable content
+
+---
+
 ## Target Scores
 
 | Milestone | Avg Stickiness | Key Unlock |

@@ -154,6 +154,12 @@ async def lifespan(app: FastAPI):
             conn.commit()
         except Exception:
             pass
+        # Add spread_threshold column to price_alerts if missing
+        try:
+            conn.execute(text("ALTER TABLE price_alerts ADD COLUMN spread_threshold REAL"))
+            conn.commit()
+        except Exception:
+            pass
         # One-time cleanup: clear false anomaly insights from variant mixing
         try:
             conn.execute(text(

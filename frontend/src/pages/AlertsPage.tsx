@@ -21,7 +21,7 @@ export default function AlertsPage() {
   const [activeAlerts, setActiveAlerts] = useState<PriceAlertResponse[]>([]);
   const [history, setHistory] = useState<AlertHistoryItem[]>([]);
   const [loading, setLoading] = useState(false);
-  const [snack, setSnack] = useState<string | null>(null);
+  const [snack, setSnack] = useState<{ msg: string; severity?: 'success' | 'warning' | 'info' } | null>(null);
 
   // Quick Add Alert state
   const [searchQuery, setSearchQuery] = useState('');
@@ -30,7 +30,9 @@ export default function AlertsPage() {
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
   const [alertAbove, setAlertAbove] = useState('');
   const [alertBelow, setAlertBelow] = useState('');
+  const [alertSpread, setAlertSpread] = useState('');
   const [creating, setCreating] = useState(false);
+  const [inlineEmail, setInlineEmail] = useState('');
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchAlerts = useCallback(async (e: string) => {
@@ -59,16 +61,16 @@ export default function AlertsPage() {
     if (!trimmed) return;
     localStorage.setItem('pkmn_alert_email', trimmed);
     setSavedEmail(trimmed);
-    setSnack('Email saved');
+    setSnack({ msg: 'Email saved' });
   };
 
   const handleDelete = async (alertId: number) => {
     try {
       await api.deleteAlert(alertId);
       setActiveAlerts(prev => prev.filter(a => a.id !== alertId));
-      setSnack('Alert deleted');
+      setSnack({ msg: 'Alert deleted' });
     } catch {
-      setSnack('Failed to delete alert');
+      setSnack({ msg: 'Failed to delete alert', severity: 'warning' });
     }
   };
 
@@ -99,29 +101,48 @@ export default function AlertsPage() {
     setSearchQuery(card.name);
     setAlertAbove('');
     setAlertBelow('');
+    setAlertSpread('');
   };
 
   const handleCreateAlert = async () => {
-    if (!selectedCard || !savedEmail) return;
+    if (!selectedCard) return;
+    // Resolve email: use savedEmail, or save inlineEmail if provided
+    let emailToUse = savedEmail;
+    if (!emailToUse) {
+      const trimmed = inlineEmail.trim();
+      if (!trimmed) {
+        setSnack({ msg: 'Please enter your email to receive alert notifications', severity: 'warning' });
+        return;
+      }
+      // Save the inline email as the global email
+      localStorage.setItem('pkmn_alert_email', trimmed);
+      setSavedEmail(trimmed);
+      setEmail(trimmed);
+      emailToUse = trimmed;
+    }
     const above = parseFloat(alertAbove);
     const below = parseFloat(alertBelow);
-    if (isNaN(above) && isNaN(below)) return;
+    const spread = parseFloat(alertSpread);
+    if (isNaN(above) && isNaN(below) && isNaN(spread)) return;
     setCreating(true);
     try {
       await api.createAlert({
         card_id: selectedCard.id,
-        email: savedEmail,
+        email: emailToUse,
         threshold_above: !isNaN(above) && above > 0 ? above : null,
         threshold_below: !isNaN(below) && below > 0 ? below : null,
+        spread_threshold: !isNaN(spread) && spread > 0 ? spread : null,
       });
-      setSnack(`Alert created for ${selectedCard.name}`);
+      setSnack({ msg: `Alert created for ${selectedCard.name}` });
       setSelectedCard(null);
       setSearchQuery('');
       setAlertAbove('');
       setAlertBelow('');
-      fetchAlerts(savedEmail);
+      setAlertSpread('');
+      setInlineEmail('');
+      fetchAlerts(emailToUse);
     } catch {
-      setSnack('Failed to create alert');
+      setSnack({ msg: 'Failed to create alert', severity: 'warning' });
     } finally {
       setCreating(false);
     }
@@ -181,39 +202,48 @@ export default function AlertsPage() {
       </Paper>
 
       {/* Quick Add Alert */}
-      {savedEmail && (
-        <Paper sx={{ p: 2, mb: 3, bgcolor: '#111', border: '1px solid #1e1e1e' }}>
-          <Typography sx={{ color: '#888', fontSize: '0.8rem', fontFamily: mono, mb: 1.5 }}>
-            QUICK ADD ALERT
+      <Paper sx={{ p: 2.5, mb: 3, bgcolor: '#111', border: '1px solid #00bcd433' }}>
+        <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2 }}>
+          <AddAlertIcon sx={{ color: '#00bcd4', fontSize: 22 }} />
+          <Typography sx={{ color: '#00bcd4', fontSize: '0.9rem', fontFamily: mono, fontWeight: 700, letterSpacing: 1 }}>
+            CREATE NEW ALERT
           </Typography>
+          <Typography sx={{ color: '#555', fontSize: '0.75rem', fontFamily: mono }}>
+            Search for any card and set price thresholds
+          </Typography>
+        </Stack>
 
           {/* Search input */}
           <TextField
-            size="small"
             fullWidth
-            placeholder="Search for a card by name..."
+            placeholder="Search for a card by name to set a price alert..."
             value={searchQuery}
             onChange={(e) => handleSearchChange(e.target.value)}
             InputProps={{
               startAdornment: (
                 <InputAdornment position="start">
                   {searching ? (
-                    <CircularProgress size={16} sx={{ color: '#555' }} />
+                    <CircularProgress size={18} sx={{ color: '#555' }} />
                   ) : (
-                    <SearchIcon sx={{ color: '#555', fontSize: 18 }} />
+                    <SearchIcon sx={{ color: '#00bcd4', fontSize: 22 }} />
                   )}
                 </InputAdornment>
               ),
             }}
             sx={{
-              maxWidth: 500,
-              '& .MuiOutlinedInput-root': { fontFamily: mono, fontSize: '0.85rem' },
+              '& .MuiOutlinedInput-root': {
+                fontFamily: mono,
+                fontSize: '0.95rem',
+                '& fieldset': { borderColor: '#333' },
+                '&:hover fieldset': { borderColor: '#00bcd4' },
+                '&.Mui-focused fieldset': { borderColor: '#00bcd4' },
+              },
             }}
           />
 
           {/* Search results dropdown */}
           {searchResults.length > 0 && !selectedCard && (
-            <Paper sx={{ mt: 0.5, maxWidth: 500, bgcolor: '#0a0a0a', border: '1px solid #222', maxHeight: 280, overflow: 'auto' }}>
+            <Paper sx={{ mt: 0.5, bgcolor: '#0a0a0a', border: '1px solid #222', maxHeight: 320, overflow: 'auto' }}>
               {searchResults.map((card) => (
                 <Box
                   key={card.id}
@@ -245,7 +275,7 @@ export default function AlertsPage() {
 
           {/* Selected card + threshold inputs */}
           {selectedCard && (
-            <Box sx={{ mt: 2, p: 1.5, bgcolor: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: 1, maxWidth: 500 }}>
+            <Box sx={{ mt: 2, p: 2, bgcolor: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: 1 }}>
               <Stack direction="row" alignItems="center" spacing={1.5} sx={{ mb: 2 }}>
                 {selectedCard.image_small && (
                   <Avatar src={selectedCard.image_small} variant="rounded" sx={{ width: 36, height: 50 }} />
@@ -262,6 +292,26 @@ export default function AlertsPage() {
                   {selectedCard.current_price != null ? `$${selectedCard.current_price.toFixed(2)}` : '--'}
                 </Typography>
               </Stack>
+
+              {!savedEmail && (
+                <Box sx={{ mb: 2, p: 1.5, bgcolor: '#111', border: '1px solid #ff980033', borderRadius: 1 }}>
+                  <Typography sx={{ color: '#ff9800', fontFamily: mono, fontSize: '0.75rem', mb: 1 }}>
+                    Enter your email to receive alert notifications
+                  </Typography>
+                  <TextField
+                    size="small"
+                    type="email"
+                    placeholder="your@email.com"
+                    value={inlineEmail}
+                    onChange={(e) => setInlineEmail(e.target.value)}
+                    fullWidth
+                    sx={{
+                      maxWidth: 360,
+                      '& .MuiOutlinedInput-root': { fontFamily: mono, fontSize: '0.85rem' },
+                    }}
+                  />
+                </Box>
+              )}
 
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems="flex-start">
                 <TextField
@@ -290,11 +340,24 @@ export default function AlertsPage() {
                     '& .MuiInputLabel-root': { fontSize: '0.75rem' },
                   }}
                 />
+                <TextField
+                  size="small"
+                  label="Alert when spread drops below %"
+                  type="number"
+                  value={alertSpread}
+                  onChange={(e) => setAlertSpread(e.target.value)}
+                  InputProps={{ startAdornment: <InputAdornment position="start">%</InputAdornment> }}
+                  sx={{
+                    flex: 1,
+                    '& .MuiOutlinedInput-root': { fontFamily: mono, fontSize: '0.85rem' },
+                    '& .MuiInputLabel-root': { fontSize: '0.75rem' },
+                  }}
+                />
                 <Button
                   variant="contained"
                   startIcon={creating ? <CircularProgress size={14} sx={{ color: '#00ff41' }} /> : <AddAlertIcon />}
                   onClick={handleCreateAlert}
-                  disabled={creating || (isNaN(parseFloat(alertAbove)) && isNaN(parseFloat(alertBelow)))}
+                  disabled={creating || (isNaN(parseFloat(alertAbove)) && isNaN(parseFloat(alertBelow)) && isNaN(parseFloat(alertSpread)))}
                   sx={{
                     bgcolor: '#00ff4122',
                     color: '#00ff41',
@@ -314,7 +377,6 @@ export default function AlertsPage() {
             </Box>
           )}
         </Paper>
-      )}
 
       {/* Tabs */}
       <Tabs
@@ -334,7 +396,7 @@ export default function AlertsPage() {
       {!savedEmail && (
         <Paper sx={{ p: 3, bgcolor: '#111', border: '1px solid #1e1e1e', textAlign: 'center' }}>
           <Typography sx={{ color: '#888', fontFamily: mono, fontSize: '0.85rem' }}>
-            Enter your email above to view and manage your price alerts.
+            Save your email above to view existing alerts and alert history.
           </Typography>
         </Paper>
       )}
@@ -361,6 +423,7 @@ export default function AlertsPage() {
                   <TableCell sx={headSx}>CARD</TableCell>
                   <TableCell sx={headSx} align="right">ABOVE</TableCell>
                   <TableCell sx={headSx} align="right">BELOW</TableCell>
+                  <TableCell sx={headSx} align="right">SPREAD</TableCell>
                   <TableCell sx={headSx}>CREATED</TableCell>
                   <TableCell sx={headSx} align="center">ACTION</TableCell>
                 </TableRow>
@@ -391,6 +454,9 @@ export default function AlertsPage() {
                     </TableCell>
                     <TableCell sx={{ ...cellSx, color: alert.threshold_below ? '#ff1744' : '#333' }} align="right">
                       {alert.threshold_below != null ? `$${alert.threshold_below.toFixed(2)}` : '--'}
+                    </TableCell>
+                    <TableCell sx={{ ...cellSx, color: alert.spread_threshold ? '#ff9800' : '#333' }} align="right">
+                      {alert.spread_threshold != null ? `${alert.spread_threshold.toFixed(1)}%` : '--'}
                     </TableCell>
                     <TableCell sx={cellSx}>
                       {alert.created_at ? new Date(alert.created_at).toLocaleDateString() : '--'}
@@ -430,6 +496,7 @@ export default function AlertsPage() {
                   <TableCell sx={headSx} align="right">PRICE</TableCell>
                   <TableCell sx={headSx} align="right">ABOVE</TableCell>
                   <TableCell sx={headSx} align="right">BELOW</TableCell>
+                  <TableCell sx={headSx} align="right">SPREAD</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -465,6 +532,9 @@ export default function AlertsPage() {
                     <TableCell sx={{ ...cellSx, color: '#555' }} align="right">
                       {item.threshold_below != null ? `$${item.threshold_below.toFixed(2)}` : '--'}
                     </TableCell>
+                    <TableCell sx={{ ...cellSx, color: '#555' }} align="right">
+                      {item.spread_threshold != null ? `${item.spread_threshold.toFixed(1)}%` : '--'}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -479,8 +549,16 @@ export default function AlertsPage() {
         onClose={() => setSnack(null)}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       >
-        <Alert severity="success" onClose={() => setSnack(null)} sx={{ bgcolor: '#1a1a2e', color: '#00ff41', border: '1px solid #00ff4133' }}>
-          {snack}
+        <Alert
+          severity={snack?.severity || 'success'}
+          onClose={() => setSnack(null)}
+          sx={{
+            bgcolor: '#1a1a2e',
+            color: snack?.severity === 'warning' ? '#ff9800' : '#00ff41',
+            border: `1px solid ${snack?.severity === 'warning' ? '#ff980033' : '#00ff4133'}`,
+          }}
+        >
+          {snack?.msg}
         </Alert>
       </Snackbar>
     </Box>

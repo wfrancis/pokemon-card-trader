@@ -123,16 +123,18 @@ export default function CardDetail() {
   const [quantityValue, setQuantityValue] = useState('1');
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
-  const [conditionGuideOpen, setConditionGuideOpen] = useState(false);
+  const [conditionGuideOpen, setConditionGuideOpen] = useState(true);
   const [alertDialogOpen, setAlertDialogOpen] = useState(false);
   const [alertDialogAbove, setAlertDialogAbove] = useState('');
   const [alertDialogBelow, setAlertDialogBelow] = useState('');
+  const [alertDialogSpread, setAlertDialogSpread] = useState('');
   const [alertDialogEmail, setAlertDialogEmail] = useState(() => localStorage.getItem('pkmn_alert_email') || '');
   const [alertSubmitting, setAlertSubmitting] = useState(false);
 
   const handleOpenAlertDialog = () => {
     setAlertDialogAbove('');
     setAlertDialogBelow('');
+    setAlertDialogSpread('');
     setAlertDialogEmail(localStorage.getItem('pkmn_alert_email') || '');
     setAlertDialogOpen(true);
   };
@@ -142,8 +144,9 @@ export default function CardDetail() {
     const email = alertDialogEmail.trim();
     const above = parseFloat(alertDialogAbove);
     const below = parseFloat(alertDialogBelow);
+    const spread = parseFloat(alertDialogSpread);
     if (!email) return;
-    if (isNaN(above) && isNaN(below)) return;
+    if (isNaN(above) && isNaN(below) && isNaN(spread)) return;
     setAlertSubmitting(true);
     try {
       localStorage.setItem('pkmn_alert_email', email);
@@ -152,6 +155,7 @@ export default function CardDetail() {
         email,
         threshold_above: !isNaN(above) && above > 0 ? above : null,
         threshold_below: !isNaN(below) && below > 0 ? below : null,
+        spread_threshold: !isNaN(spread) && spread > 0 ? spread : null,
       });
       setAlertDialogOpen(false);
     } catch {
@@ -564,11 +568,11 @@ export default function CardDetail() {
               if (conditions.length === 0) return null;
               const LOW_SAMPLE_THRESHOLD = 5;
               const conditionGuideData: { abbr: string; name: string; color: string; description: string; condKey: string }[] = [
-                { abbr: 'NM', name: 'Near Mint', color: '#00ff41', description: 'Card looks brand new. Sharp corners, clean edges, no scratches or whitening. Fresh from the pack.', condKey: 'Near Mint' },
-                { abbr: 'LP', name: 'Lightly Played', color: '#8bc34a', description: 'Minor edge wear or small scratches visible on close inspection. Still looks great in a binder.', condKey: 'Lightly Played' },
-                { abbr: 'MP', name: 'Moderately Played', color: '#ff9800', description: 'Noticeable wear on edges and corners. May have light creasing or surface scratches. Clearly played with.', condKey: 'Moderately Played' },
-                { abbr: 'HP', name: 'Heavily Played', color: '#f44336', description: 'Significant wear, creases, or bends. Edges are rough. Card has been well-loved.', condKey: 'Heavily Played' },
-                { abbr: 'DMG', name: 'Damaged', color: '#9e9e9e', description: 'Major damage: tears, water damage, heavy creases, or missing pieces. Still collectible but rough shape.', condKey: 'Damaged' },
+                { abbr: 'NM', name: 'Near Mint', color: '#00ff41', description: 'Looks brand new \u2014 sharp corners, clean surface, no marks', condKey: 'Near Mint' },
+                { abbr: 'LP', name: 'Lightly Played', color: '#8bc34a', description: 'Minor edge wear or small scratches \u2014 still looks great', condKey: 'Lightly Played' },
+                { abbr: 'MP', name: 'Moderately Played', color: '#ff9800', description: 'Noticeable wear, some creases or whitening on edges', condKey: 'Moderately Played' },
+                { abbr: 'HP', name: 'Heavily Played', color: '#f44336', description: 'Significant wear \u2014 major creases, heavy edge whitening', condKey: 'Heavily Played' },
+                { abbr: 'DMG', name: 'Damaged', color: '#9e9e9e', description: 'Structural damage \u2014 tears, water damage, or heavy bending', condKey: 'Damaged' },
               ];
               return (
                 <Box sx={{ mt: 2.5 }}>
@@ -597,8 +601,17 @@ export default function CardDetail() {
                     </Box>
                   </Box>
                   <Collapse in={conditionGuideOpen}>
-                    <Box sx={{ mb: 1.5, border: '1px solid #333', borderRadius: 1, bgcolor: '#0d0d1a', overflow: 'hidden' }}>
+                    <Box sx={{ mb: 1.5, border: '1px solid #333', borderLeft: '3px solid #00bcd4', borderRadius: 1, bgcolor: '#0d0d1a', overflow: 'hidden' }}>
+                      <Box sx={{ px: 1.5, py: 1, borderBottom: '1px solid #222', display: 'flex', alignItems: 'center', gap: 0.5, bgcolor: '#0a1929' }}>
+                        <InfoOutlinedIcon sx={{ color: '#00bcd4', fontSize: 14 }} />
+                        <Typography sx={{ color: '#00bcd4', fontSize: '0.7rem', fontFamily: '"JetBrains Mono", monospace', fontWeight: 700, letterSpacing: 1 }}>
+                          CONDITION GUIDE
+                        </Typography>
+                      </Box>
                       <Box sx={{ px: 1.5, py: 1, borderBottom: '1px solid #222' }}>
+                        <Typography sx={{ color: '#aaa', fontSize: '0.65rem', fontFamily: 'monospace', lineHeight: 1.6, mb: 0.8 }}>
+                          Not sure what condition your card is? Here's a quick guide — most cards found in old collections are <Box component="span" sx={{ color: '#8bc34a', fontWeight: 700 }}>Lightly Played (LP)</Box> or <Box component="span" sx={{ color: '#ff9800', fontWeight: 700 }}>Moderately Played (MP)</Box>.
+                        </Typography>
                         <Typography sx={{ color: '#aaa', fontSize: '0.65rem', fontFamily: 'monospace', fontWeight: 700, mb: 0.5 }}>
                           QUICK CHECK
                         </Typography>
@@ -977,6 +990,17 @@ export default function CardDetail() {
           <TextField
             fullWidth
             size="small"
+            type="number"
+            label="Alert when spread drops below %"
+            placeholder="e.g. 20"
+            value={alertDialogSpread}
+            onChange={(e) => setAlertDialogSpread(e.target.value)}
+            InputProps={{ startAdornment: <Typography sx={{ color: '#555', mr: 0.5 }}>%</Typography> }}
+            sx={{ mb: 2, '& .MuiInputLabel-root': { color: '#666' } }}
+          />
+          <TextField
+            fullWidth
+            size="small"
             type="email"
             label="Email"
             placeholder="your@email.com"
@@ -993,7 +1017,7 @@ export default function CardDetail() {
           </Button>
           <Button
             onClick={handleSubmitAlert}
-            disabled={alertSubmitting || !alertDialogEmail.trim() || (isNaN(parseFloat(alertDialogAbove)) && isNaN(parseFloat(alertDialogBelow)))}
+            disabled={alertSubmitting || !alertDialogEmail.trim() || (isNaN(parseFloat(alertDialogAbove)) && isNaN(parseFloat(alertDialogBelow)) && isNaN(parseFloat(alertDialogSpread)))}
             sx={{ color: '#ff9800', fontWeight: 700 }}
           >
             {alertSubmitting ? 'Saving...' : 'Create Alert'}

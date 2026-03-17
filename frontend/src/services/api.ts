@@ -238,7 +238,7 @@ export const api = {
     fetchApi<LiquidityTrendPoint[]>(`/api/market/screener/liquidity-trend/${cardId}?days=${days}`),
 
   // Price Alerts (server-side email notifications)
-  createAlert: (body: { card_id: number; email: string; threshold_above?: number | null; threshold_below?: number | null }) =>
+  createAlert: (body: { card_id: number; email: string; threshold_above?: number | null; threshold_below?: number | null; spread_threshold?: number | null }) =>
     fetchApi<PriceAlertResponse>('/api/alerts', {
       method: 'POST',
       body: JSON.stringify(body),
@@ -256,6 +256,12 @@ export const api = {
   // Weekly Recap
   getWeeklyRecap: () =>
     fetchApi<WeeklyRecapResponse>('/api/market/weekly-recap'),
+
+  getRecapArchive: () =>
+    fetchApi<RecapArchiveResponse>('/api/market/weekly-recap/archive'),
+
+  getRecapForWeek: (startDate: string) =>
+    fetchApi<WeeklyRecapResponse>(`/api/market/weekly-recap/${startDate}`),
 };
 
 export interface BacktestTrade {
@@ -590,6 +596,7 @@ export interface ScreenerCard {
   // Computed
   investment_score: number | null;
   breakeven_pct: number | null;
+  est_profit: number | null;
 }
 
 export interface ScreenerResponse {
@@ -638,6 +645,7 @@ export interface PriceAlertResponse {
   email: string;
   threshold_above: number | null;
   threshold_below: number | null;
+  spread_threshold: number | null;
   is_active: boolean;
   created_at?: string;
 }
@@ -650,9 +658,14 @@ export interface AlertHistoryItem {
   email: string;
   threshold_above: number | null;
   threshold_below: number | null;
+  spread_threshold: number | null;
   is_active: boolean;
   triggered_at: string | null;
   price_at_trigger: number | null;
+}
+
+export interface RecapArchiveResponse {
+  weeks: { start: string; end: string }[];
 }
 
 export interface WeeklyRecapResponse {

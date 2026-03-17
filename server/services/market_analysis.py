@@ -694,22 +694,25 @@ def _generate_signal(analysis: AnalysisResult, prices: list[float]) -> tuple[str
     return "hold", strength
 
 
-def get_top_movers(db: Session, limit: int = 10, days: int = 7) -> dict:
+def get_top_movers(db: Session, limit: int = 10, days: int = 7, ref_date=None) -> dict:
     """Get top gainers and losers based on recent price changes.
 
     Uses a lightweight approach: compares recent prices (last N days vs
     N days before that) using SQL aggregation. Scales to 14K+ cards.
+
+    Args:
+        ref_date: Optional end date for the period. Defaults to today.
     """
     from sqlalchemy import func, desc, text
     from server.models.card import Card
     from datetime import date, timedelta
 
-    today = date.today()
+    today = ref_date if ref_date else date.today()
     recent_start = today - timedelta(days=days)
     prev_start = today - timedelta(days=days * 2)
 
     # Get average price in last 7 days per card (same variant only)
-    recent = (
+    recent_q = (
         db.query(
             PriceHistory.card_id,
             func.avg(PriceHistory.market_price).label("recent_avg"),
@@ -720,9 +723,10 @@ def get_top_movers(db: Session, limit: int = 10, days: int = 7) -> dict:
             PriceHistory.date >= recent_start,
             PriceHistory.variant == Card.price_variant,
         )
-        .group_by(PriceHistory.card_id)
-        .subquery()
     )
+    if ref_date:
+        recent_q = recent_q.filter(PriceHistory.date <= today)
+    recent = recent_q.group_by(PriceHistory.card_id).subquery()
 
     # Get average price in previous 7 days per card (same variant only)
     prev = (

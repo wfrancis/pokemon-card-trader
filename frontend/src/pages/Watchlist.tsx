@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   Box, Paper, Typography, Avatar, IconButton, TextField, Collapse,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
-  InputAdornment, CircularProgress, Snackbar, ClickAwayListener,
+  InputAdornment, CircularProgress, Snackbar, ClickAwayListener, Button,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import BookmarkIcon from '@mui/icons-material/Bookmark';
@@ -11,6 +11,7 @@ import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import SearchIcon from '@mui/icons-material/Search';
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import DownloadIcon from '@mui/icons-material/Download';
 import { useNavigate } from 'react-router-dom';
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis,
@@ -238,9 +239,58 @@ export default function Watchlist() {
     return { amount: last - first, pct: ((last - first) / first) * 100 };
   }, [chartData]);
 
+  const exportCSV = useCallback(() => {
+    const header = ['Card Name', 'Set', 'Price', 'Purchase Price', 'Quantity', 'Total Value', 'Total Cost', 'Profit/Loss', '7d Change %'];
+    const csvRows = rows.map(row => {
+      const card = row.card;
+      const qty = row.quantity ?? 1;
+      const price = card?.current_price ?? 0;
+      const rowTotalValue = price * qty;
+      const rowTotalCost = (row.costBasis ?? 0) * qty;
+      const rowPnL = row.costBasis != null ? rowTotalValue - rowTotalCost : '';
+
+      // 7d change from price history
+      const priceHist = cardPriceHistories.get(row.cardId) || [];
+      let change7dStr = '';
+      if (priceHist.length >= 2) {
+        const latest = priceHist[priceHist.length - 1].market_price;
+        const idx7d = Math.max(0, priceHist.length - 8);
+        const price7d = priceHist[idx7d].market_price;
+        if (price7d > 0) {
+          change7dStr = (((latest - price7d) / price7d) * 100).toFixed(2);
+        }
+      }
+
+      const escape = (v: string) => `"${v.replace(/"/g, '""')}"`;
+      return [
+        escape(card?.name ?? 'Unknown'),
+        escape(card?.set_name ?? ''),
+        price.toFixed(2),
+        row.costBasis != null ? row.costBasis.toFixed(2) : '',
+        String(qty),
+        rowTotalValue.toFixed(2),
+        row.costBasis != null ? rowTotalCost.toFixed(2) : '',
+        rowPnL !== '' ? (rowPnL as number).toFixed(2) : '',
+        change7dStr,
+      ].join(',');
+    });
+
+    const csv = [header.join(','), ...csvRows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const dateStr = new Date().toISOString().slice(0, 10);
+    link.href = url;
+    link.download = `pkmn_portfolio_${dateStr}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, [rows, cardPriceHistories]);
+
   return (
     <Box sx={{ p: { xs: 1, md: 2 } }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
         <BookmarkIcon sx={{ color: '#ffd700' }} />
         <Typography variant="h2" sx={{ color: '#ffd700' }}>WATCHLIST</Typography>
         <Typography variant="body2" sx={{ color: '#666', ml: 'auto' }}>
@@ -249,9 +299,38 @@ export default function Watchlist() {
       </Box>
       <Box sx={{ mb: 2 }}>
         <Typography variant="body2" sx={{ color: '#888', fontSize: '0.8rem' }}>
-          Cards you're tracking. Add a cost basis to see your profit.
+          Cards you're tracking. Add what you paid to see your profit.
         </Typography>
       </Box>
+      {rows.length > 0 && (
+        <Paper sx={{ p: 1.5, mb: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', bgcolor: '#111', border: '1px solid #1e1e1e' }}>
+          <Box>
+            <Typography sx={{ color: '#4fc3f7', fontFamily: '"JetBrains Mono", monospace', fontSize: '0.75rem', fontWeight: 700 }}>
+              EXPORT PORTFOLIO
+            </Typography>
+            <Typography sx={{ color: '#666', fontSize: '0.7rem', fontFamily: '"JetBrains Mono", monospace' }}>
+              Download your portfolio as a spreadsheet
+            </Typography>
+          </Box>
+          <Button
+            variant="outlined"
+            startIcon={<DownloadIcon />}
+            onClick={exportCSV}
+            sx={{
+              color: '#4fc3f7',
+              borderColor: '#4fc3f7',
+              fontFamily: '"JetBrains Mono", monospace',
+              fontSize: '0.8rem',
+              textTransform: 'none',
+              px: 3,
+              py: 1,
+              '&:hover': { borderColor: '#81d4fa', bgcolor: 'rgba(79, 195, 247, 0.08)' },
+            }}
+          >
+            Export Portfolio CSV
+          </Button>
+        </Paper>
+      )}
 
       {/* Quick Add Search */}
       <Paper sx={{ p: 1.5, mb: 2, position: 'relative' }}>
@@ -408,7 +487,7 @@ export default function Watchlist() {
                 </Typography>
               </Paper>
               <Paper sx={{ p: 1.5, flex: 1, minWidth: 120, textAlign: 'center' }}>
-                <Typography sx={{ color: '#666', fontSize: '0.6rem', textTransform: 'uppercase', fontFamily: 'monospace' }}><GlossaryTooltip term="pnl">P&L</GlossaryTooltip></Typography>
+                <Typography sx={{ color: '#666', fontSize: '0.6rem', textTransform: 'uppercase', fontFamily: 'monospace' }}><GlossaryTooltip term="pnl">Profit/Loss</GlossaryTooltip></Typography>
                 <Typography sx={{
                   color: totalPnL != null && totalPnL >= 0 ? '#00ff41' : '#ff1744',
                   fontWeight: 700, fontFamily: '"JetBrains Mono", monospace', fontSize: '1.2rem',
@@ -458,13 +537,13 @@ export default function Watchlist() {
                 {totalCost > 0 && (
                   <>
                     <Box>
-                      <Typography sx={{ color: '#555', fontFamily: 'monospace', fontSize: '0.6rem', textTransform: 'uppercase' }}><GlossaryTooltip term="cost_basis">Cost Basis</GlossaryTooltip></Typography>
+                      <Typography sx={{ color: '#555', fontFamily: 'monospace', fontSize: '0.6rem', textTransform: 'uppercase' }}><GlossaryTooltip term="cost_basis">What You Paid</GlossaryTooltip></Typography>
                       <Typography sx={{ color: '#888', fontFamily: '"JetBrains Mono", monospace', fontWeight: 700, fontSize: '1rem' }}>
                         ${totalCost.toFixed(2)}
                       </Typography>
                     </Box>
                     <Box>
-                      <Typography sx={{ color: '#555', fontFamily: 'monospace', fontSize: '0.6rem', textTransform: 'uppercase' }}><GlossaryTooltip term="pnl">P&L</GlossaryTooltip></Typography>
+                      <Typography sx={{ color: '#555', fontFamily: 'monospace', fontSize: '0.6rem', textTransform: 'uppercase' }}><GlossaryTooltip term="pnl">Profit/Loss</GlossaryTooltip></Typography>
                       <Typography sx={{
                         fontFamily: '"JetBrains Mono", monospace', fontWeight: 700, fontSize: '1rem',
                         color: totalPnL != null && totalPnL >= 0 ? '#00ff41' : '#ff1744',
@@ -621,9 +700,9 @@ export default function Watchlist() {
                 <TableCell align="right" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}>CURRENT</TableCell>
                 <TableCell align="center" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem', width: 80 }}>TREND</TableCell>
                 <TableCell align="right" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}>7D</TableCell>
-                <TableCell align="right" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}><GlossaryTooltip term="cost_basis">COST BASIS</GlossaryTooltip></TableCell>
-                <TableCell align="right" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}><GlossaryTooltip term="pnl">P&L</GlossaryTooltip></TableCell>
-                <TableCell align="right" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}><GlossaryTooltip term="pnl">P&L %</GlossaryTooltip></TableCell>
+                <TableCell align="right" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}><GlossaryTooltip term="cost_basis">PAID</GlossaryTooltip></TableCell>
+                <TableCell align="right" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}><GlossaryTooltip term="pnl">Profit/Loss</GlossaryTooltip></TableCell>
+                <TableCell align="right" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}><GlossaryTooltip term="pnl">Profit/Loss %</GlossaryTooltip></TableCell>
                 <TableCell align="right" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}>ALERT ▲</TableCell>
                 <TableCell align="right" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}>ALERT ▼</TableCell>
                 <TableCell align="center" sx={{ width: 40 }}></TableCell>

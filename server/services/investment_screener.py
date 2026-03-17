@@ -315,6 +315,7 @@ def get_investment_candidates(
     min_price: float = 10.0,
     max_price: float | None = None,
     min_velocity: float = 0,
+    min_profit: float | None = None,
     sort_by: str = "investment_score",
     sort_dir: str = "desc",
     page: int = 1,
@@ -376,19 +377,28 @@ def get_investment_candidates(
         else_=app_col,
     )
 
-    if sort_by == "investment_score":
-        sort_col = investment_score_expr
-    else:
-        sort_col = sort_map.get(sort_by, Card.appreciation_score)
+    # When sorting/filtering by computed fields (est_profit, min_profit),
+    # we must fetch all rows and do post-query sort/pagination
+    needs_post_sort = sort_by == "est_profit" or min_profit is not None or min_velocity > 0
 
-    # Handle null sorting — nulls last
-    if sort_dir == "desc":
-        query = query.order_by(sort_col.desc().nullslast())
-    else:
-        query = query.order_by(sort_col.asc().nullsfirst())
+    if not needs_post_sort:
+        if sort_by == "investment_score":
+            sort_col = investment_score_expr
+        else:
+            sort_col = sort_map.get(sort_by, Card.appreciation_score)
 
-    total = query.count()
-    cards = query.offset((page - 1) * page_size).limit(page_size).all()
+        # Handle null sorting — nulls last
+        if sort_dir == "desc":
+            query = query.order_by(sort_col.desc().nullslast())
+        else:
+            query = query.order_by(sort_col.asc().nullsfirst())
+
+        total = query.count()
+        cards = query.offset((page - 1) * page_size).limit(page_size).all()
+    else:
+        # Fetch all matching cards for post-query processing
+        cards = query.all()
+        total = len(cards)
 
     results = []
     for card in cards:
@@ -468,6 +478,12 @@ def get_investment_candidates(
             # Base = appreciation * liquidity modifier + rarity bonus
             inv_score = round(min(100, app * liq_modifier + rarity_bonus), 1)
 
+        # Estimated flip profit: median_sold - (current_price * 1.1255)
+        # 1.1255 accounts for ~12.55% seller fees (TCGPlayer + shipping)
+        est_profit = None
+        if median_sold is not None and card.current_price is not None:
+            est_profit = round(median_sold - (card.current_price * 1.1255), 2)
+
         results.append({
             "id": card.id,
             "tcg_id": card.tcg_id,
@@ -499,12 +515,29 @@ def get_investment_candidates(
             # Computed
             "investment_score": inv_score,
             "breakeven_pct": breakeven,
+            "est_profit": est_profit,
         })
 
     # Post-filter by min_velocity (sales_per_day is computed, not a DB column)
     if min_velocity > 0:
         results = [r for r in results if r.get("sales_per_day", 0) >= min_velocity]
+
+    # Post-filter by min_profit (est_profit is computed, not a DB column)
+    if min_profit is not None:
+        results = [r for r in results if r.get("est_profit") is not None and r["est_profit"] >= min_profit]
+
+    # Post-sort by est_profit (computed field, not a DB column)
+    if sort_by == "est_profit":
+        reverse = sort_dir != "asc"
+        results.sort(
+            key=lambda r: (r.get("est_profit") is None, -(r.get("est_profit") or 0) if reverse else (r.get("est_profit") or 0))
+        )
+
+    # Recalculate total and paginate when post-processing was applied
+    if needs_post_sort:
         total = len(results)
+        start = (page - 1) * page_size
+        results = results[start:start + page_size]
 
     return {
         "data": results,

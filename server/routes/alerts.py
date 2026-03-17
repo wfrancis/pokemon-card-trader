@@ -17,11 +17,13 @@ class AlertCreate(BaseModel):
     email: str
     threshold_above: float | None = None
     threshold_below: float | None = None
+    spread_threshold: float | None = None
 
 
 class AlertUpdate(BaseModel):
     threshold_above: float | None = None
     threshold_below: float | None = None
+    spread_threshold: float | None = None
     is_active: bool | None = None
 
 
@@ -29,7 +31,7 @@ class AlertUpdate(BaseModel):
 def create_alert(body: AlertCreate, db: Session = Depends(get_db)):
     if not EMAIL_RE.match(body.email):
         raise HTTPException(400, "Invalid email format")
-    if body.threshold_above is None and body.threshold_below is None:
+    if body.threshold_above is None and body.threshold_below is None and body.spread_threshold is None:
         raise HTTPException(400, "At least one threshold required")
 
     # Upsert: deactivate existing alerts for same card+email, then create new
@@ -46,6 +48,7 @@ def create_alert(body: AlertCreate, db: Session = Depends(get_db)):
         email=body.email,
         threshold_above=body.threshold_above,
         threshold_below=body.threshold_below,
+        spread_threshold=body.spread_threshold,
     )
     db.add(alert)
     db.commit()
@@ -56,6 +59,7 @@ def create_alert(body: AlertCreate, db: Session = Depends(get_db)):
         "email": alert.email,
         "threshold_above": alert.threshold_above,
         "threshold_below": alert.threshold_below,
+        "spread_threshold": alert.spread_threshold,
         "is_active": alert.is_active,
     }
 
@@ -83,6 +87,7 @@ def list_alerts(
             "email": a.email,
             "threshold_above": a.threshold_above,
             "threshold_below": a.threshold_below,
+            "spread_threshold": a.spread_threshold,
             "is_active": a.is_active,
             "created_at": a.created_at.isoformat() if a.created_at else None,
         }
@@ -114,6 +119,7 @@ def alert_history(
             "email": a.email,
             "threshold_above": a.threshold_above,
             "threshold_below": a.threshold_below,
+            "spread_threshold": a.spread_threshold,
             "is_active": a.is_active,
             "triggered_at": a.last_triggered_at.isoformat() if a.last_triggered_at else None,
             "price_at_trigger": current_price,
@@ -141,6 +147,8 @@ def update_alert(alert_id: int, body: AlertUpdate, db: Session = Depends(get_db)
         alert.threshold_above = body.threshold_above
     if body.threshold_below is not None:
         alert.threshold_below = body.threshold_below
+    if body.spread_threshold is not None:
+        alert.spread_threshold = body.spread_threshold
     if body.is_active is not None:
         alert.is_active = body.is_active
     db.commit()
@@ -149,5 +157,6 @@ def update_alert(alert_id: int, body: AlertUpdate, db: Session = Depends(get_db)
         "card_id": alert.card_id,
         "threshold_above": alert.threshold_above,
         "threshold_below": alert.threshold_below,
+        "spread_threshold": alert.spread_threshold,
         "is_active": alert.is_active,
     }

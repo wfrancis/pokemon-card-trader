@@ -12,5 +12,6 @@ class PriceAlert(Base):
     threshold_above = Column(Float, nullable=True)
     threshold_below = Column(Float, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
+    spread_threshold = Column(Float, nullable=True)  # Alert when spread drops below this %
     last_triggered_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

@@ -55,4 +55,6 @@ export const GLOSSARY: Record<string, string> = {
     'Market phase where holders are selling cards, often before a price decrease',
   investment_grade:
     'Cards rated as top investment picks based on our scoring system — high liquidity, strong appreciation, and favorable market regime',
+  sales_per_day:
+    'Average number of sales per day over the last 30 days. Higher means the card sells faster and is easier to flip.',
 };
