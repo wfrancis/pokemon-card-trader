@@ -277,8 +277,8 @@ export default function CardExplorer() {
         CARD EXPLORER
       </Typography>
 
-      {/* Hot Cards Section */}
-      <HotCardsSection />
+      {/* Hot Cards Section — hidden when search is active */}
+      {!search && <HotCardsSection />}
 
       {/* Filters */}
       <Box sx={{ display: 'flex', gap: 2, mb: 2, alignItems: 'center', flexWrap: 'wrap' }}>

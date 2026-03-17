@@ -153,8 +153,11 @@ export default function AlertsPage() {
 
   return (
     <Box sx={{ p: { xs: 1, md: 3 }, maxWidth: 1100, mx: 'auto' }}>
-      <Typography variant="h2" sx={{ color: '#00bcd4', fontFamily: mono, fontWeight: 700, mb: 2, letterSpacing: 2 }}>
+      <Typography variant="h2" sx={{ color: '#00bcd4', fontFamily: mono, fontWeight: 700, mb: 0.5, letterSpacing: 2 }}>
         PRICE ALERTS
+      </Typography>
+      <Typography sx={{ color: '#666', fontFamily: mono, fontSize: '0.75rem', mb: 2 }}>
+        Get notified by email when card prices hit your target. Set alerts on any card and we'll watch it for you.
       </Typography>
 
       {/* Email Config */}

@@ -402,6 +402,14 @@ export default function CardDetail() {
                     <Typography sx={{ color: '#555', fontSize: '0.55rem', fontFamily: 'monospace', mt: 0.2 }}>
                       after 12.55% seller fees
                     </Typography>
+                    {/* Suggested buy price when overpriced */}
+                    {!isProfitable && medianPrice > 0 && (
+                      <Box sx={{ mt: 0.3, p: 0.5, bgcolor: '#1a1a0a', border: '1px solid #33330033', borderRadius: 0.5 }}>
+                        <Typography sx={{ color: '#ff9800', fontSize: '0.55rem', fontFamily: 'monospace' }}>
+                          Buy below ${(medianPrice * SELLER_FEE_RATE).toFixed(2)} for a profitable flip
+                        </Typography>
+                      </Box>
+                    )}
                     {/* Buy Zone Indicator */}
                     <Box sx={{ mt: 0.5, pt: 0.5, borderTop: '1px solid #222', display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
                       <Chip

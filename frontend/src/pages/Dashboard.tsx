@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Box, Paper, Typography, Grid, TextField, InputAdornment } from '@mui/material';
+import { useNavigate, Link as RouterLink } from 'react-router-dom';
+import { Box, Paper, Typography, Grid, TextField, InputAdornment, Link } from '@mui/material';
 import ShowChartIcon from '@mui/icons-material/ShowChart';
 import SearchIcon from '@mui/icons-material/Search';
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
+import LocalFireDepartmentIcon from '@mui/icons-material/LocalFireDepartment';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import TrendingFlatIcon from '@mui/icons-material/TrendingFlat';
@@ -14,7 +15,7 @@ import AgentFeed from '../components/AgentFeed';
 import PriceAlerts from '../components/PriceAlerts';
 import OnboardingBanner from '../components/OnboardingBanner';
 import { api } from '../services/api';
-import type { AgentInsight, WeeklyRecapResponse } from '../services/api';
+import type { AgentInsight, WeeklyRecapResponse, ScreenerCard } from '../services/api';
 
 interface MarketIndex {
   avg_price: number;
@@ -34,6 +35,8 @@ export default function Dashboard() {
   const [searchValue, setSearchValue] = useState('');
   const [recap, setRecap] = useState<WeeklyRecapResponse | null>(null);
   const [indexHistory, setIndexHistory] = useState<{ week: string; avg: number }[]>([]);
+  const [topFlips, setTopFlips] = useState<ScreenerCard[]>([]);
+  const [topFlipsLoading, setTopFlipsLoading] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -59,6 +62,16 @@ export default function Dashboard() {
     api.getAgentInsights({ acknowledged: false, limit: 1 })
       .then((insights: AgentInsight[]) => setHasAlerts(insights.length > 0))
       .catch(() => {});
+    // Fetch top flip opportunities
+    api.getScreenerCards({
+      sort_by: 'est_profit',
+      sort_dir: 'desc',
+      min_profit: '0.01',
+      min_velocity: '0.5',
+      min_liquidity: '30',
+      min_price: '2',
+      page_size: '5',
+    }).then(res => setTopFlips(res.data || [])).catch((err) => { console.error('Top Flips fetch failed:', err); }).finally(() => setTopFlipsLoading(false));
   }, []);
 
   return (
@@ -121,7 +134,7 @@ export default function Dashboard() {
         <Paper sx={{ p: 2, mb: 2 }}>
           <Grid container spacing={2} alignItems="center">
             <Grid size={{ xs: 12, md: 5 }}>
-              <Typography sx={{ color: '#666', textTransform: 'uppercase', fontSize: '0.6rem', fontFamily: '"JetBrains Mono", monospace', letterSpacing: 1, mb: 0.5 }}>
+              <Typography sx={{ color: '#666', textTransform: 'uppercase', fontSize: '0.6rem', fontFamily: '"JetBrains Mono", monospace', letterSpacing: 1, mb: 0.5 }} title="Average price across all tracked Pokemon cards — shows overall market health">
                 Market Index
               </Typography>
               <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, mb: 0.5 }}>
@@ -182,13 +195,100 @@ export default function Dashboard() {
               ) : (
                 <Box sx={{ width: '100%', height: 120, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <Typography sx={{ color: '#333', fontSize: '0.7rem', fontFamily: '"JetBrains Mono", monospace' }}>
-                    Index trend builds over time
+                    {recap ? 'Loading trend...' : 'Index trend builds over time'}
                   </Typography>
                 </Box>
               )}
             </Grid>
           </Grid>
         </Paper>
+
+        {/* Top Flip Opportunities */}
+        <Box sx={{ mb: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <LocalFireDepartmentIcon sx={{ color: '#ff9800', fontSize: 16 }} />
+              <Typography sx={{
+                fontFamily: '"JetBrains Mono", monospace', fontSize: '0.7rem',
+                color: '#ff9800', textTransform: 'uppercase', letterSpacing: 1, fontWeight: 700,
+              }}>
+                Top Flips
+              </Typography>
+            </Box>
+            <Link
+              component={RouterLink}
+              to="/screener"
+              sx={{
+                fontFamily: '"JetBrains Mono", monospace', fontSize: '0.6rem',
+                color: '#555', textDecoration: 'none', '&:hover': { color: '#00ff41' },
+              }}
+            >
+              View All &rarr;
+            </Link>
+          </Box>
+          {topFlipsLoading ? (
+            <Paper sx={{ p: 2, mb: 0.5, border: '1px solid #1a2a1a', bgcolor: '#060d06', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Typography sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.7rem', color: '#555' }}>
+                Loading top flips...
+              </Typography>
+            </Paper>
+          ) : topFlips.length === 0 ? (
+            <Paper sx={{ p: 2, mb: 0.5, border: '1px solid #1a2a1a', bgcolor: '#060d06', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Typography sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.7rem', color: '#555' }}>
+                No flip opportunities found
+              </Typography>
+            </Paper>
+          ) : (
+            topFlips.map((card) => {
+              const profit = card.est_profit;
+              const roi = profit !== null && card.current_price > 0
+                ? (profit / card.current_price) * 100 : null;
+              return (
+                <Paper
+                  key={card.id}
+                  onClick={() => navigate(`/card/${card.id}`)}
+                  sx={{
+                    p: 0.8, mb: 0.5, cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', gap: 1.5,
+                    border: '1px solid #1a2a1a', bgcolor: '#060d06',
+                    '&:hover': { borderColor: '#00ff4144' },
+                  }}
+                >
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Typography noWrap sx={{ fontSize: '0.7rem', fontWeight: 600, color: '#ccc' }}>
+                      {card.name}
+                      <Typography component="span" sx={{ color: '#444', fontSize: '0.6rem', ml: 1 }}>
+                        {card.set_name}
+                      </Typography>
+                    </Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+                    <Typography sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.65rem', color: '#00ff41', fontWeight: 700 }}>
+                      {profit !== null ? `+$${profit.toFixed(2)}` : '--'}
+                    </Typography>
+                    {roi !== null && (
+                      <Box sx={{
+                        px: 0.7, py: 0.1, borderRadius: '3px',
+                        bgcolor: roi >= 0 ? 'rgba(0,255,65,0.12)' : 'rgba(255,23,68,0.12)',
+                        border: `1px solid ${roi >= 0 ? 'rgba(0,255,65,0.25)' : 'rgba(255,23,68,0.25)'}`,
+                      }}>
+                        <Typography sx={{
+                          fontFamily: '"JetBrains Mono", monospace', fontSize: '0.6rem', fontWeight: 700,
+                          color: roi >= 0 ? '#00ff41' : '#ff1744',
+                        }}>
+                          {roi >= 0 ? '+' : ''}{roi.toFixed(0)}% ROI
+                        </Typography>
+                      </Box>
+                    )}
+                    <Typography sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.6rem', color: '#888' }}>
+                      {card.sales_per_day !== null ? `${card.sales_per_day.toFixed(1)}/day` : '--'}
+                    </Typography>
+                  </Box>
+                </Paper>
+              );
+            })
+          )}
+        </Box>
 
         {/* Price Alerts */}
         <Box sx={{ mb: 2 }}>

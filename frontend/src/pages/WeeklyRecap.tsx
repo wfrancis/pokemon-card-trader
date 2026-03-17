@@ -9,6 +9,7 @@ import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import WhatshotIcon from '@mui/icons-material/Whatshot';
 import CameraAltIcon from '@mui/icons-material/CameraAlt';
 import HistoryIcon from '@mui/icons-material/History';
+import InsightsIcon from '@mui/icons-material/Insights';
 import { useNavigate } from 'react-router-dom';
 import html2canvas from 'html2canvas';
 import {
@@ -329,6 +330,53 @@ export default function WeeklyRecap() {
         </Paper>
       )}
 
+      {/* Key Takeaways */}
+      {(() => {
+        const takeaways: string[] = [];
+        // Market direction
+        if (market_index.change_pct !== null) {
+          const dir = market_index.change_pct >= 0 ? 'up' : 'down';
+          takeaways.push(`Market is ${dir} ${Math.abs(market_index.change_pct).toFixed(1)}% this week across ${market_index.total_cards.toLocaleString()} tracked cards (total catalog value: $${market_index.total_market_cap.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })})`);
+        } else {
+          takeaways.push(`Tracking ${market_index.total_cards.toLocaleString()} cards with a total catalog value of $${market_index.total_market_cap.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`);
+        }
+        // Top gainer
+        if (gainers.length > 0) {
+          const g = gainers[0];
+          takeaways.push(`Top gainer: ${g.name} (${g.set_name}) up ${g.change_pct?.toFixed(1) ?? '?'}% to $${g.current_price.toFixed(2)}`);
+        }
+        // Most active / hottest
+        if (hottest.length > 0) {
+          const h = hottest[0];
+          takeaways.push(`Most active: ${h.name} (${h.set_name}) with activity score ${h.activity_score.toFixed(0)} at $${h.current_price.toFixed(2)}`);
+        }
+        // Top loser mention if significant
+        if (losers.length > 0 && losers[0].change_pct !== null && losers[0].change_pct < -5) {
+          takeaways.push(`Biggest drop: ${losers[0].name} fell ${Math.abs(losers[0].change_pct).toFixed(1)}% to $${losers[0].current_price.toFixed(2)}`);
+        }
+        if (takeaways.length === 0) return null;
+        return (
+          <Paper sx={{ p: 2.5, mb: 2, bgcolor: '#0d0d0d', border: '1px solid #1e1e1e', borderLeft: '3px solid #ff9800' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+              <InsightsIcon sx={{ color: '#ff9800', fontSize: 20 }} />
+              <Typography sx={{ color: '#ff9800', fontWeight: 700, letterSpacing: 1, fontSize: '0.85rem' }}>
+                KEY TAKEAWAYS
+              </Typography>
+            </Box>
+            {takeaways.map((t, i) => (
+              <Box key={i} sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: i < takeaways.length - 1 ? 1 : 0 }}>
+                <Typography sx={{ color: '#ff9800', fontFamily: 'monospace', fontSize: '0.85rem', lineHeight: 1.6, flexShrink: 0 }}>
+                  &bull;
+                </Typography>
+                <Typography sx={{ color: '#c0c0c0', fontFamily: 'monospace', fontSize: '0.85rem', lineHeight: 1.6 }}>
+                  {t}
+                </Typography>
+              </Box>
+            ))}
+          </Paper>
+        );
+      })()}
+
       {/* Top 5 Gainers */}
       <Paper sx={{ mb: 2, bgcolor: '#0d0d0d', border: '1px solid #1e1e1e' }}>
         <Box sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 1, borderBottom: '1px solid #1e1e1e' }}>
@@ -435,7 +483,7 @@ export default function WeeklyRecap() {
       <Paper sx={{ mb: 2, bgcolor: '#0d0d0d', border: '1px solid #1e1e1e' }}>
         <Box sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 1, borderBottom: '1px solid #1e1e1e' }}>
           <WhatshotIcon sx={{ color: '#ff9800' }} />
-          <Typography sx={{ color: '#ff9800', fontWeight: 700, letterSpacing: 1 }}>TOP 5 HOTTEST CARDS</Typography>
+          <Typography sx={{ color: '#ff9800', fontWeight: 700, letterSpacing: 1 }}>MOST TRADED</Typography>
         </Box>
         <TableContainer>
           <Table size="small">

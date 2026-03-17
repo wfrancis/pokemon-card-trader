@@ -1,4 +1,5 @@
 """Investment Screener API — Find cards that are liquid AND steadily appreciating."""
+import json
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from server.database import get_db
@@ -7,6 +8,7 @@ from server.services.investment_screener import (
     get_screener_stats,
     get_liquidity_trend,
 )
+from server.services.cache import get as cache_get, set as cache_set
 
 router = APIRouter(prefix="/api/market", tags=["screener"])
 
@@ -31,7 +33,13 @@ def screener(
     db: Session = Depends(get_db),
 ):
     """Get investment candidates — cards filtered by liquidity and appreciation metrics."""
-    return get_investment_candidates(
+    # Build cache key from all params
+    cache_key = f"screener:{q}:{min_liquidity}:{min_appreciation}:{regime}:{min_price}:{max_price}:{min_velocity}:{min_profit}:{sort_by}:{sort_dir}:{page}:{page_size}"
+    cached = cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    result = get_investment_candidates(
         db,
         min_liquidity=min_liquidity,
         min_appreciation_score=min_appreciation,
@@ -46,6 +54,8 @@ def screener(
         page_size=page_size,
         q=q,
     )
+    cache_set(cache_key, result, ttl=300)  # 5 min cache
+    return result
 
 
 @router.get("/screener/stats")

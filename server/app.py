@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 import os
 
 from server.database import engine, Base, get_db
@@ -172,8 +173,106 @@ async def lifespan(app: FastAPI):
 
     # Background price sync: runs TCGPlayer sync every 6 hours
     sync_task = asyncio.create_task(_background_price_sync())
+    # Warm up cache for expensive endpoints
+    warmup_task = asyncio.create_task(_warmup_cache())
     yield
     sync_task.cancel()
+    warmup_task.cancel()
+
+
+async def _warmup_cache():
+    """Pre-compute and cache expensive endpoint responses on startup."""
+    await asyncio.sleep(5)  # Let app fully initialize
+    from server.database import SessionLocal
+    from server.services.cache import set as cache_set
+    try:
+        db = SessionLocal()
+        try:
+            # Warm market index
+            result = db.query(
+                func.avg(Card.current_price).label("avg_price"),
+                func.count(Card.id).label("total_cards"),
+                func.sum(Card.current_price).label("total_market_cap"),
+            ).filter(Card.current_price.isnot(None), Card.current_price > 0, Card.is_tracked == True).first()
+            from server.models.price_history import PriceHistory
+            last_sync = db.query(func.max(PriceHistory.date)).scalar()
+            cache_set("market-index", {
+                "avg_price": round(result.avg_price, 2) if result.avg_price else 0,
+                "total_cards": result.total_cards or 0,
+                "total_market_cap": round(result.total_market_cap, 2) if result.total_market_cap else 0,
+                "last_sync_at": last_sync,
+            }, ttl=300)
+            logger.info("Cache warmup: market-index done")
+
+            # Warm weekly recap
+            from server.services.market_analysis import get_top_movers, get_hot_cards
+            from datetime import datetime, timedelta, timezone
+            today = datetime.now(timezone.utc).date()
+            week_ago = today - timedelta(days=7)
+            movers = get_top_movers(db, limit=5, days=7)
+            hottest = get_hot_cards(db, limit=5)
+            avg_price = round(result.avg_price, 2) if result.avg_price else 0
+            avg_price_7d_ago = db.query(
+                func.avg(PriceHistory.market_price)
+            ).filter(
+                PriceHistory.date == week_ago,
+                PriceHistory.market_price.isnot(None),
+                PriceHistory.market_price > 0,
+            ).scalar()
+            change_pct = None
+            if avg_price_7d_ago and avg_price_7d_ago > 0:
+                change_pct = round((avg_price - avg_price_7d_ago) / avg_price_7d_ago * 100, 2)
+            cache_set("weekly-recap", {
+                "period": {"start": str(week_ago), "end": str(today)},
+                "market_index": {
+                    "avg_price": avg_price,
+                    "total_cards": result.total_cards or 0,
+                    "total_market_cap": round(result.total_market_cap, 2) if result.total_market_cap else 0,
+                    "change_pct": change_pct,
+                },
+                "gainers": movers.get("gainers", []),
+                "losers": movers.get("losers", []),
+                "hottest": hottest,
+            }, ttl=600)
+            logger.info("Cache warmup: weekly-recap done")
+
+            # Warm top movers
+            movers_10 = get_top_movers(db, limit=10, days=7)
+            cache_set("movers:10:7", movers_10, ttl=300)
+            logger.info("Cache warmup: movers done")
+
+            # Warm hot cards
+            hot_12 = get_hot_cards(db, limit=12)
+            cache_set("hot:12", hot_12, ttl=300)
+            logger.info("Cache warmup: hot cards done")
+
+            # Warm default screener query
+            from server.services.investment_screener import get_investment_candidates
+            screener_result = get_investment_candidates(
+                db, min_liquidity=0, min_appreciation_score=0,
+                regime=None, min_price=10.0, max_price=None,
+                min_velocity=0, min_profit=None,
+                sort_by="investment_score", sort_dir="desc",
+                page=1, page_size=50, q=None,
+            )
+            cache_set("screener:None:0:0:None:10.0:None:0:None:investment_score:desc:1:50", screener_result, ttl=300)
+            logger.info("Cache warmup: default screener done")
+
+            # Warm flip finder query
+            flip_result = get_investment_candidates(
+                db, min_liquidity=0, min_appreciation_score=0,
+                regime=None, min_price=2.0, max_price=None,
+                min_velocity=0.5, min_profit=0.01,
+                sort_by="est_profit", sort_dir="desc",
+                page=1, page_size=50, q=None,
+            )
+            cache_set("screener:None:0:0:None:2.0:None:0.5:0.01:est_profit:desc:1:50", flip_result, ttl=300)
+            logger.info("Cache warmup: flip finder done")
+
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error(f"Cache warmup failed: {e}")
 
 
 async def _background_price_sync():
@@ -445,18 +544,21 @@ async def _autonomous_agent_scan():
             """), {"seven_days_ago": seven_days_ago}).fetchall()
 
             for row in big_movers:
-                direction = "spiked" if row.change_pct > 0 else "dropped"
                 if row.change_pct > 0:
                     severity = "urgent" if row.change_pct > 30 else "notable"
                     alert_type = "opportunity"
+                    direction_label = "Up"
                 else:
                     severity = "urgent" if row.change_pct < -40 else "notable"
                     alert_type = "warning"
-                variant_label = row.price_variant or "normal"
+                    direction_label = "Down"
+                # Friendly price formatting (round to nearest dollar for > $10)
+                def _fmt(p: float) -> str:
+                    return f"${p:.0f}" if p >= 10 else f"${p:.2f}"
                 anomalies.append({
                     "card_id": row.id,
-                    "title": f"{row.name} {direction} {abs(row.change_pct):.1f}%",
-                    "message": f"{row.name} ({variant_label}) {direction} {abs(row.change_pct):.1f}% — 7d avg ${row.avg_price:.2f} → ${row.current_price:.2f}",
+                    "title": f"{row.name} {direction_label.lower()} {abs(row.change_pct):.0f}% this week",
+                    "message": f"Price {'jumped' if row.change_pct > 0 else 'fell'} {abs(row.change_pct):.0f}% (was ~{_fmt(row.avg_price)}, now ~{_fmt(row.current_price)})",
                     "type": alert_type,
                     "severity": severity,
                 })

@@ -6,9 +6,9 @@ export const GLOSSARY: Record<string, string> = {
   regime:
     'The current market phase of a card: accumulating (buyers building positions), uptrend (price rising), distributing (sellers offloading), or downtrend (price falling).',
   accumulation:
-    'A market phase where smart buyers are quietly building positions before a price increase.',
+    'Cards that people are starting to buy more of — often happens before prices go up.',
   distribution:
-    'A market phase where holders are selling off their cards, often before a price drop.',
+    'Sellers are offloading these cards — often happens before prices go down.',
   uptrend:
     'The card price is consistently rising over time.',
   downtrend:
@@ -50,11 +50,33 @@ export const GLOSSARY: Record<string, string> = {
   appreciation:
     'The rate at which a card\'s price has been increasing over time',
   accumulating:
-    'Market phase where buyers are steadily acquiring cards, often before a price increase',
+    'People are buying these cards steadily — a sign prices may go up soon',
   distributing:
-    'Market phase where holders are selling cards, often before a price decrease',
+    'People are selling these cards — a sign prices may go down soon',
   investment_grade:
     'Cards rated as top investment picks based on our scoring system — high liquidity, strong appreciation, and favorable market regime',
   sales_per_day:
     'Average number of sales per day over the last 30 days. Higher means the card sells faster and is easier to flip.',
+  roi:
+    'Return on Investment — profit as a percentage of what you paid. Higher ROI means a more profitable trade.',
+  velocity:
+    'How quickly cards are selling. Measured in sales per day — higher velocity means faster, easier sales.',
+  buy_zone:
+    'A signal that the current price is low enough to buy for a profitable resale after fees.',
+  overpriced:
+    'The listing price is significantly higher than what the card actually sells for. Avoid buying at this price.',
+  low_liquidity:
+    'This card doesn\'t sell often. It may take a long time to find a buyer if you want to resell.',
+  fair_value:
+    'The card is priced close to what it actually sells for. Not a great flip but a reasonable deal.',
+  est_profit:
+    'Estimated profit from buying at market price and selling at the typical sale price, after 12.55% marketplace fees.',
+  portfolio_value:
+    'The total value of all cards in your watchlist based on current market prices.',
+  daily_average:
+    'Average sale price calculated from all sales in the time period.',
+  tcgplayer:
+    'The largest Pokemon card marketplace. Prices on this site come from TCGPlayer listings and sales.',
+  seller_fees:
+    'TCGPlayer charges sellers ~12.55% in fees. Our profit calculations already account for this.',
 };

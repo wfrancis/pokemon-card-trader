@@ -7,6 +7,7 @@ from server.models.card import Card
 from server.models.sale import Sale
 from server.services.market_analysis import analyze_card, get_top_movers, get_hot_cards
 from server.services.trading_economics import calc_liquidity_score
+from server.services.cache import get as cache_get, set as cache_set
 
 router = APIRouter(prefix="/api", tags=["analysis"])
 
@@ -77,12 +78,22 @@ def market_movers(
     days: int = Query(7, ge=1, le=90),
     db: Session = Depends(get_db),
 ):
-    return get_top_movers(db, limit=limit, days=days)
+    cache_key = f"movers:{limit}:{days}"
+    cached = cache_get(cache_key)
+    if cached is not None:
+        return cached
+    result = get_top_movers(db, limit=limit, days=days)
+    cache_set(cache_key, result, ttl=300)
+    return result
 
 
 @router.get("/market/index")
 def market_index(db: Session = Depends(get_db)):
     """Aggregate Pokemon card market index — average price of all tracked cards."""
+    cached = cache_get("market-index")
+    if cached is not None:
+        return cached
+
     from sqlalchemy import func
     from server.models.price_history import PriceHistory
     result = db.query(
@@ -94,12 +105,14 @@ def market_index(db: Session = Depends(get_db)):
     # Get most recent price history timestamp as last sync indicator
     last_sync = db.query(func.max(PriceHistory.date)).scalar()
 
-    return {
+    index_result = {
         "avg_price": round(result.avg_price, 2) if result.avg_price else 0,
         "total_cards": result.total_cards or 0,
         "total_market_cap": round(result.total_market_cap, 2) if result.total_market_cap else 0,
         "last_sync_at": last_sync,
     }
+    cache_set("market-index", index_result, ttl=300)
+    return index_result
 
 
 @router.get("/market/hot")
@@ -108,7 +121,13 @@ def hot_cards(
     db: Session = Depends(get_db),
 ):
     """Get hottest cards ranked by activity score (volume proxy)."""
-    return get_hot_cards(db, limit=limit)
+    cache_key = f"hot:{limit}"
+    cached = cache_get(cache_key)
+    if cached is not None:
+        return cached
+    result = get_hot_cards(db, limit=limit)
+    cache_set(cache_key, result, ttl=300)
+    return result
 
 
 @router.get("/market/weekly-recap/archive")
@@ -140,6 +159,11 @@ def weekly_recap_archive(db: Session = Depends(get_db)):
 @router.get("/market/weekly-recap/{start_date}")
 def weekly_recap_historical(start_date: str, db: Session = Depends(get_db)):
     """Weekly recap for a specific start date (7-day period from that date)."""
+    cache_key = f"recap:{start_date}"
+    cached = cache_get(cache_key)
+    if cached is not None:
+        return cached
+
     from server.models.price_history import PriceHistory
 
     try:
@@ -192,7 +216,7 @@ def weekly_recap_historical(start_date: str, db: Session = Depends(get_db)):
     if avg_price_start and avg_price_start > 0 and avg_price_end:
         change_pct = round((avg_price_end - avg_price_start) / avg_price_start * 100, 2)
 
-    return {
+    result = {
         "period": {"start": str(period_start), "end": str(period_end)},
         "market_index": {
             "avg_price": avg_price,
@@ -204,11 +228,17 @@ def weekly_recap_historical(start_date: str, db: Session = Depends(get_db)):
         "losers": movers.get("losers", []),
         "hottest": [],
     }
+    cache_set(cache_key, result, ttl=3600)  # 1 hour cache for historical data
+    return result
 
 
 @router.get("/market/weekly-recap")
 def weekly_recap(db: Session = Depends(get_db)):
     """Weekly market recap — gainers, losers, hottest cards, and market index change."""
+    cached = cache_get("weekly-recap")
+    if cached is not None:
+        return cached
+
     from server.models.price_history import PriceHistory
 
     today = datetime.now(timezone.utc).date()
@@ -241,7 +271,7 @@ def weekly_recap(db: Session = Depends(get_db)):
     if avg_price_7d_ago and avg_price_7d_ago > 0:
         change_pct = round((avg_price - avg_price_7d_ago) / avg_price_7d_ago * 100, 2)
 
-    return {
+    result = {
         "period": {"start": str(week_ago), "end": str(today)},
         "market_index": {
             "avg_price": avg_price,
@@ -253,6 +283,8 @@ def weekly_recap(db: Session = Depends(get_db)):
         "losers": movers.get("losers", []),
         "hottest": hottest,
     }
+    cache_set("weekly-recap", result, ttl=600)  # 10 min cache
+    return result
 
 
 @router.get("/market/ticker")

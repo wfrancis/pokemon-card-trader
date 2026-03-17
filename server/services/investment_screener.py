@@ -400,6 +400,33 @@ def get_investment_candidates(
         cards = query.all()
         total = len(cards)
 
+    # Batch-fetch sales data to avoid N+1 queries
+    from server.models.sale import Sale as SaleModel
+    d30 = (datetime.now(timezone.utc) - timedelta(days=30)).date()
+    d90 = (datetime.now(timezone.utc) - timedelta(days=90)).date()
+    card_ids = [c.id for c in cards]
+
+    # Batch query: sales counts per card for 30d and 90d
+    sales_30d_map: dict[int, int] = {}
+    sales_90d_map: dict[int, int] = {}
+    if card_ids:
+        for row in db.query(SaleModel.card_id, func.count(SaleModel.id)).filter(
+            SaleModel.card_id.in_(card_ids), SaleModel.order_date >= d30
+        ).group_by(SaleModel.card_id).all():
+            sales_30d_map[row[0]] = row[1]
+        for row in db.query(SaleModel.card_id, func.count(SaleModel.id)).filter(
+            SaleModel.card_id.in_(card_ids), SaleModel.order_date >= d90
+        ).group_by(SaleModel.card_id).all():
+            sales_90d_map[row[0]] = row[1]
+
+    # Batch query: all sale prices for median calculation (90d)
+    sale_prices_map: dict[int, list[float]] = {}
+    if card_ids:
+        for row in db.query(SaleModel.card_id, SaleModel.purchase_price).filter(
+            SaleModel.card_id.in_(card_ids), SaleModel.order_date >= d90, SaleModel.purchase_price > 0
+        ).order_by(SaleModel.card_id, SaleModel.purchase_price.asc()).all():
+            sale_prices_map.setdefault(row[0], []).append(row[1])
+
     results = []
     for card in cards:
         breakeven = calc_breakeven_appreciation(card.current_price) if card.current_price else None
@@ -431,37 +458,22 @@ def get_investment_candidates(
             if continuous_daily > 0:
                 days_to_breakeven = round(math.log(1 + breakeven / 100) / continuous_daily)
 
-        # Time to sell estimate
+        # Time to sell estimate using batch-fetched sales data
         time_to_sell = None
         sales_per_day = 0
         median_sold = None
         if card.current_price:
-            # Use sales counts from liquidity data if available
-            from server.models.sale import Sale as SaleModel
-            d30 = (datetime.now(timezone.utc) - timedelta(days=30)).date()
-            d90 = (datetime.now(timezone.utc) - timedelta(days=90)).date()
-            s30 = db.query(func.count(SaleModel.id)).filter(
-                SaleModel.card_id == card.id, SaleModel.order_date >= d30
-            ).scalar() or 0
-            s90 = db.query(func.count(SaleModel.id)).filter(
-                SaleModel.card_id == card.id, SaleModel.order_date >= d90
-            ).scalar() or 0
+            s30 = sales_30d_map.get(card.id, 0)
+            s90 = sales_90d_map.get(card.id, 0)
             tts = estimate_time_to_sell(card.current_price, s90, s30)
             time_to_sell = tts
             sales_per_day = round(s30 / 30, 2) if s30 else 0
 
             # Median sold price (for flip profit calculation)
-            if s90 > 0:
-                sale_prices = [
-                    row[0] for row in
-                    db.query(SaleModel.purchase_price)
-                    .filter(SaleModel.card_id == card.id, SaleModel.order_date >= d90, SaleModel.purchase_price > 0)
-                    .order_by(SaleModel.purchase_price.asc())
-                    .all()
-                ]
-                if sale_prices:
-                    n = len(sale_prices)
-                    median_sold = round((sale_prices[n // 2] + sale_prices[(n - 1) // 2]) / 2, 2)
+            sp = sale_prices_map.get(card.id, [])
+            if sp:
+                n = len(sp)
+                median_sold = round((sp[n // 2] + sp[(n - 1) // 2]) / 2, 2)
 
         # Investment score: soft gate model
         # Liquidity scales smoothly from 0→1.0 using sigmoid-like curve

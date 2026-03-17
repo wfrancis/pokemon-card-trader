@@ -836,13 +836,13 @@ export default function Screener() {
   const [totalPages, setTotalPages] = useState(1);
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [simpleMode, setSimpleMode] = useState<boolean>(() => {
-    const stored = localStorage.getItem('pkmn_screener_mode_v2');
+    const stored = localStorage.getItem('pkmn_screener_mode_v3');
     return stored === null ? true : stored === 'simple';
   });
 
   const handleSimpleModeToggle = (checked: boolean) => {
     setSimpleMode(checked);
-    localStorage.setItem('pkmn_screener_mode_v2', checked ? 'simple' : 'advanced');
+    localStorage.setItem('pkmn_screener_mode_v3', checked ? 'simple' : 'advanced');
   };
 
   // Filters
@@ -857,6 +857,7 @@ export default function Screener() {
   const [minVelocity, setMinVelocity] = useState(0);
   const [investmentGradeOnly, setInvestmentGradeOnly] = useState(false);
   const [flipFinderActive, setFlipFinderActive] = useState(false);
+  const [flipSortMode, setFlipSortMode] = useState<'profit' | 'roi'>('profit');
   // Ref mirrors flipFinderActive to avoid stale closures in fetchCards
   const flipFinderRef = useRef(false);
 
@@ -904,6 +905,14 @@ export default function Screener() {
       if (isFlip) params.min_profit = '0.01';
 
       const result = await api.getScreenerCards(params);
+      // Client-side ROI% sort for Flip Finder
+      if (isFlip && flipSortMode === 'roi') {
+        result.data.sort((a, b) => {
+          const roiA = a.current_price > 0 && a.est_profit != null ? (a.est_profit / a.current_price) * 100 : -Infinity;
+          const roiB = b.current_price > 0 && b.est_profit != null ? (b.est_profit / b.current_price) * 100 : -Infinity;
+          return roiB - roiA;
+        });
+      }
       setCards(result.data);
       setTotal(result.total);
       setTotalPages(result.total_pages);
@@ -912,7 +921,7 @@ export default function Screener() {
     } finally {
       setLoading(false);
     }
-  }, [page, sortBy, sortDir, minLiquidity, minAppreciation, regime, minPrice, maxPrice, search, minVelocity, investmentGradeOnly]);
+  }, [page, sortBy, sortDir, minLiquidity, minAppreciation, regime, minPrice, maxPrice, search, minVelocity, investmentGradeOnly, flipSortMode]);
 
   useEffect(() => {
     fetchCards();
@@ -944,6 +953,7 @@ export default function Screener() {
   const activateFlipFinder = () => {
     flipFinderRef.current = true;
     setFlipFinderActive(true);
+    setFlipSortMode('profit');
     setInvestmentGradeOnly(false);
     setSortBy('est_profit');
     setSortDir('desc');
@@ -982,7 +992,11 @@ export default function Screener() {
           {simpleMode ? 'FIND VALUABLE CARDS' : 'INVESTMENT SCREENER'}
         </Typography>
       </Box>
-      {!simpleMode && (
+      {simpleMode ? (
+        <Typography variant="body2" sx={{ color: '#666', mb: 2, fontSize: '0.7rem' }}>
+          Search through thousands of Pokemon cards ranked by investment potential.
+        </Typography>
+      ) : (
         <Typography variant="body2" sx={{ color: '#666', mb: 2, fontSize: '0.7rem' }}>
           Find cards that are consistently liquid AND have steady price appreciation. Sorted by combined investment score.
         </Typography>
@@ -1004,7 +1018,7 @@ export default function Screener() {
           }}
         />
         <Typography variant="body2" sx={{ color: simpleMode ? '#00bcd4' : '#666', fontSize: '0.75rem', fontWeight: simpleMode ? 700 : 400 }}>
-          Simple
+          Simple View
         </Typography>
         {simpleMode && (
           <Typography variant="body2" sx={{ color: '#555', fontSize: '0.65rem', ml: 1 }}>
@@ -1016,11 +1030,42 @@ export default function Screener() {
       {/* Simple mode explanation banner */}
       {simpleMode && (
         <Paper sx={{ p: 1.5, mb: 2, bgcolor: '#0a1a1a', border: '1px solid #00bcd433', borderRadius: 1 }}>
-          <Typography variant="caption" sx={{ color: '#888' }}>
-            {flipFinderActive
-              ? 'Find cards you can buy now and sell for a profit. We calculate fees (12.55%) so the profit shown is what you\'d actually make.'
-              : 'Find cards that are good investments \u2014 liquid (easy to sell) and trending up in price.'}
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
+            <Typography variant="caption" sx={{ color: '#888' }}>
+              {flipFinderActive
+                ? 'These cards can be bought and resold for profit. The profit shown is after seller fees (12.55%).'
+                : 'Find cards that are good investments \u2014 liquid (easy to sell) and trending up in price.'}
+            </Typography>
+            {flipFinderActive && (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <Typography sx={{ color: '#888', fontSize: '0.6rem', fontFamily: 'monospace', mr: 0.5 }}>Sort:</Typography>
+                <Chip
+                  label="Profit"
+                  size="small"
+                  onClick={() => { setFlipSortMode('profit'); setPage(1); }}
+                  sx={{
+                    height: 22, fontSize: '0.6rem', fontFamily: '"JetBrains Mono", monospace', fontWeight: 700,
+                    bgcolor: flipSortMode === 'profit' ? '#00ff41' : 'transparent',
+                    color: flipSortMode === 'profit' ? '#000' : '#00ff41',
+                    border: '1px solid #00ff4155',
+                    '&:hover': { bgcolor: flipSortMode === 'profit' ? '#00cc33' : '#00ff4118' },
+                  }}
+                />
+                <Chip
+                  label="ROI%"
+                  size="small"
+                  onClick={() => { setFlipSortMode('roi'); setPage(1); }}
+                  sx={{
+                    height: 22, fontSize: '0.6rem', fontFamily: '"JetBrains Mono", monospace', fontWeight: 700,
+                    bgcolor: flipSortMode === 'roi' ? '#00ff41' : 'transparent',
+                    color: flipSortMode === 'roi' ? '#000' : '#00ff41',
+                    border: '1px solid #00ff4155',
+                    '&:hover': { bgcolor: flipSortMode === 'roi' ? '#00cc33' : '#00ff4118' },
+                  }}
+                />
+              </Box>
+            )}
+          </Box>
         </Paper>
       )}
 
@@ -1089,11 +1134,38 @@ export default function Screener() {
           )}
         </Box>
         {!simpleMode && flipFinderActive && (
-          <Box sx={{ mb: 1.5, p: 1, bgcolor: '#00ff4110', border: '1px solid #00ff4133', borderRadius: 1 }}>
+          <Box sx={{ mb: 1.5, p: 1, bgcolor: '#00ff4110', border: '1px solid #00ff4133', borderRadius: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
             <Typography variant="body2" sx={{ color: '#00ff41', fontSize: '0.65rem', fontWeight: 600 }}>
               <MonetizationOnIcon sx={{ fontSize: 13, mr: 0.5, verticalAlign: 'middle' }} />
-              Showing cards with profitable flip opportunities, sorted by estimated profit (buy at market, sell at median, after 12.55% fees). Min 0.5 sales/day.
+              Showing cards with profitable flip opportunities (buy at market, sell at median, after 12.55% fees). Min 0.5 sales/day.
             </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <Typography sx={{ color: '#888', fontSize: '0.6rem', fontFamily: 'monospace', mr: 0.5 }}>Sort by:</Typography>
+              <Chip
+                label="Profit"
+                size="small"
+                onClick={() => { setFlipSortMode('profit'); setPage(1); }}
+                sx={{
+                  height: 22, fontSize: '0.6rem', fontFamily: '"JetBrains Mono", monospace', fontWeight: 700,
+                  bgcolor: flipSortMode === 'profit' ? '#00ff41' : 'transparent',
+                  color: flipSortMode === 'profit' ? '#000' : '#00ff41',
+                  border: '1px solid #00ff4155',
+                  '&:hover': { bgcolor: flipSortMode === 'profit' ? '#00cc33' : '#00ff4118' },
+                }}
+              />
+              <Chip
+                label="ROI%"
+                size="small"
+                onClick={() => { setFlipSortMode('roi'); setPage(1); }}
+                sx={{
+                  height: 22, fontSize: '0.6rem', fontFamily: '"JetBrains Mono", monospace', fontWeight: 700,
+                  bgcolor: flipSortMode === 'roi' ? '#00ff41' : 'transparent',
+                  color: flipSortMode === 'roi' ? '#000' : '#00ff41',
+                  border: '1px solid #00ff4155',
+                  '&:hover': { bgcolor: flipSortMode === 'roi' ? '#00cc33' : '#00ff4118' },
+                }}
+              />
+            </Box>
           </Box>
         )}
         <Grid container spacing={2} alignItems="center">

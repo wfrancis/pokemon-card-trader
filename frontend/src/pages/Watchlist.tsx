@@ -578,19 +578,29 @@ export default function Watchlist() {
                       tick={{ fill: '#555', fontSize: 10, fontFamily: 'monospace' }}
                       tickFormatter={(v: number) => `$${v.toFixed(0)}`}
                       stroke="#333"
-                      domain={totalCost > 0 ? [Math.min(totalCost * 0.9, Math.min(...chartData.map(d => d.value))), 'auto'] : ['auto', 'auto']}
+                      domain={totalCost > 0
+                        ? [
+                            Math.min(totalCost, Math.min(...chartData.map(d => d.value))) * 0.95,
+                            Math.max(totalCost, Math.max(...chartData.map(d => d.value))) * 1.05,
+                          ]
+                        : ['auto', 'auto']
+                      }
                     />
                     <Tooltip
                       contentStyle={{ backgroundColor: '#0a0a1a', border: '1px solid #333', fontFamily: '"JetBrains Mono", monospace', fontSize: 12 }}
                       labelStyle={{ color: '#888' }}
-                      formatter={(value: any) => [`$${Number(value).toFixed(2)}`, 'Portfolio Value']}
+                      formatter={(value: any, name: string) => {
+                        if (name === 'costLine') return [`$${Number(value).toFixed(2)}`, 'Cost Basis'];
+                        return [`$${Number(value).toFixed(2)}`, 'Portfolio Value'];
+                      }}
                     />
                     {totalCost > 0 && (
                       <ReferenceLine
                         y={totalCost}
-                        stroke="#666"
-                        strokeDasharray="6 4"
-                        label={{ value: `Cost $${totalCost.toFixed(0)}`, fill: '#555', fontSize: 10, fontFamily: 'monospace', position: 'right' }}
+                        stroke="#ffb74d"
+                        strokeDasharray="8 4"
+                        strokeWidth={1.5}
+                        label={{ value: `Break-even $${totalCost.toFixed(0)}`, fill: '#ffb74d', fontSize: 10, fontFamily: 'monospace', position: 'right' }}
                       />
                     )}
                     <Area
@@ -601,6 +611,7 @@ export default function Watchlist() {
                       fill="url(#portfolioGrad)"
                       dot={false}
                       activeDot={{ r: 4, stroke: '#00ff41', strokeWidth: 2, fill: '#0a0a1a' }}
+                      name="Portfolio Value"
                     />
                   </AreaChart>
                 </ResponsiveContainer>
@@ -608,6 +619,18 @@ export default function Watchlist() {
                 <Typography sx={{ color: '#555', textAlign: 'center', py: 4, fontFamily: 'monospace', fontSize: '0.75rem' }}>
                   No price history available
                 </Typography>
+              )}
+              {totalCost > 0 && chartData.length > 0 && (
+                <Box sx={{ display: 'flex', gap: 2, mt: 0.5, justifyContent: 'center' }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    <Box sx={{ width: 16, height: 2, bgcolor: '#00ff41', borderRadius: 1 }} />
+                    <Typography sx={{ color: '#888', fontFamily: 'monospace', fontSize: '0.6rem' }}>Portfolio Value</Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    <Box sx={{ width: 16, height: 0, borderTop: '2px dashed #ffb74d', borderRadius: 1 }} />
+                    <Typography sx={{ color: '#888', fontFamily: 'monospace', fontSize: '0.6rem' }}>Break-even (Cost Basis)</Typography>
+                  </Box>
+                </Box>
               )}
 
               {/* Portfolio Allocation Bar */}
