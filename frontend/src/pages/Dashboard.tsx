@@ -1,10 +1,14 @@
 import { useEffect, useState } from 'react';
-import { Box, Paper, Typography, Grid } from '@mui/material';
+import { useNavigate } from 'react-router-dom';
+import { Box, Paper, Typography, Grid, TextField, InputAdornment } from '@mui/material';
 import ShowChartIcon from '@mui/icons-material/ShowChart';
+import SearchIcon from '@mui/icons-material/Search';
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
 import MarketTicker from '../components/MarketTicker';
 import TopMovers from '../components/TopMovers';
 import AgentFeed from '../components/AgentFeed';
+import PriceAlerts from '../components/PriceAlerts';
+import OnboardingBanner from '../components/OnboardingBanner';
 import { api } from '../services/api';
 import type { AgentInsight } from '../services/api';
 
@@ -23,6 +27,8 @@ function formatSyncTime(dateStr: string): string {
 export default function Dashboard() {
   const [index, setIndex] = useState<MarketIndex | null>(null);
   const [hasAlerts, setHasAlerts] = useState(false);
+  const [searchValue, setSearchValue] = useState('');
+  const navigate = useNavigate();
 
   useEffect(() => {
     document.title = 'Dashboard | PKMN Trader';
@@ -42,6 +48,9 @@ export default function Dashboard() {
       <MarketTicker />
 
       <Box sx={{ p: { xs: 1.5, md: 2 } }}>
+        {/* Onboarding */}
+        <OnboardingBanner />
+
         {/* Header */}
         <Box sx={{ display: 'flex', justifyContent: 'space-between', flexDirection: { xs: 'column', sm: 'row' }, alignItems: { xs: 'flex-start', sm: 'center' }, gap: 1, mb: 2 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -60,6 +69,35 @@ export default function Dashboard() {
             </Typography>
           )}
         </Box>
+
+        {/* Hero Search */}
+        <TextField
+          fullWidth
+          placeholder="Search any Pokemon card..."
+          value={searchValue}
+          onChange={(e) => setSearchValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && searchValue.trim()) {
+              navigate(`/explore?q=${encodeURIComponent(searchValue.trim())}`);
+            }
+          }}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon sx={{ color: '#555' }} />
+              </InputAdornment>
+            ),
+          }}
+          sx={{
+            mb: 2,
+            '& .MuiOutlinedInput-root': {
+              fontSize: '1rem',
+              '& fieldset': { borderColor: '#222' },
+              '&:hover fieldset': { borderColor: '#333' },
+              '&.Mui-focused fieldset': { borderColor: '#00ff41' },
+            },
+          }}
+        />
 
         {/* Market Index Cards */}
         <Grid container spacing={2} sx={{ mb: 2 }}>
@@ -96,20 +134,19 @@ export default function Dashboard() {
         </Grid>
 
         {/* Price Alerts */}
-        {hasAlerts && (
-          <Box sx={{ mb: 2 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
-              <NotificationsActiveIcon sx={{ color: '#ff9800', fontSize: 16 }} />
-              <Typography sx={{
-                fontFamily: '"JetBrains Mono", monospace', fontSize: '0.7rem',
-                color: '#ff9800', textTransform: 'uppercase', letterSpacing: 1, fontWeight: 700,
-              }}>
-                Price Alerts
-              </Typography>
-            </Box>
-            <AgentFeed limit={5} />
+        <Box sx={{ mb: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+            <NotificationsActiveIcon sx={{ color: '#ff9800', fontSize: 16 }} />
+            <Typography sx={{
+              fontFamily: '"JetBrains Mono", monospace', fontSize: '0.7rem',
+              color: '#ff9800', textTransform: 'uppercase', letterSpacing: 1, fontWeight: 700,
+            }}>
+              Alerts
+            </Typography>
           </Box>
-        )}
+          <PriceAlerts />
+          {hasAlerts && <AgentFeed limit={5} />}
+        </Box>
 
         {/* Top Movers */}
         <TopMovers />

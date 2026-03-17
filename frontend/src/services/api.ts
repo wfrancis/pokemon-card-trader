@@ -116,8 +116,8 @@ export const api = {
       `/api/cards/${id}/analysis${condition ? `?condition=${encodeURIComponent(condition)}` : ''}`
     ),
 
-  getMovers: (limit = 10) =>
-    fetchApi<{ gainers: Mover[]; losers: Mover[] }>(`/api/market/movers?limit=${limit}`),
+  getMovers: (limit = 10, days = 7) =>
+    fetchApi<{ gainers: Mover[]; losers: Mover[] }>(`/api/market/movers?limit=${limit}&days=${days}`),
 
   getMarketIndex: () =>
     fetchApi<{ avg_price: number; total_cards: number; total_market_cap: number; last_sync_at: string | null }>(
@@ -223,6 +223,23 @@ export const api = {
 
   getLiquidityTrend: (cardId: number, days = 90) =>
     fetchApi<LiquidityTrendPoint[]>(`/api/market/screener/liquidity-trend/${cardId}?days=${days}`),
+
+  // Price Alerts (server-side email notifications)
+  createAlert: (body: { card_id: number; email: string; threshold_above?: number | null; threshold_below?: number | null }) =>
+    fetchApi<PriceAlertResponse>('/api/alerts', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  getAlerts: (email: string) =>
+    fetchApi<PriceAlertResponse[]>(`/api/alerts?email=${encodeURIComponent(email)}`),
+
+  deleteAlert: (alertId: number) =>
+    fetchApi<{ status: string }>(`/api/alerts/${alertId}`, { method: 'DELETE' }),
+
+  // Weekly Recap
+  getWeeklyRecap: () =>
+    fetchApi<WeeklyRecapResponse>('/api/market/weekly-recap'),
 };
 
 export interface BacktestTrade {
@@ -593,4 +610,21 @@ export interface AgentAnalysisResult {
   predictions_created?: number;
   snapshot_id?: number;
   error?: string;
+}
+
+export interface PriceAlertResponse {
+  id: number;
+  card_id: number;
+  email: string;
+  threshold_above: number | null;
+  threshold_below: number | null;
+  is_active: boolean;
+}
+
+export interface WeeklyRecapResponse {
+  period: { start: string; end: string };
+  market_index: { avg_price: number; total_cards: number; total_market_cap: number; change_pct: number | null };
+  gainers: Mover[];
+  losers: Mover[];
+  hottest: HotCard[];
 }

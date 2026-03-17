@@ -24,6 +24,7 @@ import ViewModuleIcon from '@mui/icons-material/ViewModule';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import BookmarkIcon from '@mui/icons-material/Bookmark';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
+import SummarizeIcon from '@mui/icons-material/Summarize';
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const CardExplorer = lazy(() => import('./pages/CardExplorer'));
@@ -31,6 +32,7 @@ const CardDetail = lazy(() => import('./pages/CardDetail'));
 const Trader = lazy(() => import('./pages/Trader'));
 const Watchlist = lazy(() => import('./pages/Watchlist'));
 const Screener = lazy(() => import('./pages/Screener'));
+const WeeklyRecap = lazy(() => import('./pages/WeeklyRecap'));
 
 function NavBar() {
   const location = useLocation();
@@ -45,6 +47,7 @@ function NavBar() {
     { label: 'Screener', path: '/screener', icon: <TrendingUpIcon /> },
     { label: 'AI Trader', path: '/trader', icon: <SmartToyIcon /> },
     { label: 'Watchlist', path: '/watchlist', icon: <BookmarkIcon /> },
+    { label: 'Recap', path: '/recap', icon: <SummarizeIcon /> },
   ];
 
   return (
@@ -133,6 +136,19 @@ function NavBar() {
               >
                 Watchlist
               </Button>
+              <Button
+                component={Link}
+                to="/recap"
+                startIcon={<SummarizeIcon />}
+                size="small"
+                sx={{
+                  color: isActive('/recap') ? '#00bcd4' : '#666',
+                  textTransform: 'none',
+                  ml: 1,
+                }}
+              >
+                Recap
+              </Button>
             </>
           ) : (
             <>
@@ -206,6 +222,7 @@ export default function App() {
             <Route path="/card/:id" element={<CardDetail />} />
             <Route path="/trader" element={<Trader />} />
             <Route path="/watchlist" element={<Watchlist />} />
+            <Route path="/recap" element={<WeeklyRecap />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>

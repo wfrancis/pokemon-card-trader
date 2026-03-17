@@ -15,6 +15,7 @@ import DiamondIcon from '@mui/icons-material/Diamond';
 import StarIcon from '@mui/icons-material/Star';
 import { useNavigate } from 'react-router-dom';
 import { api, ScreenerCard, ScreenerStats } from '../services/api';
+import GlossaryTooltip from '../components/GlossaryTooltip';
 
 const REGIME_COLORS: Record<string, string> = {
   markup: '#00ff41',
@@ -48,20 +49,20 @@ function StatsBar({ stats }: { stats: ScreenerStats | null }) {
   }
 
   const statItems = [
-    { label: 'TRACKED', value: stats.total_tracked, color: '#e0e0e0' },
-    { label: 'WITH LIQUIDITY', value: stats.with_liquidity_data, color: '#00bcd4' },
-    { label: 'WITH TREND DATA', value: stats.with_appreciation_data, color: '#ff9800' },
-    { label: 'INVESTMENT GRADE', value: stats.investment_grade_count, color: '#00ff41' },
+    { label: 'TRACKED', value: stats.total_tracked, color: '#e0e0e0', glossary: '' },
+    { label: 'WITH LIQUIDITY', value: stats.with_liquidity_data, color: '#00bcd4', glossary: 'liquidity' },
+    { label: 'WITH TREND DATA', value: stats.with_appreciation_data, color: '#ff9800', glossary: 'appreciation_slope' },
+    { label: 'INVESTMENT GRADE', value: stats.investment_grade_count, color: '#00ff41', glossary: 'investment_score' },
   ];
 
   return (
     <Paper sx={{ p: 2, mb: 2, bgcolor: '#0a0a0a', border: '1px solid #1a1a1a' }}>
       <Grid container spacing={2}>
-        {statItems.map(({ label, value, color }) => (
+        {statItems.map(({ label, value, color, glossary }) => (
           <Grid size={{ xs: 6, md: 3 }} key={label}>
             <Box sx={{ textAlign: 'center' }}>
               <Typography variant="body2" sx={{ color: '#666', fontSize: '0.65rem', textTransform: 'uppercase' }}>
-                {label}
+                {glossary ? <GlossaryTooltip term={glossary}>{label}</GlossaryTooltip> : label}
               </Typography>
               <Typography variant="h3" sx={{ color, fontWeight: 700 }}>
                 {value.toLocaleString()}
@@ -73,8 +74,8 @@ function StatsBar({ stats }: { stats: ScreenerStats | null }) {
       {stats.regime_breakdown && Object.keys(stats.regime_breakdown).length > 0 && (
         <Box sx={{ display: 'flex', gap: 1, mt: 1.5, flexWrap: 'wrap', justifyContent: 'center' }}>
           {Object.entries(stats.regime_breakdown).map(([regime, count]) => (
+            <GlossaryTooltip key={regime} term={regime === 'markup' ? 'uptrend' : regime === 'markdown' ? 'downtrend' : regime}>
             <Chip
-              key={regime}
               label={`${REGIME_LABELS[regime] || regime}: ${count}`}
               size="small"
               sx={{
@@ -85,6 +86,7 @@ function StatsBar({ stats }: { stats: ScreenerStats | null }) {
                 height: 22,
               }}
             />
+            </GlossaryTooltip>
           ))}
         </Box>
       )}
@@ -97,17 +99,18 @@ function StatsBar({ stats }: { stats: ScreenerStats | null }) {
   );
 }
 
-function ScoreBar({ value, maxValue = 100, color, label }: {
+function ScoreBar({ value, maxValue = 100, color, label, glossaryTerm }: {
   value: number | null;
   maxValue?: number;
   color: string;
   label: string;
+  glossaryTerm?: string;
 }) {
   if (value === null || value === undefined) {
     return (
       <Box sx={{ mt: 0.3 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-          <Typography variant="body2" sx={{ fontSize: '0.55rem', color: '#555' }}>{label}</Typography>
+          <Typography variant="body2" sx={{ fontSize: '0.55rem', color: '#555' }}>{glossaryTerm ? <GlossaryTooltip term={glossaryTerm}>{label}</GlossaryTooltip> : label}</Typography>
           <Typography variant="body2" sx={{ fontSize: '0.55rem', color: '#444' }}>--</Typography>
         </Box>
       </Box>
@@ -116,7 +119,7 @@ function ScoreBar({ value, maxValue = 100, color, label }: {
   return (
     <Box sx={{ mt: 0.3 }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-        <Typography variant="body2" sx={{ fontSize: '0.55rem', color: '#888' }}>{label}</Typography>
+        <Typography variant="body2" sx={{ fontSize: '0.55rem', color: '#888' }}>{glossaryTerm ? <GlossaryTooltip term={glossaryTerm}>{label}</GlossaryTooltip> : label}</Typography>
         <Typography variant="body2" sx={{ fontSize: '0.55rem', color, fontWeight: 700 }}>
           {value.toFixed(0)}
         </Typography>
@@ -218,6 +221,7 @@ function CardTile({ card, rank }: { card: ScreenerCard; rank: number }) {
             </Tooltip>
           )}
           {card.regime && (
+            <GlossaryTooltip term={card.regime === 'markup' ? 'uptrend' : card.regime === 'markdown' ? 'downtrend' : card.regime}>
             <Chip
               label={REGIME_LABELS[card.regime] || card.regime}
               size="small"
@@ -229,6 +233,7 @@ function CardTile({ card, rank }: { card: ScreenerCard; rank: number }) {
                 height: 16,
               }}
             />
+            </GlossaryTooltip>
           )}
         </Box>
       </Box>
@@ -270,7 +275,7 @@ function CardTile({ card, rank }: { card: ScreenerCard; rank: number }) {
         }>
           <Box sx={{ textAlign: 'center', mt: 0.5, mb: 0.3 }}>
             <Typography variant="body2" sx={{ fontSize: '0.5rem', color: '#888', textTransform: 'uppercase' }}>
-              Invest Score
+              <GlossaryTooltip term="investment_score">Invest Score</GlossaryTooltip>
             </Typography>
             <Typography
               variant="h4"
@@ -286,8 +291,8 @@ function CardTile({ card, rank }: { card: ScreenerCard; rank: number }) {
       )}
 
       {/* Metric bars */}
-      <ScoreBar value={card.liquidity_score} color="#00bcd4" label="Liquidity" />
-      <ScoreBar value={card.appreciation_score} color="#ff9800" label="Appreciation" />
+      <ScoreBar value={card.liquidity_score} color="#00bcd4" label="Liquidity" glossaryTerm="liquidity_score" />
+      <ScoreBar value={card.appreciation_score} color="#ff9800" label="Appreciation" glossaryTerm="appreciation_slope" />
 
       {/* Appreciation details */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.5 }}>
@@ -338,19 +343,19 @@ function CardTable({ cards, page, onSort, sortBy, sortDir }: {
   sortDir: string;
 }) {
   const navigate = useNavigate();
-  const columns: { id: string; label: string; width?: number }[] = [
+  const columns: { id: string; label: string; width?: number; glossary?: string }[] = [
     { id: 'rank', label: '#', width: 40 },
     { id: 'name', label: 'Card' },
     { id: 'current_price', label: 'Price', width: 75 },
-    { id: 'investment_score', label: 'Score', width: 60 },
-    { id: 'liquidity_score', label: 'Liq', width: 50 },
-    { id: 'appreciation_score', label: 'App', width: 50 },
-    { id: 'appreciation_consistency', label: 'R²', width: 50 },
-    { id: 'appreciation_slope', label: '%/Day', width: 65 },
-    { id: 'breakeven_pct', label: 'BE%', width: 55 },
-    { id: 'days_to_breakeven', label: 'BE Days', width: 60 },
-    { id: 'time_to_sell', label: 'TTS', width: 75 },
-    { id: 'regime', label: 'Regime', width: 85 },
+    { id: 'investment_score', label: 'Score', width: 60, glossary: 'investment_score' },
+    { id: 'liquidity_score', label: 'Liq', width: 50, glossary: 'liquidity_score' },
+    { id: 'appreciation_score', label: 'App', width: 50, glossary: 'appreciation_slope' },
+    { id: 'appreciation_consistency', label: 'R²', width: 50, glossary: 'appreciation_consistency' },
+    { id: 'appreciation_slope', label: '%/Day', width: 65, glossary: 'appreciation_slope' },
+    { id: 'breakeven_pct', label: 'BE%', width: 55, glossary: 'breakeven' },
+    { id: 'days_to_breakeven', label: 'BE Days', width: 60, glossary: 'breakeven' },
+    { id: 'time_to_sell', label: 'TTS', width: 75, glossary: 'time_to_sell' },
+    { id: 'regime', label: 'Regime', width: 85, glossary: 'regime' },
   ];
 
   const sortable = ['name', 'current_price', 'investment_score', 'liquidity_score', 'appreciation_score', 'appreciation_consistency', 'appreciation_slope'];
@@ -372,9 +377,9 @@ function CardTable({ cards, page, onSort, sortBy, sortDir }: {
                     onClick={() => onSort(col.id)}
                     sx={{ color: '#888 !important', '& .MuiTableSortLabel-icon': { color: '#666 !important' } }}
                   >
-                    {col.label}
+                    {col.glossary ? <GlossaryTooltip term={col.glossary}>{col.label}</GlossaryTooltip> : col.label}
                   </TableSortLabel>
-                ) : col.label}
+                ) : col.glossary ? <GlossaryTooltip term={col.glossary}>{col.label}</GlossaryTooltip> : col.label}
               </TableCell>
             ))}
           </TableRow>
@@ -618,7 +623,7 @@ export default function Screener() {
           <Grid size={{ xs: 6, sm: 3, md: 2 }}>
             <Typography variant="body2" sx={{ color: '#888', fontSize: '0.6rem', mb: 0.5 }}>
               <WaterDropIcon sx={{ fontSize: 12, mr: 0.3, verticalAlign: 'middle' }} />
-              Min Liquidity: {minLiquidity}
+              Min <GlossaryTooltip term="liquidity_score">Liquidity</GlossaryTooltip>: {minLiquidity}
             </Typography>
             <Slider
               value={minLiquidity}
@@ -633,7 +638,7 @@ export default function Screener() {
           <Grid size={{ xs: 6, sm: 3, md: 2 }}>
             <Typography variant="body2" sx={{ color: '#888', fontSize: '0.6rem', mb: 0.5 }}>
               <TrendingUpIcon sx={{ fontSize: 12, mr: 0.3, verticalAlign: 'middle' }} />
-              Min Appreciation: {minAppreciation}
+              Min <GlossaryTooltip term="appreciation_slope">Appreciation</GlossaryTooltip>: {minAppreciation}
             </Typography>
             <Slider
               value={minAppreciation}
@@ -647,7 +652,7 @@ export default function Screener() {
           {/* Regime */}
           <Grid size={{ xs: 6, sm: 3, md: 1.5 }}>
             <FormControl size="small" fullWidth>
-              <InputLabel>Regime</InputLabel>
+              <InputLabel><GlossaryTooltip term="regime">Regime</GlossaryTooltip></InputLabel>
               <Select
                 value={regime}
                 label="Regime"
@@ -671,11 +676,11 @@ export default function Screener() {
                 label="Sort By"
                 onChange={(e) => { setSortBy(e.target.value); setPage(1); }}
               >
-                <MenuItem value="investment_score">Investment Score</MenuItem>
-                <MenuItem value="liquidity_score">Liquidity</MenuItem>
-                <MenuItem value="appreciation_score">Appreciation</MenuItem>
-                <MenuItem value="appreciation_consistency">Consistency (R²)</MenuItem>
-                <MenuItem value="appreciation_slope">Daily Growth</MenuItem>
+                <MenuItem value="investment_score"><GlossaryTooltip term="investment_score">Investment Score</GlossaryTooltip></MenuItem>
+                <MenuItem value="liquidity_score"><GlossaryTooltip term="liquidity_score">Liquidity</GlossaryTooltip></MenuItem>
+                <MenuItem value="appreciation_score"><GlossaryTooltip term="appreciation_slope">Appreciation</GlossaryTooltip></MenuItem>
+                <MenuItem value="appreciation_consistency"><GlossaryTooltip term="appreciation_consistency">Consistency (R²)</GlossaryTooltip></MenuItem>
+                <MenuItem value="appreciation_slope"><GlossaryTooltip term="appreciation_slope">Daily Growth</GlossaryTooltip></MenuItem>
                 <MenuItem value="current_price">Price</MenuItem>
               </Select>
             </FormControl>

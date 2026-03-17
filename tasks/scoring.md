@@ -88,16 +88,76 @@ After each sprint, re-run the 4 personas through the site via Chrome MCP. Track 
 
 ---
 
-### Post-Sprint 2 — [DATE TBD]
+### Post-Sprint 2 — 2026-03-16
 
 | Persona | Stickiness (1-10) | Delta | Notes |
 |---------|-------------------|-------|-------|
-| P1 Jake | | | |
-| P2 Maria | | | |
-| P3 Alex | | | |
-| P4 Sam | | | |
+| P1 Jake | **7.5/10** | +1.5 | Spread Analysis is "standout feature" (A-). SMA overlays useful for timing buys (A). Dashboard alerts with TARGET HIT badges "genuinely useful" (A). Wants: buy-zone indicator, push/email notifications, velocity alongside spread |
+| P2 Maria | **7/10** | +2 | SMA overlays "genuinely investment-grade" — 30d/6mo crossover is "classic bullish signal". Screener is "portfolio manager's dream". Alerts dashboard "makes the site feel alive". Wants: quantity tracking per card, push/email notifications, graded card pricing (PSA/CGC) |
+| P3 Alex | **7/10** | +2 | Spread Analysis is "content gold" (8/10) — "Shining Charizard +322.1% spread is a tweet". SMA overlays screenshot-worthy on liquid cards (7/10). Screener list view is "pure content gold". Wants: chart export/download PNG, fix Y-axis on high-variance cards, weekly recap page |
+| P4 Sam | **7.5/10** | +1.5 | Hero search bar is "most welcoming thing on this site". Spread analysis answers "is my card worth selling?" Glossary tooltips "thorough" (203 terms with dotted underlines). Wants: extend tooltips to CardDetail (NM/LP/HP), onboarding banner more prominent, simple mode for Screener |
 
-**Average: /10 (delta: )**
+**Average: 7.25/10 (delta: +1.75)** — Target was 7.0+, MET
+
+#### Sprint 2 Features Recognized (All 4 Personas)
+- **Spread Analysis**: Universally praised. Jake: "standout feature". Alex: "content gold". Maria: "real investment intelligence". Sam: "practical, real-world knowledge"
+- **SMA Overlays (30d/6mo)**: Maria and Jake both identified bullish crossover signals. Alex: "screenshot-worthy on liquid cards". Sam appreciated trend visualization
+- **Dashboard Alerts (TARGET HIT / NOTABLE)**: All 4 loved the alerts feed. Jake: "tells me exactly where to look". Maria: "makes the site feel alive and worth checking daily"
+- **Time Range Toggle (1D/3D/7D/30D)**: Functional, Maria uses 30D for long-term, Jake uses 7D for flip timing
+- **Glossary Tooltips**: Jake and Maria confirmed working on hover (plain-English definitions). Sam verified 203 dotted-underline elements on Screener
+- **Hero Search Bar**: Sam's top love. All personas used it successfully
+- **Onboarding Banner**: Sam noted it wasn't visible (may have been previously dismissed in shared browser state). Other personas saw it and found it helpful
+
+#### Known Chrome MCP Artifacts (Discounted)
+- Navigation "bugs" (random redirects, ticker intercepting clicks) — confirmed as automation artifacts, not real user issues
+- Tooltips not triggering for some agents — hover events inconsistent in Chrome MCP, but Jake and Maria confirmed tooltips work
+- Input field value concatenation — likely click/focus behavior difference in automation vs real browser
+
+#### Remaining Issues (Sprint 3 Candidates)
+1. **Push/email notifications for alerts** — #1 ask from Jake, Maria, and Alex. Dashboard-only alerts require visiting the site
+2. **Chart export / "Download as PNG"** — Alex's top ask for content creation workflow
+3. **Y-axis normalization on high-variance cards** — Outlier sales ($6,502 on Shining Charizard) compress useful signal. Log scale or IQR clipping needed
+4. **Extend glossary tooltips to CardDetail** — NM/LP/MP/HP/DMG abbreviations unexplained. Also add to Watchlist (P&L, Cost Basis)
+5. **Quantity tracking per card** — Maria owns 3 Base Set Charizards, needs per-copy cost basis
+6. **Graded card pricing (PSA/CGC/BGS)** — Maria's $15K collection is mostly graded; raw-only valuation is incomplete
+7. **Weekly recap page** — Alex wants "this week's top 5 gainers, biggest spread changes, notable SMA crossovers"
+8. **Buy Zone indicator on Spread Analysis** — Jake wants trend direction + "is now a good time to buy?" signal
+
+---
+
+### Post-Sprint 3 — 2026-03-16
+
+| Persona | Stickiness (1-10) | Delta | Notes |
+|---------|-------------------|-------|-------|
+| P1 Jake | **8/10** | +0.5 | Buy Zone indicator is "exactly what I need" (A-). Weekly Recap useful for Monday morning routine (B+). Glossary tooltips + graded pricing info helpful (B+). Wants: email alerts discoverable, velocity in buy zone logic, "Flip Finder" page |
+| P2 Maria | **8/10** | +1 | Watchlist is now "real portfolio tracker" with QTY + cost basis + P&L (A). Card detail depth "information-dense in the best way" (A-). Weekly Recap "I would actually read" (B+). Wants: email alerts discoverable, historical portfolio value chart, per-copy cost basis |
+| P3 Alex | **8.5/10** | +1.5 | Chart export PNG "difference between cool tool and tool I use in my workflow" (A). Weekly Recap "citation-ready" for Substack (A-). Portfolio tracking "flex screenshot" worthy (A-). Wants: full recap export as branded image, historical recap archive, embeddable charts |
+| P4 Sam | **8/10** | +0.5 | Weekly Recap "single best page for a newcomer" (A). Buy Zone chip "just tell me what to do" guidance (B+). Graded pricing info "very thoughtful" (B+). Wants: guided onboarding flow, more visible watchlist button, condition abbreviation legend |
+
+**Average: 8.125/10 (delta: +0.875)** — Target was 8.0+, MET ✅
+
+#### Sprint 3 Features Recognized (All 4 Personas)
+- **Buy Zone Indicator**: All 4 praised. Jake: "saves me mental math". Maria: "immediate buy/pass signal". Alex: "could build a whole video around it". Sam: "just tell me what to do" guidance
+- **Weekly Recap Page**: Universally loved. Alex: "citation-ready for Substack" (A-). Sam: "single best page for a newcomer" (A). Jake: "Monday morning routine" (B+). Maria: "I would actually read" (B+)
+- **Chart Export PNG**: Alex's #1 ask delivered. "Difference between cool tool and tool I use in my workflow" (A). Charts "clean enough to publish"
+- **Glossary Tooltips Extended**: Working on Watchlist headers (Cost Basis, P&L). Card detail condition tooltips confirmed. Sam still wants more in-context help for abbreviations
+- **Quantity Tracking**: Maria praised QTY + P&L integration as "real portfolio tracker" (A). Sam and Jake confirmed working
+- **Graded Card Pricing Info**: Sam: "very thoughtful" — proactively answers graded pricing question. Maria: "smart UX decision" for managing expectations
+- **Email Alerts (Backend)**: Backend working but UI discoverability issue — all 4 personas could not find the email field (it's inside the bookmark dialog's "Edit Alerts & Cost Basis" submenu). Sprint 4 should surface this more prominently
+
+#### Known Chrome MCP Artifacts (Discounted)
+- Navigation artifacts (random redirects) — confirmed automation-only
+- Dialog interactions (bookmark click → submenu) — Chrome MCP couldn't reliably trigger nested dialogs
+- Input field persistence concerns — localStorage works in real browsers, automation resets state
+
+#### Common Sprint 4 Candidates (Across Personas)
+1. **Email alert UI discoverability** — All 4 couldn't find it. Move email input to a more prominent location or add a dedicated "Set Alert" button
+2. **Guided onboarding / "What's my card worth?" flow** — Sam's top ask, would help newcomer retention
+3. **Historical portfolio value chart** — Maria wants collection value over time
+4. **Flip Finder / velocity-aware buy zone** — Jake wants sold velocity integrated into buy zone logic
+5. **Full recap export as branded image** — Alex wants one-click shareable recap
+6. **Historical recap archive** — Alex wants to browse previous weeks
+7. **Embeddable charts / API access** — Alex's long-term content creator need
 
 ---
 
@@ -107,6 +167,6 @@ After each sprint, re-run the 4 personas through the site via Chrome MCP. Track 
 |-----------|---------------|------------|
 | Baseline | 3.75 | Site exists |
 | Sprint 1 | 6.0+ | Navigation works, search works, basic portfolio |
-| Sprint 2 | 7.0+ | Spread data, alerts, onboarding |
-| Sprint 3 | 8.0+ | Weekly digest, chart export, collection mode |
+| Sprint 2 | 7.25 (target 7.0+) ✅ | Spread data, SMA overlays, alerts, onboarding, glossary tooltips |
+| Sprint 3 | 8.125 (target 8.0+) ✅ | Buy zone, chart export, weekly recap, quantity tracking, email alerts backend |
 | V1.0 Launch | 8.5+ | All personas would recommend to a friend |

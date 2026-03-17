@@ -15,6 +15,7 @@ from server.routes import trader
 from server.routes import sales
 from server.routes import agent
 from server.routes import screener
+from server.routes import alerts
 from server.services.card_sync import sync_all_cards
 from server.services.price_collector import collect_prices_for_cards
 from server.services.tcgdex_sync import sync_tcgdex_cards, import_tcgdex_prices, sync_tcgdex_sets
@@ -304,6 +305,18 @@ async def _background_price_sync():
                 db.close()
         except Exception as e:
             logger.error(f"Investment metrics computation failed: {e}")
+        # 5.8. Check and fire email alerts for price thresholds
+        try:
+            from server.services.alert_checker import check_and_fire_alerts
+            db = SessionLocal()
+            try:
+                alert_stats = check_and_fire_alerts(db)
+                if alert_stats.get("fired", 0) > 0:
+                    logger.info(f"Price alerts fired: {alert_stats}")
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Alert check failed: {e}")
         # 6. Backfill prediction prices (update agent accuracy tracking)
         try:
             from server.services.prediction_tracker import backfill_prediction_prices
@@ -568,6 +581,7 @@ app.include_router(trader.router)
 app.include_router(sales.router)
 app.include_router(agent.router)
 app.include_router(screener.router)
+app.include_router(alerts.router)
 
 
 @app.get("/health")

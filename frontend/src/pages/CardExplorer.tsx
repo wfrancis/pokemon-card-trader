@@ -7,7 +7,7 @@ import {
 import SearchIcon from '@mui/icons-material/Search';
 import WhatshotIcon from '@mui/icons-material/Whatshot';
 import StyleIcon from '@mui/icons-material/Style';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api, Card, HotCard } from '../services/api';
 
 const cardImageFallback = (
@@ -202,11 +202,13 @@ function HotCardsSection() {
 }
 
 export default function CardExplorer() {
+  const [searchParams] = useSearchParams();
+  const initialQuery = searchParams.get('q') || '';
   const [cards, setCards] = useState<Card[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(initialQuery);
   const [sortBy, setSortBy] = useState('current_price');
   const [sortDir, setSortDir] = useState('desc');
   const [filterSet, setFilterSet] = useState<string | null>(null);
@@ -283,6 +285,7 @@ export default function CardExplorer() {
         <TextField
           placeholder="Search cards..."
           size="small"
+          defaultValue={initialQuery}
           onChange={(e) => handleSearchChange(e.target.value)}
           InputProps={{
             startAdornment: (

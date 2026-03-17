@@ -1,13 +1,16 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useRef } from 'react';
 import {
   ResponsiveContainer, ComposedChart, Line, Area, XAxis, YAxis,
   CartesianGrid, Tooltip,
 } from 'recharts';
-import { Box, Typography, ToggleButton, ToggleButtonGroup } from '@mui/material';
+import { Box, Typography, ToggleButton, ToggleButtonGroup, IconButton, Tooltip as MuiTooltip } from '@mui/material';
+import DownloadIcon from '@mui/icons-material/Download';
+import html2canvas from 'html2canvas';
 import { PricePoint } from '../services/api';
 
 interface Props {
   priceData: PricePoint[];
+  cardName?: string;
 }
 
 type TimeRange = '1M' | '3M' | '6M' | '1Y' | 'ALL';
@@ -46,8 +49,23 @@ function filterByRange(data: any[], range: TimeRange): any[] {
   return data.filter(d => d.date >= cutoffStr);
 }
 
-export default function PriceChart({ priceData }: Props) {
+export default function PriceChart({ priceData, cardName }: Props) {
+  const chartRef = useRef<HTMLDivElement>(null);
   const [range, setRange] = useState<TimeRange>('ALL');
+
+  const handleExportPng = async () => {
+    if (!chartRef.current) return;
+    try {
+      const canvas = await html2canvas(chartRef.current, { backgroundColor: '#000', scale: 2 });
+      const link = document.createElement('a');
+      const filename = cardName ? `${cardName.replace(/[^a-zA-Z0-9]/g, '_')}_price_chart.png` : 'price_chart.png';
+      link.download = filename;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    } catch (err) {
+      console.error('Export failed:', err);
+    }
+  };
 
   const fullChartData = useMemo(() => {
     if (priceData.length === 0) return [];
@@ -86,9 +104,9 @@ export default function PriceChart({ priceData }: Props) {
                          Math.floor(chartData.length / 6);
 
   return (
-    <Box>
+    <Box ref={chartRef}>
       {/* Price header */}
-      <Box sx={{ display: 'flex', alignItems: 'baseline', gap: { xs: 1, md: 2 }, mb: 0.5 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 1, md: 2 }, mb: 0.5 }}>
         <Typography variant="h2" sx={{ fontWeight: 700, fontFamily: 'monospace' }}>
           ${currentPrice?.toFixed(2)}
         </Typography>
@@ -98,6 +116,11 @@ export default function PriceChart({ priceData }: Props) {
         >
           {isPositive ? '+' : ''}{priceChange.toFixed(2)} ({pctChange.toFixed(1)}%)
         </Typography>
+        <MuiTooltip title="Download as PNG">
+          <IconButton onClick={handleExportPng} size="small" sx={{ color: '#888', '&:hover': { color: '#00bcd4' } }}>
+            <DownloadIcon fontSize="small" />
+          </IconButton>
+        </MuiTooltip>
       </Box>
 
       {/* Time range toggles */}

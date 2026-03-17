@@ -1,9 +1,11 @@
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, useRef } from 'react';
 import {
   ResponsiveContainer, ComposedChart, Line, XAxis, YAxis,
   CartesianGrid, Tooltip, ReferenceLine,
 } from 'recharts';
-import { Box, Typography, Stack, Chip, ToggleButton, ToggleButtonGroup } from '@mui/material';
+import { Box, Typography, Stack, Chip, ToggleButton, ToggleButtonGroup, IconButton, Tooltip as MuiTooltip } from '@mui/material';
+import DownloadIcon from '@mui/icons-material/Download';
+import html2canvas from 'html2canvas';
 import { SaleRecord } from '../services/api';
 
 interface Props {
@@ -37,8 +39,22 @@ function getConditionColor(condition: string): string {
 }
 
 export default function SalesChart({ sales, medianPrice, cardName }: Props) {
+  const chartRef = useRef<HTMLDivElement>(null);
   const [range, setRange] = useState<TimeRange>('ALL');
   const [selectedConditions, setSelectedConditions] = useState<Set<string>>(new Set());
+
+  const handleExportPng = async () => {
+    if (!chartRef.current) return;
+    try {
+      const canvas = await html2canvas(chartRef.current, { backgroundColor: '#000', scale: 2 });
+      const link = document.createElement('a');
+      link.download = `${cardName.replace(/[^a-zA-Z0-9]/g, '_')}_sales_chart.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    } catch (err) {
+      console.error('Export failed:', err);
+    }
+  };
 
   // Parse and prepare data
   const chartData = useMemo(() => {
@@ -117,6 +133,42 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
     }
   }, []);
 
+  // Compute SMA lines (30d and 180d) from daily medians
+  const smaData = useMemo(() => {
+    if (chartData.length < 2) return { sma30: [], sma180: [] };
+
+    // Group by day → daily median
+    const dayMap = new Map<string, number[]>();
+    for (const d of chartData) {
+      const key = new Date(d.timestamp).toISOString().slice(0, 10);
+      if (!dayMap.has(key)) dayMap.set(key, []);
+      dayMap.get(key)!.push(d.price);
+    }
+
+    const dailyMedians = Array.from(dayMap.entries())
+      .map(([day, prices]) => {
+        const s = [...prices].sort((a, b) => a - b);
+        return { day, timestamp: new Date(day).getTime(), median: s[Math.floor(s.length / 2)] };
+      })
+      .sort((a, b) => a.timestamp - b.timestamp);
+
+    // Calculate SMAs
+    const calcSMA = (data: typeof dailyMedians, windowDays: number) => {
+      return data.map((point, i) => {
+        const cutoff = point.timestamp - windowDays * 86400000;
+        const window = data.filter(d => d.timestamp > cutoff && d.timestamp <= point.timestamp);
+        if (window.length < 2) return null;
+        const avg = window.reduce((s, d) => s + d.median, 0) / window.length;
+        return { timestamp: point.timestamp, value: avg };
+      }).filter(Boolean) as { timestamp: number; value: number }[];
+    };
+
+    return {
+      sma30: calcSMA(dailyMedians, 30),
+      sma180: calcSMA(dailyMedians, 180),
+    };
+  }, [chartData]);
+
   if (chartData.length === 0) {
     return (
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300, color: '#666' }}>
@@ -127,21 +179,37 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
     );
   }
 
-  // Compute stats
+  // Compute stats with outlier-aware Y-axis (IQR method)
   const prices = chartData.map(d => d.price);
   const sortedPrices = [...prices].sort((a, b) => a - b);
   const median = sortedPrices[Math.floor(sortedPrices.length / 2)];
+  const q1 = sortedPrices[Math.floor(sortedPrices.length * 0.25)];
+  const q3 = sortedPrices[Math.floor(sortedPrices.length * 0.75)];
+  const iqr = q3 - q1;
+  const upperFence = q3 + 2.0 * iqr; // Use 2x IQR for less aggressive trimming
+  const normalizedPrices = sortedPrices.filter(p => p <= upperFence);
   const minPrice = sortedPrices[0];
+  const maxNormalized = normalizedPrices.length > 0 ? normalizedPrices[normalizedPrices.length - 1] : sortedPrices[sortedPrices.length - 1];
   const maxPrice = sortedPrices[sortedPrices.length - 1];
-  const padding = (maxPrice - minPrice) * 0.1 || maxPrice * 0.1;
+  const yMax = maxPrice > upperFence && normalizedPrices.length >= sortedPrices.length * 0.9
+    ? maxNormalized * 1.15 // Trim outliers from Y-axis
+    : maxPrice;
+  const padding = (yMax - minPrice) * 0.1 || yMax * 0.1;
 
   return (
-    <Box>
+    <Box ref={chartRef}>
       {/* Header */}
-      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: { xs: 'flex-start', sm: 'baseline' }, gap: { xs: 0.5, md: 2 }, mb: 0.5 }}>
-        <Typography variant="h4" sx={{ fontWeight: 700, fontFamily: 'monospace' }}>
-          COMPLETED SALES
-        </Typography>
+      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: { xs: 'flex-start', sm: 'center' }, gap: { xs: 0.5, md: 2 }, mb: 0.5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Typography variant="h4" sx={{ fontWeight: 700, fontFamily: 'monospace' }}>
+            COMPLETED SALES
+          </Typography>
+          <MuiTooltip title="Download as PNG">
+            <IconButton onClick={handleExportPng} size="small" sx={{ color: '#888', '&:hover': { color: '#00bcd4' } }}>
+              <DownloadIcon fontSize="small" />
+            </IconButton>
+          </MuiTooltip>
+        </Box>
         <Typography variant="body2" sx={{ color: '#888', fontFamily: 'monospace' }}>
           {(() => {
             const indiv = chartData.filter(d => !d.isAggregate).length;
@@ -200,7 +268,30 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
       {/* Line chart with condition-colored dots */}
       <Box sx={{ height: { xs: 280, sm: 350, md: 420 } }}>
       <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={chartData} margin={{ top: 10, right: 10, bottom: 5, left: 5 }}>
+        <ComposedChart data={(() => {
+          // Merge SMA data points into chartData by timestamp
+          const merged = chartData.map(d => ({ ...d, sma30: undefined as number | undefined, sma180: undefined as number | undefined }));
+          // Add SMA points (only at timestamps where we have data, or as separate points)
+          const sma30Map = new Map(smaData.sma30?.map(s => [s.timestamp, s.value]) || []);
+          const sma180Map = new Map(smaData.sma180?.map(s => [s.timestamp, s.value]) || []);
+
+          // Create a combined timeline with all unique timestamps
+          const allTimestamps = new Set([
+            ...merged.map(d => d.timestamp),
+            ...(smaData.sma30?.map(s => s.timestamp) || []),
+            ...(smaData.sma180?.map(s => s.timestamp) || []),
+          ]);
+
+          const combined = Array.from(allTimestamps).sort((a, b) => a - b).map(ts => {
+            const existing = merged.find(d => d.timestamp === ts);
+            return {
+              ...(existing || { timestamp: ts, price: null }),
+              sma30: sma30Map.get(ts),
+              sma180: sma180Map.get(ts),
+            };
+          });
+          return combined;
+        })()} margin={{ top: 10, right: 10, bottom: 5, left: 5 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#1a1a1a" vertical={false} />
 
           <XAxis
@@ -222,7 +313,7 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
           <YAxis
             dataKey="price"
             type="number"
-            domain={[Math.max(0, minPrice - padding), maxPrice + padding]}
+            domain={[Math.max(0, minPrice - padding), yMax + padding]}
             tick={{ fill: '#555', fontSize: 10, fontFamily: 'monospace' }}
             tickLine={false}
             axisLine={false}
@@ -362,6 +453,32 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
             isAnimationActive={false}
             connectNulls
           />
+
+          {/* 30-day SMA */}
+          {smaData.sma30 && smaData.sma30.length > 1 && (
+            <Line
+              dataKey="sma30"
+              stroke="#00bcd4"
+              strokeWidth={2}
+              dot={false}
+              connectNulls
+              isAnimationActive={false}
+              name="30d SMA"
+            />
+          )}
+
+          {/* 6-month SMA */}
+          {smaData.sma180 && smaData.sma180.length > 1 && (
+            <Line
+              dataKey="sma180"
+              stroke="#ff6d00"
+              strokeWidth={2}
+              dot={false}
+              connectNulls
+              isAnimationActive={false}
+              name="6mo SMA"
+            />
+          )}
         </ComposedChart>
       </ResponsiveContainer>
       </Box>
@@ -383,6 +500,18 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
             </Typography>
           </Stack>
         ))}
+        {smaData.sma30 && smaData.sma30.length > 1 && (
+          <Stack direction="row" spacing={0.5} alignItems="center">
+            <Box sx={{ width: 16, height: 2, bgcolor: '#00bcd4', borderRadius: 1 }} />
+            <Typography sx={{ fontSize: 10, color: '#666', fontFamily: 'monospace' }}>30d SMA</Typography>
+          </Stack>
+        )}
+        {smaData.sma180 && smaData.sma180.length > 1 && (
+          <Stack direction="row" spacing={0.5} alignItems="center">
+            <Box sx={{ width: 16, height: 2, bgcolor: '#ff6d00', borderRadius: 1 }} />
+            <Typography sx={{ fontSize: 10, color: '#666', fontFamily: 'monospace' }}>6mo SMA</Typography>
+          </Stack>
+        )}
       </Stack>
     </Box>
   );

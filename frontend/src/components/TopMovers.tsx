@@ -2,25 +2,36 @@ import { useEffect, useState } from 'react';
 import {
   Box, Paper, Typography, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, Avatar, CircularProgress,
+  ToggleButton, ToggleButtonGroup,
 } from '@mui/material';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import { useNavigate } from 'react-router-dom';
 import { api, Mover } from '../services/api';
 
+const RANGE_OPTIONS = [
+  { value: 1, label: '1D' },
+  { value: 3, label: '3D' },
+  { value: 7, label: '7D' },
+  { value: 30, label: '30D' },
+];
+
 export default function TopMovers() {
   const [gainers, setGainers] = useState<Mover[]>([]);
   const [losers, setLosers] = useState<Mover[]>([]);
   const [loading, setLoading] = useState(true);
+  const [days, setDays] = useState(7);
   const navigate = useNavigate();
 
   useEffect(() => {
     setLoading(true);
-    api.getMovers(10).then(data => {
+    api.getMovers(10, days).then(data => {
       setGainers(data.gainers);
       setLosers(data.losers);
     }).catch(console.error).finally(() => setLoading(false));
-  }, []);
+  }, [days]);
+
+  const rangeLabel = `${days}d`;
 
   const renderTable = (title: string, movers: Mover[], isGainer: boolean) => (
     <Paper sx={{ flex: 1, p: 1.5 }}>
@@ -38,7 +49,7 @@ export default function TopMovers() {
             <TableRow>
               <TableCell>Card</TableCell>
               <TableCell align="right">Price</TableCell>
-              <TableCell align="right">7d Change</TableCell>
+              <TableCell align="right">{rangeLabel} Change</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -120,9 +131,44 @@ export default function TopMovers() {
   }
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: 2 }}>
-      {renderTable('Top Gainers (7d)', gainers, true)}
-      {renderTable('Top Losers (7d)', losers, false)}
+    <Box>
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
+        <ToggleButtonGroup
+          value={days}
+          exclusive
+          onChange={(_, v) => { if (v !== null) setDays(v); }}
+          size="small"
+        >
+          {RANGE_OPTIONS.map(opt => (
+            <ToggleButton
+              key={opt.value}
+              value={opt.value}
+              sx={{
+                px: 1.2,
+                py: 0.3,
+                fontFamily: 'monospace',
+                fontSize: '0.7rem',
+                fontWeight: 700,
+                color: '#888',
+                borderColor: '#333',
+                '&.Mui-selected': {
+                  color: '#00bcd4',
+                  backgroundColor: 'rgba(0, 188, 212, 0.12)',
+                  borderColor: '#00bcd4',
+                  '&:hover': { backgroundColor: 'rgba(0, 188, 212, 0.2)' },
+                },
+                '&:hover': { backgroundColor: 'rgba(255,255,255,0.04)' },
+              }}
+            >
+              {opt.label}
+            </ToggleButton>
+          ))}
+        </ToggleButtonGroup>
+      </Box>
+      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: 2 }}>
+        {renderTable(`Top Gainers (${rangeLabel})`, gainers, true)}
+        {renderTable(`Top Losers (${rangeLabel})`, losers, false)}
+      </Box>
     </Box>
   );
 }

@@ -7,10 +7,14 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import BookmarkIcon from '@mui/icons-material/Bookmark';
 import { useNavigate } from 'react-router-dom';
 import { api, Card } from '../services/api';
+import GlossaryTooltip from '../components/GlossaryTooltip';
 
 interface WatchlistItem {
   cardId: number;
   costBasis: number | null;
+  alertAbove: number | null;
+  alertBelow: number | null;
+  quantity?: number;
   addedAt: string;
 }
 
@@ -62,8 +66,26 @@ export default function Watchlist() {
     setRows(prev => prev.map(r => r.cardId === cardId ? { ...r, costBasis: numVal } : r));
   };
 
-  const totalValue = rows.reduce((sum, r) => sum + (r.card?.current_price || 0), 0);
-  const totalCost = rows.reduce((sum, r) => sum + (r.costBasis || 0), 0);
+  const updateAlert = (cardId: number, field: 'alertAbove' | 'alertBelow', value: string) => {
+    const parsed = parseFloat(value);
+    const numVal = value === '' || isNaN(parsed) ? null : parsed;
+    const items: WatchlistItem[] = JSON.parse(localStorage.getItem('pkmn_watchlist') || '[]');
+    const updated = items.map(w => w.cardId === cardId ? { ...w, [field]: numVal } : w);
+    localStorage.setItem('pkmn_watchlist', JSON.stringify(updated));
+    setRows(prev => prev.map(r => r.cardId === cardId ? { ...r, [field]: numVal } : r));
+  };
+
+  const updateQuantity = (cardId: number, value: string) => {
+    const parsed = parseInt(value);
+    const qty = value === '' || isNaN(parsed) || parsed < 1 ? 1 : parsed;
+    const items: WatchlistItem[] = JSON.parse(localStorage.getItem('pkmn_watchlist') || '[]');
+    const updated = items.map(w => w.cardId === cardId ? { ...w, quantity: qty } : w);
+    localStorage.setItem('pkmn_watchlist', JSON.stringify(updated));
+    setRows(prev => prev.map(r => r.cardId === cardId ? { ...r, quantity: qty } : r));
+  };
+
+  const totalValue = rows.reduce((sum, r) => sum + (r.card?.current_price || 0) * (r.quantity ?? 1), 0);
+  const totalCost = rows.reduce((sum, r) => sum + (r.costBasis || 0) * (r.quantity ?? 1), 0);
   const totalPnL = totalCost > 0 ? totalValue - totalCost : null;
 
   return (
@@ -123,17 +145,23 @@ export default function Watchlist() {
             <TableHead>
               <TableRow>
                 <TableCell sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}>CARD</TableCell>
+                <TableCell align="right" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}>QTY</TableCell>
                 <TableCell align="right" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}>CURRENT</TableCell>
-                <TableCell align="right" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}>COST BASIS</TableCell>
-                <TableCell align="right" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}>P&L</TableCell>
-                <TableCell align="right" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}>P&L %</TableCell>
+                <TableCell align="right" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}><GlossaryTooltip term="cost_basis">COST BASIS</GlossaryTooltip></TableCell>
+                <TableCell align="right" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}><GlossaryTooltip term="pnl">P&L</GlossaryTooltip></TableCell>
+                <TableCell align="right" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}><GlossaryTooltip term="pnl">P&L %</GlossaryTooltip></TableCell>
+                <TableCell align="right" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}>ALERT ▲</TableCell>
+                <TableCell align="right" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}>ALERT ▼</TableCell>
                 <TableCell align="center" sx={{ width: 40 }}></TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {rows.map(row => {
+                const qty = row.quantity ?? 1;
                 const price = row.card?.current_price || 0;
-                const pnl = row.costBasis != null ? price - row.costBasis : null;
+                const totalRowValue = price * qty;
+                const totalRowCost = (row.costBasis || 0) * qty;
+                const pnl = row.costBasis != null ? totalRowValue - totalRowCost : null;
                 const pnlPct = row.costBasis != null && row.costBasis > 0 ? ((price - row.costBasis) / row.costBasis) * 100 : null;
                 return (
                   <TableRow
@@ -151,10 +179,25 @@ export default function Watchlist() {
                         </Box>
                       </Box>
                     </TableCell>
+                    <TableCell align="right" onClick={e => e.stopPropagation()}>
+                      <TextField
+                        size="small"
+                        type="number"
+                        value={qty}
+                        onChange={e => updateQuantity(row.cardId, e.target.value)}
+                        inputProps={{ min: 1, style: { textAlign: 'right', fontSize: '0.8rem', fontFamily: '"JetBrains Mono", monospace', color: '#ccc', padding: '4px' } }}
+                        sx={{ width: 50 }}
+                      />
+                    </TableCell>
                     <TableCell align="right">
                       <Typography sx={{ color: '#00ff41', fontFamily: '"JetBrains Mono", monospace', fontWeight: 700, fontSize: '0.85rem' }}>
-                        ${price.toFixed(2)}
+                        ${totalRowValue.toFixed(2)}
                       </Typography>
+                      {qty > 1 && (
+                        <Typography sx={{ color: '#555', fontFamily: 'monospace', fontSize: '0.6rem' }}>
+                          ${price.toFixed(2)} ea
+                        </Typography>
+                      )}
                     </TableCell>
                     <TableCell align="right" onClick={e => e.stopPropagation()}>
                       <TextField
@@ -185,6 +228,34 @@ export default function Watchlist() {
                       }}>
                         {pnlPct != null ? `${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(1)}%` : '—'}
                       </Typography>
+                    </TableCell>
+                    <TableCell align="right" onClick={e => e.stopPropagation()}>
+                      <TextField
+                        size="small"
+                        type="number"
+                        value={row.alertAbove ?? ''}
+                        onChange={e => updateAlert(row.cardId, 'alertAbove', e.target.value)}
+                        placeholder="—"
+                        sx={{
+                          width: 80,
+                          '& input': { textAlign: 'right', fontSize: '0.8rem', fontFamily: '"JetBrains Mono", monospace', color: '#00ff41', py: 0.5 },
+                        }}
+                        InputProps={{ startAdornment: <Typography sx={{ color: '#555', fontSize: '0.8rem', mr: 0.3 }}>$</Typography> }}
+                      />
+                    </TableCell>
+                    <TableCell align="right" onClick={e => e.stopPropagation()}>
+                      <TextField
+                        size="small"
+                        type="number"
+                        value={row.alertBelow ?? ''}
+                        onChange={e => updateAlert(row.cardId, 'alertBelow', e.target.value)}
+                        placeholder="—"
+                        sx={{
+                          width: 80,
+                          '& input': { textAlign: 'right', fontSize: '0.8rem', fontFamily: '"JetBrains Mono", monospace', color: '#ff1744', py: 0.5 },
+                        }}
+                        InputProps={{ startAdornment: <Typography sx={{ color: '#555', fontSize: '0.8rem', mr: 0.3 }}>$</Typography> }}
+                      />
                     </TableCell>
                     <TableCell align="center" onClick={e => e.stopPropagation()}>
                       <IconButton size="small" onClick={() => removeFromWatchlist(row.cardId)} sx={{ color: '#ff1744' }}>

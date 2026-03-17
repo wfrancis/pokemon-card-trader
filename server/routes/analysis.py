@@ -72,9 +72,10 @@ def get_card_analysis(
 @router.get("/market/movers")
 def market_movers(
     limit: int = Query(10, ge=1, le=50),
+    days: int = Query(7, ge=1, le=90),
     db: Session = Depends(get_db),
 ):
-    return get_top_movers(db, limit=limit)
+    return get_top_movers(db, limit=limit, days=days)
 
 
 @router.get("/market/index")
@@ -106,6 +107,55 @@ def hot_cards(
 ):
     """Get hottest cards ranked by activity score (volume proxy)."""
     return get_hot_cards(db, limit=limit)
+
+
+@router.get("/market/weekly-recap")
+def weekly_recap(db: Session = Depends(get_db)):
+    """Weekly market recap — gainers, losers, hottest cards, and market index change."""
+    from server.models.price_history import PriceHistory
+
+    today = datetime.now(timezone.utc).date()
+    week_ago = today - timedelta(days=7)
+
+    movers = get_top_movers(db, limit=5, days=7)
+    hottest = get_hot_cards(db, limit=5)
+
+    # Current market index
+    result = db.query(
+        func.avg(Card.current_price).label("avg_price"),
+        func.count(Card.id).label("total_cards"),
+        func.sum(Card.current_price).label("total_market_cap"),
+    ).filter(Card.current_price.isnot(None), Card.current_price > 0, Card.is_tracked == True).first()
+
+    avg_price = round(result.avg_price, 2) if result.avg_price else 0
+    total_cards = result.total_cards or 0
+    total_market_cap = round(result.total_market_cap, 2) if result.total_market_cap else 0
+
+    # 7 days ago avg price from PriceHistory
+    avg_price_7d_ago = db.query(
+        func.avg(PriceHistory.market_price)
+    ).filter(
+        PriceHistory.date == week_ago,
+        PriceHistory.market_price.isnot(None),
+        PriceHistory.market_price > 0,
+    ).scalar()
+
+    change_pct = None
+    if avg_price_7d_ago and avg_price_7d_ago > 0:
+        change_pct = round((avg_price - avg_price_7d_ago) / avg_price_7d_ago * 100, 2)
+
+    return {
+        "period": {"start": str(week_ago), "end": str(today)},
+        "market_index": {
+            "avg_price": avg_price,
+            "total_cards": total_cards,
+            "total_market_cap": total_market_cap,
+            "change_pct": change_pct,
+        },
+        "gainers": movers.get("gainers", []),
+        "losers": movers.get("losers", []),
+        "hottest": hottest,
+    }
 
 
 @router.get("/market/ticker")

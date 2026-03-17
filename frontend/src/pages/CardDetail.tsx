@@ -3,13 +3,18 @@ import { useParams } from 'react-router-dom';
 import {
   Box, Paper, Typography, Grid, Chip, Stack, ToggleButton, ToggleButtonGroup,
   Button, IconButton, Tooltip, Dialog, DialogTitle, DialogContent, DialogActions, TextField,
+  Menu, MenuItem,
 } from '@mui/material';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import BookmarkBorderIcon from '@mui/icons-material/BookmarkBorder';
 import BookmarkIcon from '@mui/icons-material/Bookmark';
-import { api, Card, PricePoint, SaleRecord } from '../services/api';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import TrendingUpIcon from '@mui/icons-material/TrendingUp';
+import TrendingDownIcon from '@mui/icons-material/TrendingDown';
+import { api, Card, PricePoint, SaleRecord, Analysis } from '../services/api';
 import PriceChart from '../components/PriceChart';
 import SalesChart from '../components/SalesChart';
+import GlossaryTooltip from '../components/GlossaryTooltip';
 
 function formatVariant(variant: string): string {
   const map: Record<string, string> = {
@@ -52,32 +57,82 @@ export default function CardDetail() {
 
   const [costBasisOpen, setCostBasisOpen] = useState(false);
   const [costBasisValue, setCostBasisValue] = useState('');
+  const [alertAboveValue, setAlertAboveValue] = useState('');
+  const [alertBelowValue, setAlertBelowValue] = useState('');
+  const [alertEmail, setAlertEmail] = useState(() => localStorage.getItem('pkmn_alert_email') || '');
+  const [quantityValue, setQuantityValue] = useState('1');
+  const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
+  const [analysis, setAnalysis] = useState<Analysis | null>(null);
 
-  const toggleWatchlist = () => {
+  const toggleWatchlist = (e: React.MouseEvent<HTMLElement>) => {
     if (!card) return;
-    const watchlist = JSON.parse(localStorage.getItem('pkmn_watchlist') || '[]');
     if (isWatchlisted) {
-      const updated = watchlist.filter((w: any) => w.cardId !== card.id);
-      localStorage.setItem('pkmn_watchlist', JSON.stringify(updated));
-      setIsWatchlisted(false);
+      setMenuAnchor(e.currentTarget);
     } else {
       setCostBasisValue('');
+      setAlertAboveValue('');
+      setAlertBelowValue('');
+      setQuantityValue('1');
       setCostBasisOpen(true);
     }
   };
 
+  const openEditAlerts = () => {
+    if (!card) return;
+    setMenuAnchor(null);
+    const items = JSON.parse(localStorage.getItem('pkmn_watchlist') || '[]');
+    const item = items.find((w: any) => w.cardId === card.id);
+    setCostBasisValue(item?.costBasis != null ? String(item.costBasis) : '');
+    setAlertAboveValue(item?.alertAbove != null ? String(item.alertAbove) : '');
+    setAlertBelowValue(item?.alertBelow != null ? String(item.alertBelow) : '');
+    setQuantityValue(item?.quantity != null ? String(item.quantity) : '1');
+    setCostBasisOpen(true);
+  };
+
+  const removeFromWatchlist = () => {
+    if (!card) return;
+    setMenuAnchor(null);
+    const items = JSON.parse(localStorage.getItem('pkmn_watchlist') || '[]');
+    localStorage.setItem('pkmn_watchlist', JSON.stringify(items.filter((w: any) => w.cardId !== card.id)));
+    setIsWatchlisted(false);
+  };
+
   const handleAddToWatchlist = () => {
     if (!card) return;
-    const watchlist = JSON.parse(localStorage.getItem('pkmn_watchlist') || '[]');
-    const parsed = parseFloat(costBasisValue);
-    watchlist.push({
+    const watchlist: any[] = JSON.parse(localStorage.getItem('pkmn_watchlist') || '[]');
+    const parsedCost = parseFloat(costBasisValue);
+    const parsedAbove = parseFloat(alertAboveValue);
+    const parsedBelow = parseFloat(alertBelowValue);
+    const parsedQty = parseInt(quantityValue);
+    const newItem = {
       cardId: card.id,
-      costBasis: !isNaN(parsed) && parsed > 0 ? parsed : null,
+      costBasis: !isNaN(parsedCost) && parsedCost > 0 ? parsedCost : null,
+      alertAbove: !isNaN(parsedAbove) && parsedAbove > 0 ? parsedAbove : null,
+      alertBelow: !isNaN(parsedBelow) && parsedBelow > 0 ? parsedBelow : null,
+      quantity: !isNaN(parsedQty) && parsedQty > 0 ? parsedQty : 1,
       addedAt: new Date().toISOString(),
-    });
+    };
+    const idx = watchlist.findIndex((w: any) => w.cardId === card.id);
+    if (idx >= 0) {
+      watchlist[idx] = { ...watchlist[idx], ...newItem };
+    } else {
+      watchlist.push(newItem);
+    }
     localStorage.setItem('pkmn_watchlist', JSON.stringify(watchlist));
     setIsWatchlisted(true);
     setCostBasisOpen(false);
+
+    // Sync server-side email alert if email + thresholds provided
+    const email = alertEmail.trim();
+    if (email && (newItem.alertAbove || newItem.alertBelow)) {
+      localStorage.setItem('pkmn_alert_email', email);
+      api.createAlert({
+        card_id: card.id,
+        email,
+        threshold_above: newItem.alertAbove,
+        threshold_below: newItem.alertBelow,
+      }).catch(() => {}); // best-effort
+    }
   };
 
   useEffect(() => {
@@ -103,6 +158,9 @@ export default function CardDetail() {
     api.getCardSales(cardId).then(data => {
       setSales(data.sales);
       setMedianPrice(data.median_price);
+    }).catch(() => {});
+    api.getCardAnalysis(cardId).then(data => {
+      setAnalysis(data.analysis);
     }).catch(() => {});
   }, [id]);
 
@@ -193,6 +251,89 @@ export default function CardDetail() {
               </Typography>
             )}
 
+            {/* Spread Analysis */}
+            {card.current_price != null && card.current_price > 0 && medianPrice != null && medianPrice > 0 && (() => {
+              const spread = ((card.current_price! - medianPrice) / medianPrice) * 100;
+              const SELLER_FEE_RATE = 0.8745; // 1 - 12.55% (10.25% seller + 2.3% payment)
+              const flipProfit = medianPrice * SELLER_FEE_RATE - card.current_price!;
+              const isProfitable = flipProfit > 0;
+              return (
+                <Box sx={{ mt: 2, border: '1px solid #333', borderRadius: 1, overflow: 'hidden' }}>
+                  <Box sx={{ bgcolor: '#1a1a2e', px: 1, py: 0.4 }}>
+                    <Typography sx={{ color: '#00bcd4', fontWeight: 700, fontSize: '0.65rem', fontFamily: '"JetBrains Mono", monospace', letterSpacing: 1 }}>
+                      SPREAD ANALYSIS
+                    </Typography>
+                  </Box>
+                  <Box sx={{ px: 1, py: 0.5, display: 'flex', flexDirection: 'column', gap: 0.3 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography sx={{ color: '#666', fontSize: '0.65rem', fontFamily: 'monospace' }}><GlossaryTooltip term="market_price">Market</GlossaryTooltip></Typography>
+                      <Typography sx={{ color: '#ccc', fontSize: '0.65rem', fontFamily: '"JetBrains Mono", monospace', fontWeight: 700 }}>
+                        ${card.current_price!.toFixed(2)}
+                      </Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography sx={{ color: '#666', fontSize: '0.65rem', fontFamily: 'monospace' }}><GlossaryTooltip term="median_sold">Median Sold</GlossaryTooltip></Typography>
+                      <Typography sx={{ color: '#ccc', fontSize: '0.65rem', fontFamily: '"JetBrains Mono", monospace', fontWeight: 700 }}>
+                        ${medianPrice.toFixed(2)}
+                      </Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #222', pt: 0.3 }}>
+                      <Typography sx={{ color: '#666', fontSize: '0.65rem', fontFamily: 'monospace' }}><GlossaryTooltip term="spread">Spread</GlossaryTooltip></Typography>
+                      <Typography sx={{
+                        color: spread > 0 ? '#ff1744' : '#00ff41',
+                        fontSize: '0.65rem', fontFamily: '"JetBrains Mono", monospace', fontWeight: 700,
+                      }}>
+                        {spread > 0 ? '+' : ''}{spread.toFixed(1)}%
+                      </Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography sx={{ color: '#666', fontSize: '0.65rem', fontFamily: 'monospace' }}><GlossaryTooltip term="flip_profit">Flip Profit</GlossaryTooltip></Typography>
+                      <Typography sx={{
+                        color: isProfitable ? '#00ff41' : '#ff1744',
+                        fontSize: '0.65rem', fontFamily: '"JetBrains Mono", monospace', fontWeight: 700,
+                      }}>
+                        {isProfitable ? '+' : ''}{flipProfit >= 0 ? '$' : '-$'}{Math.abs(flipProfit).toFixed(2)}
+                      </Typography>
+                    </Box>
+                    <Typography sx={{ color: '#555', fontSize: '0.55rem', fontFamily: 'monospace', mt: 0.2 }}>
+                      after 12.55% seller fees
+                    </Typography>
+                    {/* Buy Zone Indicator */}
+                    <Box sx={{ mt: 0.5, pt: 0.5, borderTop: '1px solid #222', display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
+                      <Chip
+                        size="small"
+                        label={
+                          isProfitable ? 'BUY ZONE' :
+                          spread > 50 ? 'OVERPRICED' :
+                          spread > 20 ? 'FAIR VALUE' :
+                          'TIGHT SPREAD'
+                        }
+                        sx={{
+                          height: 18, fontSize: '0.6rem', fontWeight: 700, fontFamily: 'monospace',
+                          bgcolor: isProfitable ? '#00ff4122' : spread > 50 ? '#ff174422' : '#ff980022',
+                          color: isProfitable ? '#00ff41' : spread > 50 ? '#ff1744' : '#ff9800',
+                          border: '1px solid',
+                          borderColor: isProfitable ? '#00ff4133' : spread > 50 ? '#ff174433' : '#ff980033',
+                        }}
+                      />
+                      {analysis?.sma_30 != null && analysis?.sma_90 != null && (
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3 }}>
+                          {analysis.sma_30 > analysis.sma_90 ? (
+                            <TrendingUpIcon sx={{ fontSize: 14, color: '#00ff41' }} />
+                          ) : (
+                            <TrendingDownIcon sx={{ fontSize: 14, color: '#ff1744' }} />
+                          )}
+                          <Typography sx={{ fontSize: '0.55rem', fontFamily: 'monospace', color: analysis.sma_30 > analysis.sma_90 ? '#00ff41' : '#ff1744' }}>
+                            {analysis.sma_30 > analysis.sma_90 ? 'Trending Up' : 'Trending Down'}
+                          </Typography>
+                        </Box>
+                      )}
+                    </Box>
+                  </Box>
+                </Box>
+              );
+            })()}
+
             {card.price_variant && (
               <Chip
                 label={formatVariant(card.price_variant)}
@@ -226,7 +367,7 @@ export default function CardDetail() {
                   TCGPlayer
                 </Button>
               )}
-              <Tooltip title={isWatchlisted ? 'Remove from Watchlist' : 'Add to Watchlist'}>
+              <Tooltip title={isWatchlisted ? 'Watchlist options' : 'Add to Watchlist'}>
                 <IconButton onClick={toggleWatchlist} size="small" sx={{ color: isWatchlisted ? '#ffd700' : '#666' }}>
                   {isWatchlisted ? <BookmarkIcon /> : <BookmarkBorderIcon />}
                 </IconButton>
@@ -284,7 +425,7 @@ export default function CardDetail() {
                         <Box key={cond} sx={{ borderTop: '1px solid #222', opacity: isLowSample ? 0.5 : 1, '&:hover': { bgcolor: '#1a1a2e33' } }}>
                           <Box sx={{ display: 'flex', px: 1, py: 0.4, alignItems: 'center' }}>
                             <Typography sx={{ flex: 1, color: isLowSample ? '#666' : '#ccc', fontSize: '0.7rem', fontFamily: 'monospace' }}>
-                              {cond === 'Near Mint' ? 'NM' : cond === 'Lightly Played' ? 'LP' : cond === 'Moderately Played' ? 'MP' : cond === 'Heavily Played' ? 'HP' : cond === 'Damaged' ? 'DMG' : cond}
+                              {cond === 'Near Mint' ? <GlossaryTooltip term="nm">NM</GlossaryTooltip> : cond === 'Lightly Played' ? <GlossaryTooltip term="lp">LP</GlossaryTooltip> : cond === 'Moderately Played' ? <GlossaryTooltip term="mp">MP</GlossaryTooltip> : cond === 'Heavily Played' ? <GlossaryTooltip term="hp">HP</GlossaryTooltip> : cond === 'Damaged' ? <GlossaryTooltip term="dmg">DMG</GlossaryTooltip> : cond}
                             </Typography>
                             <Typography sx={{ width: 55, textAlign: 'right', color: isLowSample ? '#666' : '#00ff41', fontSize: '0.7rem', fontFamily: '"JetBrains Mono", monospace', fontWeight: 700 }}>
                               ${median.toFixed(2)}
@@ -307,6 +448,21 @@ export default function CardDetail() {
                       * Low sample — fewer than {LOW_SAMPLE_THRESHOLD} sales
                     </Typography>
                   )}
+                  {/* Graded pricing info */}
+                  <Box sx={{ mt: 1.5, p: 1, bgcolor: '#0a0a1a', border: '1px solid #222', borderRadius: 1, display: 'flex', alignItems: 'flex-start', gap: 0.5 }}>
+                    <InfoOutlinedIcon sx={{ fontSize: 14, color: '#555', mt: 0.2 }} />
+                    <Box>
+                      <Typography sx={{ color: '#888', fontSize: '0.6rem', fontFamily: 'monospace' }}>
+                        Prices are for raw/ungraded cards.
+                      </Typography>
+                      <Typography sx={{ color: '#555', fontSize: '0.55rem', fontFamily: 'monospace', mt: 0.3 }}>
+                        For graded values (PSA, CGC, Beckett):{' '}
+                        <a href={`https://www.pricecharting.com/search-products?q=${encodeURIComponent(card.name)}&type=price`} target="_blank" rel="noopener noreferrer" style={{ color: '#00bcd4' }}>PriceCharting</a>
+                        {' · '}
+                        <a href="https://www.psacard.com/auctionprices" target="_blank" rel="noopener noreferrer" style={{ color: '#00bcd4' }}>PSA Auctions</a>
+                      </Typography>
+                    </Box>
+                  </Box>
                 </Box>
               );
             })()}
@@ -423,7 +579,7 @@ export default function CardDetail() {
                 <Typography variant="h3" sx={{ mb: 1, color: '#00bcd4' }}>
                   PRICE HISTORY
                 </Typography>
-                <PriceChart priceData={prices} />
+                <PriceChart priceData={prices} cardName={card.name} />
               </>
             )}
           </Paper>
@@ -431,39 +587,93 @@ export default function CardDetail() {
         </Grid>
       </Grid>
 
-      {/* Cost Basis Dialog */}
+      {/* Watchlist Menu (for already-watchlisted cards) */}
+      <Menu
+        anchorEl={menuAnchor}
+        open={Boolean(menuAnchor)}
+        onClose={() => setMenuAnchor(null)}
+        PaperProps={{ sx: { bgcolor: '#111', border: '1px solid #1e1e1e' } }}
+      >
+        <MenuItem onClick={openEditAlerts} sx={{ fontSize: '0.8rem' }}>Edit Alerts & Cost Basis</MenuItem>
+        <MenuItem onClick={removeFromWatchlist} sx={{ fontSize: '0.8rem', color: '#ff1744' }}>Remove from Watchlist</MenuItem>
+      </Menu>
+
+      {/* Watchlist Dialog */}
       <Dialog
         open={costBasisOpen}
         onClose={() => setCostBasisOpen(false)}
         PaperProps={{ sx: { bgcolor: '#111', border: '1px solid #1e1e1e', minWidth: 320 } }}
       >
         <DialogTitle sx={{ color: '#00bcd4', fontFamily: 'monospace', fontSize: '0.95rem' }}>
-          Add to Watchlist
+          {isWatchlisted ? 'Edit Watchlist Card' : 'Add to Watchlist'}
         </DialogTitle>
         <DialogContent>
           <Typography sx={{ color: '#888', fontSize: '0.8rem', mb: 2 }}>
-            Enter your purchase price to track P&L (optional).
+            Set cost basis, quantity, and price alerts (all optional).
           </Typography>
+          <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
+            <TextField
+              autoFocus
+              size="small"
+              type="number"
+              label="Cost Basis"
+              placeholder="e.g. 25.00"
+              value={costBasisValue}
+              onChange={(e) => setCostBasisValue(e.target.value)}
+              InputProps={{ startAdornment: <Typography sx={{ color: '#555', mr: 0.5 }}>$</Typography> }}
+              sx={{ flex: 2, '& .MuiInputLabel-root': { color: '#666' } }}
+            />
+            <TextField
+              size="small"
+              type="number"
+              label="Qty"
+              value={quantityValue}
+              onChange={(e) => setQuantityValue(e.target.value)}
+              inputProps={{ min: 1 }}
+              sx={{ flex: 1, '& .MuiInputLabel-root': { color: '#666' } }}
+            />
+          </Box>
           <TextField
-            autoFocus
             fullWidth
             size="small"
             type="number"
-            label="Cost Basis"
-            placeholder="e.g. 25.00"
-            value={costBasisValue}
-            onChange={(e) => setCostBasisValue(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') handleAddToWatchlist(); }}
+            label="Alert above"
+            placeholder="Notify when price rises above..."
+            value={alertAboveValue}
+            onChange={(e) => setAlertAboveValue(e.target.value)}
             InputProps={{ startAdornment: <Typography sx={{ color: '#555', mr: 0.5 }}>$</Typography> }}
-            sx={{ '& .MuiInputLabel-root': { color: '#666' } }}
+            sx={{ mb: 2, '& .MuiInputLabel-root': { color: '#666' } }}
+          />
+          <TextField
+            fullWidth
+            size="small"
+            type="number"
+            label="Alert below"
+            placeholder="Notify when price drops below..."
+            value={alertBelowValue}
+            onChange={(e) => setAlertBelowValue(e.target.value)}
+            InputProps={{ startAdornment: <Typography sx={{ color: '#555', mr: 0.5 }}>$</Typography> }}
+            sx={{ mb: 2, '& .MuiInputLabel-root': { color: '#666' } }}
+          />
+          <TextField
+            fullWidth
+            size="small"
+            type="email"
+            label="Email for alerts"
+            placeholder="Get email when price targets hit"
+            value={alertEmail}
+            onChange={(e) => setAlertEmail(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleAddToWatchlist(); }}
+            helperText="Optional — receive email notifications for price alerts"
+            sx={{ '& .MuiInputLabel-root': { color: '#666' }, '& .MuiFormHelperText-root': { color: '#555' } }}
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => { setCostBasisOpen(false); }} sx={{ color: '#666' }}>
+          <Button onClick={() => setCostBasisOpen(false)} sx={{ color: '#666' }}>
             Cancel
           </Button>
           <Button onClick={handleAddToWatchlist} sx={{ color: '#00ff41' }}>
-            Add
+            {isWatchlisted ? 'Save' : 'Add'}
           </Button>
         </DialogActions>
       </Dialog>
