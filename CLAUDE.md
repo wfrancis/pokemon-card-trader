@@ -218,10 +218,7 @@ Each phase follows a full cycle: implement → build check → deploy → QA →
 - Card Comparison View (Alex) — large
 - Mobile-Responsive Layout (Sam) — large
 
-**SMTP Configuration (already deployed):**
-```bash
-fly secrets set SMTP_HOST=smtp.gmail.com SMTP_PORT=465 SMTP_USER=wbfranci@gmail.com SMTP_PASS=<app-password> ALERT_EMAIL_FROM=wbfranci@gmail.com
-```
+**SMTP Configuration:** Already deployed via `fly secrets set`. Email alerts use Gmail SMTP (wbfranci@gmail.com).
 
 ### Sprint Execution Loop
 
