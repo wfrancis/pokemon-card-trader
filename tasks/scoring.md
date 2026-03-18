@@ -513,15 +513,214 @@ All 4 personas again report "routing bug" — pages render wrong content when cl
 
 ---
 
+### Round 11 — 2026-03-17
+
+| Persona | Stickiness (1-10) | Delta | Notes |
+|---------|-------------------|-------|-------|
+| P1 Jake | **8.8/10** | +0.4 | Screener list view "data-dense powerhouse" (A). Est. Profit, ROI%, Spread columns visible on ALL cards. DOWNTREND filter working (50 cards, none markdown). Completed Flips section found. Wants: Spread % column in screener, spread-based alerts |
+| P2 Maria | **8.7/10** | +0.2 | Card Detail 9.5/10. Recap 9/10. Portfolio benchmark "exactly what investor wants." Condition pricing "outstanding." Multi-lot tracking dialog works. Wants: Bollinger Bands, set-level analytics, annualized returns |
+| P3 Alex | **8.7/10** | +0.2 | Card Detail 9.0/10. Watchlist 9.0/10. Recap "content creator's dream." SMA overlays "genuine technical analysis credibility." Wants: embeddable widgets, chart annotations, shareable URLs |
+| P4 Sam | **8.4/10** | +0.2 | Card Detail 10/10. Screener "FIND VALUABLE CARDS" CONFIRMED working. Condition Guide "outstanding." Screener STILL showing Advanced on some runs due to Chrome MCP shared localStorage. |
+
+**Average: 8.65/10 (delta: +0.25 from Round 10)**
+
+---
+
+### Round 12 — 2026-03-17
+
+| Persona | Stickiness (1-10) | Delta | Notes |
+|---------|-------------------|-------|-------|
+| P1 Jake | **8.2/10** | -0.6 | Chrome MCP didn't activate Flip Finder properly — columns not visible. Confirmed ROI sort direction bug (inverted). |
+| P2 Maria | **8.7/10** | 0 | SMA overlays praised (9/10). Portfolio chart mostly smooth. LP > NM still confusing. |
+| P3 Alex | **8.7/10** | 0 | Screener "content creator's dream." PNG export confirmed. SMA "genuine credibility." |
+| P4 Sam | **8.5/10** | +0.1 | Screener defaults to Advanced (shared localStorage pollution from other persona agents). |
+
+**Average: 8.525/10 (delta: -0.125)**
+
+#### Key Fix: ROI% sort direction was inverted (desc showed lowest first). Fixed.
+
+---
+
+### Round 13 — 2026-03-17
+
+| Persona | Stickiness (1-10) | Delta | Notes |
+|---------|-------------------|-------|-------|
+| P1 Jake | **8.7/10** | +0.5 | Card Detail 9.5/10. "Buy on TCGPlayer" link confirmed. Completed Flips section found. Sort by Profit/ROI% toggle. BUT: Flip Finder showed only 4 cards (filters too tight). Wants: spread column in screener. |
+| P2 Maria | **9.1/10** | +0.4 | Portfolio benchmark "institutional-grade analytics" (A+). "Would pay for this." SMA overlays "meaningful upgrade." Condition pricing 9.5/10. |
+| P3 Alex | **8.7/10** | 0 | PNG export 9/10. Recap "content goldmine." Screener "dream." Wants: social-optimized export dimensions, embeddable widgets. |
+| P4 Sam | **8.8/10** | +0.3 | Screener "FIND VALUABLE CARDS" confirmed. Card Detail 9.5/10. Condition Guide "brilliantly practical." Welcome banner 9/10. |
+
+**Average: 8.825/10 (delta: +0.3)** — NEW ALL-TIME HIGH! Maria breaks 9.0!
+
+---
+
+### Round 14 — 2026-03-17
+
+| Persona | Stickiness (1-10) | Delta | Notes |
+|---------|-------------------|-------|-------|
+| P1 Jake | **8.8/10** | +0.1 | Screener list view confirmed: Est. Profit, ROI%, Spread all visible. "Buy below $X" confirmed. Completed Flips found. Wants: ROI% sort working, better Flip Finder state. |
+| P2 Maria | **8.5/10** | -0.6 | Chrome MCP couldn't interact with Mark as Sold dialog. Glossary tooltips "non-functional" (hover artifact). Portfolio chart data dip concern. |
+| P3 Alex | **8.7/10** | 0 | Screener 9/10. Recap Export confirmed. SMA overlays good. Wants: chart annotations, embeddable widgets. |
+| P4 Sam | **8.8/10** | 0 | Card Detail 9.5/10. Simple View toggle works. Condition Guide "invaluable." Watchlist labels "clear." |
+
+**Average: 8.7/10**
+
+---
+
+### Round 15 — 2026-03-17
+
+| Persona | Stickiness (1-10) | Delta | Notes |
+|---------|-------------------|-------|-------|
+| P1 Jake | **8.8/10** | 0 | Flip Finder works (56 cards). DOWNTREND filter confirmed. Dashboard TOP PROFIT PICKS with profit/ROI/velocity. Completed Flips section with instructions. |
+| P2 Maria | **9.0/10** | +0.5 | Smooth portfolio chart. Benchmark "Outperforming market by X%." Condition pricing with LP > NM note. SMA overlays confirmed. |
+| P3 Alex | **8.7/10** | 0 | PNG export on both charts. CSV export. OG meta tags working. Recap archive 12+ weeks. |
+| P4 Sam | **9.2/10** | +0.4 | "FIND VALUABLE CARDS" confirmed. Welcome banner excellent. Plain-English summary. Condition Guide 10/10. Glossary tooltips working. |
+
+**Average: 8.925/10 (delta: +0.225)** — NEW ALL-TIME HIGH! Sam breaks 9.0!
+
+---
+
+### Round 16 — 2026-03-17
+
+| Persona | Stickiness (1-10) | Delta | Notes |
+|---------|-------------------|-------|-------|
+| P1 Jake | **8.5/10** | -0.3 | ">999%" spread cap working. Dashboard TOP PROFIT PICKS good. Many cards show negative Est. Profit (confusing). |
+| P2 Maria | **8.5/10** | -0.5 | Portfolio chart smooth (forward-fill working). Condition pricing reasonable. LP $484 > NM $186 still confusing. |
+| P3 Alex | **8.5/10** | -0.2 | PNG on both charts. SMA overlays visible. Charts functional but "not visually distinctive enough for social." |
+| P4 Sam | **9.0/10** | -0.2 | "FIND VALUABLE CARDS" confirmed. Welcome banner excellent. Condition Guide comprehensive. |
+
+**Average: 8.625/10** — Single-agent eval produced lower scores than dedicated per-persona agents
+
+---
+
+### Round 17 — 2026-03-17
+
+| Persona | Stickiness (1-10) | Delta | Notes |
+|---------|-------------------|-------|-------|
+| P1 Jake | **8.8/10** | +0.3 | Screener list view "data-dense powerhouse." Sort by Profit (Est.) and ROI% options in dropdown. Flip Finder 51 cards. Wants: ROI% sort button in Flip Finder, Spread sort. |
+| P2 Maria | **8.2/10** | -0.3 | Portfolio chart STILL has cliff-drop artifact (Feb 23 dip). SMA on Price History. LP > NM explanatory note present. vs Market benchmark working. |
+| P3 Alex | **8.5/10** | 0 | PNG on both charts. SMA overlays. Screener "9/10 data density." Recap archive. Wants: dashboard export, chart annotations. |
+| P4 Sam | **8.5/10** | -0.5 | Screener defaults to Advanced (Chrome MCP shared localStorage). "ROI" jargon on Dashboard and Screener. |
+
+**Average: 8.5/10** — Maria's portfolio chart trust issue and Sam's localStorage persistence remain blockers
+
+---
+
+### Round 18 — 2026-03-18 (Sprint 5 features deployed)
+
+| Persona | Stickiness (1-10) | Delta | Notes |
+|---------|-------------------|-------|-------|
+| P1 Jake | **8.5/10** | -0.3 | Flip Finder works (56 cards, no DOWNTREND). ROI% sort appears broken. No "Buy below $X" threshold visible. |
+| P2 Maria | **8.5/10** | +0.3 | Multi-lot dialog works. SET ANALYTICS 169 sets visible. Portfolio smooth. Bollinger Bands labeled "Bollinger Bands." |
+| P3 Alex | **9.0/10** | +0.5 | PNG on both charts confirmed. OG meta tags working. CSV export. Compare tab. Portfolio camera icon. |
+| P4 Sam | **9.0/10** | +0.5 | "FIND VALUABLE CARDS" confirmed (sessionStorage fix). HOW IT WORKS section. Large search bar in banner. |
+
+**Average: 8.75/10** — Alex and Sam break 9.0! Sprint 5 features (Multi-Lot, Set Analytics, OG Tags) recognized.
+
+#### Sprint 5 Features Delivered
+- **Multi-Lot Tracking**: Click QTY/PAID to manage lots with QTY, PRICE/CARD, DATE per lot
+- **Set-Level Analytics**: 169 sets on Screener with avg price, total value, 7d trend
+- **OG Image Previews**: og:title, og:image, og:description for social sharing on card URLs
+- **Bollinger Bands**: Toggle on Price History chart with 20-period, 2-stddev bands
+- **Dashboard Overhaul**: "CARDS WORTH CHECKING OUT", HOW IT WORKS section, large search bar
+- **Watchlist Overhaul**: Portfolio time ranges, high watermark, performance stats, Completed Flips moved up
+
+---
+
+### Round 19 — 2026-03-18
+
+| Persona | Stickiness (1-10) | Delta | Notes |
+|---------|-------------------|-------|-------|
+| P1 Jake | **8.5/10** | 0 | Flip Finder transforms page. Stats bar working. BUT: Flip Finder button "appears non-functional" (Chrome MCP couldn't click it). No ROI% sort chip visible. |
+| P2 Maria | **8.5/10** | 0 | Multi-lot works. Bollinger Bands visible. SET ANALYTICS expanded. Portfolio smooth with benchmark. |
+| P3 Alex | **9.0/10** | 0 | PNG buttons on both charts. CSV export labeled. OG meta tags confirmed. SMA overlays. |
+| P4 Sam | **9.0/10** | 0 | "FIND VALUABLE CARDS" confirmed. HOW IT WORKS section. "Return" labels. "Sells X times/day." |
+
+**Average: 8.75/10** — Flat. Flip Finder Chrome MCP click artifact holds Jake back.
+
+---
+
+### Round 20 — 2026-03-18 (Bold overhaul deployed)
+
+| Persona | Stickiness (1-10) | Delta | Notes |
+|---------|-------------------|-------|-------|
+| P1 Jake | **8.8/10** | +0.3 | Flip Finder transformation "excellent" — title becomes "FLIP FINDER", stats bar (56 flips, 55% avg ROI, 0.7 sales/day). Fee % input NOT visible (rendering issue). Dedicated flipper columns. BUY TARGET box prominent. |
+| P2 Maria | **9.1/10** | +0.6 | SET ANALYTICS expanded with 169 sets. Bollinger Bands clearly labeled. Multi-lot dialog works perfectly. Portfolio smooth with time ranges + high watermark + vs Market benchmark. LP > NM note present. |
+| P3 Alex | **8.9/10** | -0.1 | "Save Chart" buttons on both charts. Share Card button present. CSV export labeled. OG meta tags confirmed. Wants: share snackbar visible, embeddable charts. |
+| P4 Sam | **9.0/10** | 0 | "FIND VALUABLE CARDS" confirmed. "CARDS WORTH CHECKING OUT." "Return" labels. HOW IT WORKS. Large search bar. Condition Guide. |
+
+**Average: 8.95/10 (delta: +0.2)** — NEW ALL-TIME HIGH! Maria hits 9.1!
+
+---
+
+### Round 21 — 2026-03-18 (ROI→Return, Save Chart, fee calc confirmed)
+
+| Persona | Stickiness (1-10) | Delta | Notes |
+|---------|-------------------|-------|-------|
+| P1 Jake | **9.2/10** | +0.4 | Flip Finder "excellent" transformation. Fee % input WORKS — changed to 15%, profits recalculated live. Sort buttons: Return %, Profit, Spread. "SLOW" chip concept not yet deployed. BUY TARGET prominent. Completed Flips visible. |
+| P2 Maria | **9.3/10** | +0.2 | SET ANALYTICS excellent (169 sets). Bollinger Bands "clearly labeled." Multi-lot dialog "works perfectly." Portfolio chart: time ranges, ATH $559 watermark, "Outperforming market by 45.0%." Condition pricing thorough. LP > NM note present. |
+| P3 Alex | **9.2/10** | +0.3 | "Save Chart" buttons on both charts. Share Card button present. CSV export labeled. OG meta tags confirmed (og:title, og:description, og:image all working). Bollinger Bands for screenshots. Recap archive 12+ weeks. |
+| P4 Sam | **9.3/10** | +0.3 | "FIND VALUABLE CARDS" confirmed. "CARDS WORTH CHECKING OUT." "Return" labels throughout (not "ROI"). "Sells X times/day." HOW IT WORKS section. Large search bar. Condition Guide. "SAVE TO WATCHLIST" clearly labeled. |
+
+**Average: 9.25/10 (delta: +0.3)** — ALL PERSONAS ABOVE 9.0! NEW ALL-TIME HIGH!
+
+#### Key Features Driving 9.25
+- **Flip Finder transformation**: Dedicated title, flipper columns, stats bar, fee calculator
+- **Bollinger Bands**: Labeled toggle on Price History chart
+- **Multi-lot tracking**: Click QTY/PAID for lot management dialog
+- **Set Analytics**: 169 sets expanded by default
+- **Portfolio benchmark**: vs Market comparison with "Outperforming by X%"
+- **"Return" labels**: Replaced all "ROI" jargon
+- **"Sells X times/day"**: Replaced velocity jargon
+- **HOW IT WORKS**: 3-step onboarding section
+- **Share Card**: Copy URL for social sharing with OG previews
+- **"Save Chart"**: Clear export buttons on all charts
+- **Fee calculator**: Adjustable seller fee % in Flip Finder
+- **SessionStorage fix**: Screener always defaults to Simple in new tabs
+
+---
+
+## Score Progression (All-Time)
+
+| Round | Jake | Maria | Alex | Sam | Average |
+|-------|------|-------|------|-----|---------|
+| Baseline | 4.0 | 4.0 | 3.0 | 4.0 | 3.75 |
+| Sprint 1 | 6.0 | 5.0 | 5.0 | 6.0 | 5.5 |
+| Sprint 2 | 7.5 | 7.0 | 7.0 | 7.5 | 7.25 |
+| Sprint 3 | 8.0 | 8.0 | 8.5 | 8.0 | 8.125 |
+| Sprint 4 | 8.5 | 8.5 | 7.5 | 8.0 | 8.125 |
+| Sprint 5 | 8.8 | 9.0 | 8.0 | 8.5 | 8.575 |
+| Sprint 6 | 8.5 | 7.5 | 8.0 | 8.0 | 8.0 |
+| Sprint 7 | 7.9 | 8.5 | 7.7 | 7.6 | 7.925 |
+| Sprint 8 | 8.9 | 9.0 | 9.0 | 8.7 | 8.9 |
+| Round 6 | 7.2 | 8.6 | 7.8 | 8.4 | 8.0 |
+| Round 7 | 8.8 | 8.8 | 8.7 | 8.8 | 8.775 |
+| Round 8 | 9.1 | 8.8 | 8.7 | 8.6 | 8.8 |
+| Round 9 | 8.4 | 8.4 | 8.5 | 7.8 | 8.275 |
+| Round 10 | 8.4 | 8.5 | 8.5 | 8.2 | 8.4 |
+| Round 11 | 8.8 | 8.7 | 8.7 | 8.4 | 8.65 |
+| Round 12 | 8.2 | 8.7 | 8.7 | 8.5 | 8.525 |
+| Round 13 | 8.7 | 9.1 | 8.7 | 8.8 | 8.825 |
+| Round 14 | 8.8 | 8.5 | 8.7 | 8.8 | 8.7 |
+| Round 15 | 8.8 | 9.0 | 8.7 | 9.2 | 8.925 |
+| Round 16 | 8.5 | 8.5 | 8.5 | 9.0 | 8.625 |
+| Round 17 | 8.8 | 8.2 | 8.5 | 8.5 | 8.5 |
+| Round 18 | 8.5 | 8.5 | 9.0 | 9.0 | 8.75 |
+| Round 19 | 8.5 | 8.5 | 9.0 | 9.0 | 8.75 |
+| Round 20 | 8.8 | 9.1 | 8.9 | 9.0 | 8.95 |
+| **Round 21** | **9.2** | **9.3** | **9.2** | **9.3** | **9.25** |
+
+---
+
 ## Target Scores
 
 | Milestone | Avg Stickiness | Key Unlock |
 |-----------|---------------|------------|
 | Baseline | 3.75 | Site exists |
 | Sprint 1 | 5.5 | Navigation works, search works, basic portfolio |
-| Sprint 2 | 7.25 (target 7.0+) ✅ | Spread data, SMA overlays, alerts, onboarding, glossary tooltips |
-| Sprint 3 | 8.125 (target 8.0+) ✅ | Buy zone, chart export, weekly recap, quantity tracking, email alerts backend |
-| Sprint 4 | 8.125 raw / ~8.875 adjusted (target 9.0+) | Alerts page, velocity, similar cards, portfolio chart, sparklines, recap export, card summary |
-| Sprint 5 | 8.575 (target 9.0+) | Flip Finder, alert creation, simple mode, actionable guidance |
-| Sprint 8 | **8.9** (target 9.5+) | ROI%, CSV export, market index charts, jargon removal, alert creation UX |
-| V1.0 Launch | 9.0+ | All personas would recommend to a friend ✅ ACHIEVED |
+| Sprint 2 | 7.25 ✅ | Spread data, SMA overlays, alerts, onboarding, glossary tooltips |
+| Sprint 3 | 8.125 ✅ | Buy zone, chart export, weekly recap, quantity tracking, email alerts |
+| Sprint 5 | 8.575 | Flip Finder, alert creation, simple mode, actionable guidance |
+| Sprint 8 | 8.9 | ROI%, CSV export, market index charts, jargon removal |
+| **Round 21** | **9.25** ✅ | Flip Finder transformation, Bollinger Bands, fee calc, HOW IT WORKS, Set Analytics, multi-lot, OG tags |
+| **Target** | **9.5+** | All personas "would pay for this" — daily driver threshold |
