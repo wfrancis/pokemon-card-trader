@@ -1243,19 +1243,26 @@ export default function Watchlist() {
         </DialogActions>
       </Dialog>
 
-      {/* Completed Flips Section */}
-      {soldCards.length > 0 && (
-        <Box sx={{ mt: 3 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
-            <SellIcon sx={{ color: '#ffd700', fontSize: 20 }} />
-            <Typography sx={{ color: '#ffd700', fontSize: '1rem', fontFamily: '"JetBrains Mono", monospace', fontWeight: 700, letterSpacing: 1 }}>
-              COMPLETED FLIPS
+      {/* Completed Flips Section — always visible */}
+      <Box sx={{ mt: 3 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+          <SellIcon sx={{ color: '#ffd700', fontSize: 20 }} />
+          <Typography sx={{ color: '#ffd700', fontSize: '1rem', fontFamily: '"JetBrains Mono", monospace', fontWeight: 700, letterSpacing: 1 }}>
+            COMPLETED FLIPS
+          </Typography>
+          <Typography sx={{ color: '#666', ml: 'auto', fontFamily: 'monospace', fontSize: '0.7rem' }}>
+            {soldCards.length} trade{soldCards.length !== 1 ? 's' : ''}
+          </Typography>
+        </Box>
+        {soldCards.length === 0 && (
+          <Paper sx={{ p: 2, bgcolor: '#0a0a0a', border: '1px solid #1a1a1a', textAlign: 'center' }}>
+            <Typography sx={{ color: '#555', fontSize: '0.75rem', fontFamily: 'monospace' }}>
+              No completed trades yet. Use the gold sell button on any card above to record a sale and track your realized profit.
             </Typography>
-            <Typography sx={{ color: '#666', ml: 'auto', fontFamily: 'monospace', fontSize: '0.7rem' }}>
-              {soldCards.length} trade{soldCards.length !== 1 ? 's' : ''}
-            </Typography>
-          </Box>
+          </Paper>
+        )}
 
+        {soldCards.length > 0 && (<>
           {/* Summary Stats */}
           {soldSummary && (
             <Box sx={{ display: 'flex', gap: { xs: 1, sm: 2 }, mb: 2, flexWrap: 'wrap' }}>
@@ -1358,8 +1365,8 @@ export default function Watchlist() {
               </TableBody>
             </Table>
           </TableContainer>
-        </Box>
-      )}
+        </>)}
+      </Box>
 
       <Snackbar
         open={snackMsg !== null}

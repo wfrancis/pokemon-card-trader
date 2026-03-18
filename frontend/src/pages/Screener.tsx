@@ -631,7 +631,7 @@ function SimpleCardTable({ cards, page, onSort, sortBy, sortDir, flipFinderActiv
                       fontFamily: 'monospace', fontSize: '0.7rem', fontWeight: 700,
                       color: spreadPct !== null ? (spreadPct <= 0 ? '#00ff41' : '#ff1744') : '#444',
                     }}>
-                      {spreadPct !== null ? `${spreadPct >= 0 ? '+' : ''}${spreadPct.toFixed(1)}%` : '--'}
+                      {spreadPct !== null ? `${spreadPct >= 0 ? '+' : ''}${Math.abs(spreadPct) > 999 ? '>999%' : spreadPct.toFixed(1) + '%'}` : '--'}
                     </TableCell>
                     </>
                   );
@@ -779,7 +779,7 @@ function CardTable({ cards, page, onSort, sortBy, sortDir, flipFinderActive }: {
                       fontFamily: 'monospace', fontSize: '0.7rem', fontWeight: 700,
                       color: spreadPct !== null ? (spreadPct <= 0 ? '#00ff41' : '#ff1744') : '#444',
                     }}>
-                      {spreadPct !== null ? `${spreadPct >= 0 ? '+' : ''}${spreadPct.toFixed(1)}%` : '--'}
+                      {spreadPct !== null ? `${spreadPct >= 0 ? '+' : ''}${Math.abs(spreadPct) > 999 ? '>999%' : spreadPct.toFixed(1) + '%'}` : '--'}
                     </TableCell>
                     </>
                   );
