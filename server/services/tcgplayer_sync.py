@@ -237,7 +237,8 @@ async def sync_tcgplayer_prices(db: Session, limit: int = 500) -> dict:
                 # Sanity check: reject extreme swings, loosen for stale data
                 if card.current_price and card.current_price > 0:
                     ratio = market_price / card.current_price
-                    days_stale = (datetime.now(timezone.utc) - card.updated_at).days if card.updated_at else 999
+                    updated = card.updated_at.replace(tzinfo=timezone.utc) if card.updated_at and card.updated_at.tzinfo is None else card.updated_at
+                    days_stale = (datetime.now(timezone.utc) - updated).days if updated else 999
                     max_ratio = 10.0 if days_stale > 7 else 3.0
                     min_ratio = 0.1 if days_stale > 7 else 0.33
                     if ratio < min_ratio or ratio > max_ratio:

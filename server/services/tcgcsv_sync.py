@@ -604,7 +604,8 @@ async def sync_tcgcsv_prices(db: Session) -> dict:
             ratio = market_price / card.current_price
             # If data is stale (updated_at > 7 days ago), allow wider swings (10x)
             # Otherwise use strict 3x limit for daily updates
-            days_stale = (datetime.now(timezone.utc) - card.updated_at).days if card.updated_at else 999
+            updated = card.updated_at.replace(tzinfo=timezone.utc) if card.updated_at and card.updated_at.tzinfo is None else card.updated_at
+            days_stale = (datetime.now(timezone.utc) - updated).days if updated else 999
             max_ratio = 10.0 if days_stale > 7 else 3.0
             min_ratio = 0.1 if days_stale > 7 else 0.33
             if ratio < min_ratio or ratio > max_ratio:
