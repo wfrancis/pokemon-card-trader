@@ -245,7 +245,14 @@ export default function PriceChart({ priceData, cardName, compareData, onRemoveC
     }
   }, [handleResetZoom]);
 
-  if (chartData.length === 0) {
+  // Auto-fallback to ALL if selected range has no data but full dataset does
+  const hasDataButNotInRange = chartData.length === 0 && fullChartData.length > 0 && range !== 'ALL';
+  if (hasDataButNotInRange) {
+    // Auto-switch to ALL range
+    setTimeout(() => setRange('ALL'), 0);
+  }
+
+  if (chartData.length === 0 && fullChartData.length === 0) {
     return (
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300, color: '#666' }}>
         <Typography>Price history not yet available for this card.</Typography>

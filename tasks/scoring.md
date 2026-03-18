@@ -678,6 +678,49 @@ All 4 personas again report "routing bug" — pages render wrong content when cl
 - **Fee calculator**: Adjustable seller fee % in Flip Finder
 - **SessionStorage fix**: Screener always defaults to Simple in new tabs
 
+### Round 22 — 2026-03-18 (Incremental polish)
+
+| Persona | Stickiness (1-10) | Delta | Notes |
+|---------|-------------------|-------|-------|
+| P1 Jake | **9.2/10** | 0 | Screener banner text improved. SLOW chip couldn't be verified (all Flip Finder cards >0.5/day). Core flip workflow remains strong. |
+| P2 Maria | **9.3/10** | 0 | No regressions. All features solid. Best/Worst Performer needs 2+ cards. |
+| P3 Alex | **9.2/10** | 0 | Share Card snackbar nice terminal-style touch. OG meta tags not directly verifiable in browser. Recap export button small. |
+| P4 Sam | **9.3/10** | 0 | Screener "investment potential" text still in Simple subtitle. "FIND VALUABLE CARDS" confirmed. Welcome flow smooth. |
+
+**Average: 9.25/10 (delta: 0)** — Plateau. Incremental text changes don't move the needle.
+
+### Round 23 — 2026-03-18 (Bold features: Collection Builder, Market Commentary, Embeddable Charts, Completed Flips CTA)
+
+| Persona | Stickiness (1-10) | Delta | Notes |
+|---------|-------------------|-------|-------|
+| P1 Jake | **9.2/10** | 0 | Spread alerts already fully implemented (backend+frontend). Completed Flips CTA "excellent onboarding touch" with demo preview. Flip Finder still 56 profitable flips. Gap: fee % locked at 12.55% (evaluator missed the input). |
+| P2 Maria | **9.4/10** | +0.1 | Condition-aware portfolio with COND dropdown working. Graded Estimates (PSA 10/9/8) with Grade ROI. "Outperforming market by 45.0%." LP > NM explanatory note confirmed. |
+| P3 Alex | **9.3/10** | +0.1 | Market Commentary "genuinely useful" — auto-generated narrative. Content Angles "specific and actionable." Chart Image API returns professional PNG with watermark. Embed Chart copies img tag. |
+| P4 Sam | **9.5/10** | +0.2 | Collection Builder wizard "standout feature" — answers #1 question in 3 steps. Dashboard CTA "What's My Collection Worth?" HOW IT WORKS with 3 clear steps. Zero jargon throughout. |
+
+**Average: 9.35/10 (delta: +0.1)** — Sam hits 9.5!
+
+#### Key Sprint 5+ Features Driving 9.35
+- **Collection Builder**: 3-step wizard (search → value → save), condition dropdowns, nav item
+- **Market Commentary**: Auto-generated narrative paragraphs explaining WHY cards moved
+- **Content Angles**: 4 actionable video/article/thread ideas from data
+- **Embeddable Chart Image**: `GET /api/cards/{id}/chart-image` matplotlib endpoint + "Embed Chart" button
+- **Graded Card Estimates**: PSA 10/9/8 multipliers with Grade ROI
+- **Condition-Aware Portfolio**: COND dropdown recalculates portfolio value
+- **Completed Flips CTA**: Gold-bordered "RECORD YOUR FIRST FLIP" with demo preview
+- **Spread Alerts**: "Alert when spread drops below %" (already existed)
+
+### Round 24 — 2026-03-18 (Dashboard Flip Finder shortcut, fee tooltip, top 3 flips, Content copy buttons, BB nudge)
+
+| Persona | Stickiness (1-10) | Delta | Notes |
+|---------|-------------------|-------|-------|
+| P1 Jake | **9.4/10** | +0.2 | Flip Finder shortcut on Dashboard "meaningful workflow improvement." Shows best flip opportunity (+$22.42, +116% Return). Clicking navigates to ?flipFinder=true. Fee calc confirmed at 12.55%. 55 profitable flips. BUY TARGET prominent. |
+| P2 Maria | **9.4/10** | 0 | SET ANALYTICS (169 sets), Bollinger Bands, multi-lot, portfolio benchmark all confirmed solid. COND dropdown works. ATH marker visible. "Outperforming market by 45.0%." |
+| P3 Alex | **9.4/10** | +0.1 | Market Commentary multi-paragraph analysis. Content Angles with 4 suggestions. Chart-image API confirmed working (830x437 PNG). Save Chart on both tabs. Share Card + Embed Chart. Export CSV labeled. Recap Export as Image. |
+| P4 Sam | **9.5/10** | 0 | Collection Builder confirmed. Dashboard CTAs. "FIND VALUABLE CARDS" screener. HOW IT WORKS. Plain-English summaries. Condition Guide. "SAVE TO WATCHLIST" labeled. Quick-links work. |
+
+**Average: 9.425/10 (delta: +0.075)** — ALL-TIME HIGH! 0.075 from 9.5 target.
+
 ---
 
 ## Score Progression (All-Time)
@@ -709,6 +752,9 @@ All 4 personas again report "routing bug" — pages render wrong content when cl
 | Round 19 | 8.5 | 8.5 | 9.0 | 9.0 | 8.75 |
 | Round 20 | 8.8 | 9.1 | 8.9 | 9.0 | 8.95 |
 | **Round 21** | **9.2** | **9.3** | **9.2** | **9.3** | **9.25** |
+| Round 22 | 9.2 | 9.3 | 9.2 | 9.3 | 9.25 |
+| Round 23 | 9.2 | 9.4 | 9.3 | 9.5 | 9.35 |
+| **Round 24** | **9.4** | **9.4** | **9.4** | **9.5** | **9.425** |
 
 ---
 
@@ -723,4 +769,6 @@ All 4 personas again report "routing bug" — pages render wrong content when cl
 | Sprint 5 | 8.575 | Flip Finder, alert creation, simple mode, actionable guidance |
 | Sprint 8 | 8.9 | ROI%, CSV export, market index charts, jargon removal |
 | **Round 21** | **9.25** ✅ | Flip Finder transformation, Bollinger Bands, fee calc, HOW IT WORKS, Set Analytics, multi-lot, OG tags |
+| Round 23 | 9.35 | Collection Builder, Market Commentary, Embeddable Charts, Graded Estimates, Completed Flips CTA |
+| **Round 24** | **9.425** ✅ | Dashboard Flip Finder shortcut, fee tooltip, Content Angles copy buttons, chart y-axis fix, Simple View nudge |
 | **Target** | **9.5+** | All personas "would pay for this" — daily driver threshold |

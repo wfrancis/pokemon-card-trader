@@ -311,23 +311,31 @@ export default function CardDetail() {
         {/* Left: Card Image + Info */}
         <Grid size={{ xs: 12, md: 3 }}>
           <Paper sx={{ p: 2, textAlign: 'center' }}>
-            {(card.image_large || card.image_small) ? (
-              <Box
-                component="img"
-                src={card.image_large || card.image_small}
-                alt={card.name}
-                sx={{ width: '100%', maxWidth: { xs: 180, sm: 300 }, borderRadius: 2, mx: 'auto', display: 'block' }}
-              />
-            ) : (
-              <Box sx={{
-                width: '100%', maxWidth: { xs: 200, sm: 300 }, height: 400, mx: 'auto',
-                bgcolor: '#1a1a2e', borderRadius: 2,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                border: '1px solid #333',
-              }}>
-                <Typography sx={{ color: '#555', fontSize: '0.9rem' }}>No Image Available</Typography>
-              </Box>
-            )}
+            {(() => {
+              // Try card images, then construct fallback from set_id + number
+              const imgUrl = card.image_large || card.image_small
+                || (card.set_id && card.number
+                  ? `https://images.pokemontcg.io/${card.set_id}/${card.number.replace(/[A-Za-z]+$/, '')}_hires.png`
+                  : '');
+              return imgUrl ? (
+                <Box
+                  component="img"
+                  src={imgUrl}
+                  alt={card.name}
+                  onError={(e: any) => { e.target.style.display = 'none'; }}
+                  sx={{ width: '100%', maxWidth: { xs: 180, sm: 300 }, borderRadius: 2, mx: 'auto', display: 'block' }}
+                />
+              ) : (
+                <Box sx={{
+                  width: '100%', maxWidth: { xs: 200, sm: 300 }, height: 400, mx: 'auto',
+                  bgcolor: '#1a1a2e', borderRadius: 2,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  border: '1px solid #333',
+                }}>
+                  <Typography sx={{ color: '#555', fontSize: '0.9rem' }}>No Image Available</Typography>
+                </Box>
+              );
+            })()}
             <Typography variant="h2" sx={{ mt: 2 }}>{card.name}</Typography>
             <Typography variant="body2" sx={{ color: '#666' }}>
               {card.set_name} #{card.number}
