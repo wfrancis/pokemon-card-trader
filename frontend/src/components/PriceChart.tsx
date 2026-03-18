@@ -310,7 +310,7 @@ export default function PriceChart({ priceData, cardName, compareData, onRemoveC
         <MuiTooltip title="Save Chart as PNG">
           <IconButton onClick={handleExportPng} size="small" sx={{ color: '#888', border: '1px solid #333', borderRadius: 1, px: 1, '&:hover': { color: '#00bcd4', borderColor: '#00bcd4' } }}>
             <DownloadIcon sx={{ fontSize: 16, mr: 0.5 }} />
-            <Typography sx={{ fontSize: '0.65rem', fontFamily: 'monospace', fontWeight: 600 }}>PNG</Typography>
+            <Typography sx={{ fontSize: '0.65rem', fontFamily: 'monospace', fontWeight: 600 }}>Save Chart</Typography>
           </IconButton>
         </MuiTooltip>
         {isZoomed && (

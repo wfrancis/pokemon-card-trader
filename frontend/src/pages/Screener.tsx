@@ -232,7 +232,7 @@ function FlipFinderStatsBar({ cards, feeRate = 12.55 }: { cards: ScreenerCard[];
 
   const statItems = [
     { label: 'PROFITABLE FLIPS', value: String(profitableCards.length), color: '#00ff41' },
-    { label: 'AVG ROI', value: `${avgROI.toFixed(0)}%`, color: '#00bcd4' },
+    { label: 'AVG RETURN', value: `${avgROI.toFixed(0)}%`, color: '#00bcd4' },
     { label: 'AVG VELOCITY', value: `${avgVelocity.toFixed(1)} sales/day`, color: '#ff9800' },
     { label: 'BEST FLIP', value: bestFlip ? `${bestFlip.name.length > 18 ? bestFlip.name.slice(0, 18) + '...' : bestFlip.name} +$${bestFlip.profit.toFixed(2)}` : '--', color: '#e040fb' },
   ];
@@ -274,7 +274,7 @@ function FlipFinderTable({ cards, page, onSort, sortBy, sortDir, flipSortMode, o
     { id: 'current_price', label: 'Buy Price', width: 85 },
     { id: 'median_sold', label: 'Sells For', width: 85 },
     { id: 'est_profit', label: 'Est. Profit', width: 90 },
-    { id: 'roi_pct', label: 'ROI%', width: 70 },
+    { id: 'roi_pct', label: 'Return %', width: 70 },
     { id: 'spread_pct', label: 'Spread%', width: 75 },
     { id: 'velocity', label: 'Velocity', width: 80 },
     { id: 'regime', label: 'Regime', width: 90 },
@@ -359,7 +359,7 @@ function FlipFinderTable({ cards, page, onSort, sortBy, sortDir, flipSortMode, o
                   fontFamily: 'monospace', fontSize: '0.75rem', fontWeight: 600,
                   color: card.sales_per_day != null ? (card.sales_per_day >= 1 ? '#00bcd4' : card.sales_per_day >= 0.5 ? '#ff9800' : '#666') : '#444',
                 }}>
-                  {card.sales_per_day != null ? `${card.sales_per_day.toFixed(1)}/day` : '--'}
+                  {card.sales_per_day != null ? `${card.sales_per_day.toFixed(1)} sales/day` : '--'}
                 </TableCell>
                 <TableCell>
                   {card.regime && (
@@ -449,7 +449,7 @@ function SimpleCardTile({ card, flipFinderActive, feeRate = 12.55 }: { card: Scr
             color: profit >= 0 ? '#00ff41' : '#ff1744',
             mt: 0.2,
           }}>
-            {profit >= 0 ? '+' : ''}${profit.toFixed(2)}{roi !== null && ` (${roi >= 0 ? '+' : ''}${roi.toFixed(0)}% ROI)`}
+            {profit >= 0 ? '+' : ''}${profit.toFixed(2)}{roi !== null && ` (${roi >= 0 ? '+' : ''}${roi.toFixed(0)}% Return)`}
           </Typography>
           </>
         );
@@ -604,7 +604,7 @@ function CardTile({ card, rank, flipFinderActive, feeRate = 12.55 }: { card: Scr
             color: profit >= 0 ? '#00ff41' : '#ff1744',
             mt: 0.2,
           }}>
-            {profit >= 0 ? '+' : ''}${profit.toFixed(2)}{roi !== null && ` (${roi >= 0 ? '+' : ''}${roi.toFixed(0)}% ROI)`}
+            {profit >= 0 ? '+' : ''}${profit.toFixed(2)}{roi !== null && ` (${roi >= 0 ? '+' : ''}${roi.toFixed(0)}% Return)`}
           </Typography>
         );
       })()}
@@ -616,7 +616,7 @@ function CardTile({ card, rank, flipFinderActive, feeRate = 12.55 }: { card: Scr
           <GlossaryTooltip term="sales_per_day">
           <Chip
             size="small"
-            label={`${card.sales_per_day.toFixed(1)}/day`}
+            label={`${card.sales_per_day.toFixed(1)} sales/day`}
             sx={{
               height: 18, fontSize: '0.5rem', fontWeight: 600, fontFamily: 'monospace', mt: 0.3,
               bgcolor: 'transparent',
@@ -721,7 +721,7 @@ function SimpleCardTable({ cards, page, onSort, sortBy, sortDir, flipFinderActiv
     ? [
         ...baseColumns.slice(0, 3),
         { id: 'est_profit', label: 'Est. Profit', width: 90, glossary: 'flip_profit' },
-        { id: 'roi_pct', label: 'ROI%', width: 70 },
+        { id: 'roi_pct', label: 'Return %', width: 70 },
         { id: 'spread_pct', label: 'Spread', width: 70 },
         ...baseColumns.slice(3),
       ]
@@ -862,11 +862,11 @@ function CardTable({ cards, page, onSort, sortBy, sortDir, flipFinderActive, fee
     { id: 'time_to_sell', label: 'TTS', width: 75, glossary: 'time_to_sell' },
     { id: 'regime', label: 'Regime', width: 85, glossary: 'regime' },
   ];
-  // Always show Est. Profit, ROI%, and Spread columns after Price
+  // Always show Est. Profit, Return%, and Spread columns after Price
   const columns = [
     ...baseColumns.slice(0, 3),
     { id: 'est_profit', label: 'Est. Profit', width: 85, glossary: 'flip_profit' },
-    { id: 'roi_pct', label: 'ROI%', width: 65 },
+    { id: 'roi_pct', label: 'Return %', width: 65 },
     { id: 'spread_pct', label: 'Spread', width: 65 },
     ...baseColumns.slice(3),
   ];
@@ -1163,7 +1163,7 @@ export default function Screener() {
   }, []);
 
   const handleCsvExport = () => {
-    const headers = ['Name', 'Set', 'Price', 'Investment Score', 'Liquidity', 'Appreciation', 'Regime', 'Est Profit', 'ROI%', 'Velocity'];
+    const headers = ['Name', 'Set', 'Price', 'Investment Score', 'Liquidity', 'Appreciation', 'Regime', 'Est Profit', 'Return %', 'Velocity'];
     const rows = cards.map(c => [
       `"${c.name}"`, `"${c.set_name}"`, c.current_price?.toFixed(2) ?? '',
       c.investment_score?.toFixed(1) ?? '', c.liquidity_score?.toFixed(1) ?? '',
@@ -1439,7 +1439,7 @@ export default function Screener() {
                     FLIP FINDER ACTIVE
                   </Typography>
                   <Typography variant="body2" sx={{ color: '#888', fontSize: '0.75rem' }}>
-                    Showing {cards.filter(c => { const p = calcFlipProfit(c, feeRate); return p !== null && p > 0; }).length} profitable flips sorted by {flipSortMode === 'roi' ? 'ROI%' : flipSortMode === 'spread' ? 'spread' : 'profit'} (after {feeRate}% seller fees)
+                    Showing {cards.filter(c => { const p = calcFlipProfit(c, feeRate); return p !== null && p > 0; }).length} profitable flips sorted by {flipSortMode === 'roi' ? 'Return %' : flipSortMode === 'spread' ? 'spread' : 'profit'} (after {feeRate}% seller fees)
                   </Typography>
                 </Box>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -1480,7 +1480,7 @@ export default function Screener() {
                         },
                       }}
                     >
-                      {mode === 'roi' ? 'ROI%' : mode === 'profit' ? 'Profit' : 'Spread'}
+                      {mode === 'roi' ? 'Return %' : mode === 'profit' ? 'Profit' : 'Spread'}
                     </Button>
                   ))}
                 </Box>
@@ -1620,7 +1620,7 @@ export default function Screener() {
                   >
                     <MenuItem value="investment_score"><GlossaryTooltip term="investment_score">Investment Score</GlossaryTooltip></MenuItem>
                     <MenuItem value="est_profit">Profit (Est.)</MenuItem>
-                    <MenuItem value="roi">ROI %</MenuItem>
+                    <MenuItem value="roi">Return %</MenuItem>
                     <MenuItem value="liquidity_score"><GlossaryTooltip term="liquidity_score">Liquidity</GlossaryTooltip></MenuItem>
                     <MenuItem value="appreciation_score"><GlossaryTooltip term="appreciation_slope">Appreciation</GlossaryTooltip></MenuItem>
                     <MenuItem value="appreciation_consistency"><GlossaryTooltip term="appreciation_consistency">Consistency (R²)</GlossaryTooltip></MenuItem>
