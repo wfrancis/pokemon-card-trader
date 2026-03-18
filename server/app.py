@@ -1,6 +1,7 @@
 import logging
 import asyncio
 from contextlib import asynccontextmanager
+from datetime import date, datetime, timedelta, timezone
 from fastapi import FastAPI, Depends, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -1006,6 +1007,88 @@ def refresh_prices(db: Session = Depends(get_db)):
     """Update Card.current_price from latest PriceHistory for all tracked cards."""
     count = refresh_current_prices(db)
     return {"status": "complete", "cards_updated": count}
+
+
+@app.post("/api/sync/stale-cards", dependencies=[Depends(verify_admin_key)])
+async def sync_stale_cards(db: Session = Depends(get_db), days: int = 30):
+    """Sync prices for cards with stale price history (older than N days).
+
+    Uses TCGPlayer per-card API to find and update prices for cards
+    that the bulk TCGCSV sync missed.
+    """
+    from server.services.tcgplayer_sync import _search_tcgplayer, _get_price
+    from server.models.price_history import PriceHistory
+    from sqlalchemy import func
+    import httpx
+
+    today = date.today()
+    cutoff = today - timedelta(days=days)
+
+    # Find cards where latest price history is before cutoff
+    subq = (
+        db.query(PriceHistory.card_id, func.max(PriceHistory.date).label("latest"))
+        .group_by(PriceHistory.card_id)
+        .subquery()
+    )
+    stale_cards = (
+        db.query(Card)
+        .join(subq, Card.id == subq.c.card_id)
+        .filter(subq.c.latest < cutoff, Card.is_tracked == True)
+        .all()
+    )
+
+    stats = {"stale_found": len(stale_cards), "updated": 0, "no_price": 0, "errors": 0}
+    logger.info(f"Stale card sync: found {len(stale_cards)} cards with data older than {days} days")
+
+    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+        for card in stale_cards:
+            try:
+                # Get product ID (use stored or search)
+                product_id = card.tcgplayer_product_id
+                if not product_id:
+                    product_id = await _search_tcgplayer(
+                        client, card.name, card.set_name or "", card.number or ""
+                    )
+                    if product_id:
+                        card.tcgplayer_product_id = product_id
+
+                if not product_id:
+                    stats["no_price"] += 1
+                    continue
+
+                # Get current price
+                price_data = await _get_price(client, product_id)
+                if price_data and price_data.get("market_price"):
+                    mp = price_data["market_price"]
+                    card.current_price = round(mp, 2)
+                    card.updated_at = datetime.now(timezone.utc)
+
+                    # Record price history (use card's existing variant)
+                    variant = card.price_variant or "normal"
+                    existing = db.query(PriceHistory).filter(
+                        PriceHistory.card_id == card.id,
+                        PriceHistory.date == today,
+                    ).first()
+                    if not existing:
+                        db.add(PriceHistory(
+                            card_id=card.id, date=today, variant=variant,
+                            condition="Near Mint", market_price=round(mp, 2),
+                        ))
+                    stats["updated"] += 1
+                else:
+                    stats["no_price"] += 1
+            except Exception as e:
+                logger.error(f"Stale sync error for {card.name}: {e}")
+                stats["errors"] += 1
+
+            # Rate limit + commit every 10 cards
+            if (stats["updated"] + stats["no_price"] + stats["errors"]) % 10 == 0:
+                db.commit()
+            await asyncio.sleep(1.0)  # Rate limit TCGPlayer API
+
+    db.commit()
+    logger.info(f"Stale card sync complete: {stats}")
+    return {"status": "complete", **stats}
 
 
 @app.get("/api/tracked/stats", dependencies=[Depends(verify_admin_key)])
