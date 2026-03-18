@@ -1327,6 +1327,8 @@ export default function Screener() {
                     onChange={(e) => { if (!flipFinderActive) { setSortBy(e.target.value); setPage(1); } }}
                   >
                     <MenuItem value="investment_score"><GlossaryTooltip term="investment_score">Investment Score</GlossaryTooltip></MenuItem>
+                    <MenuItem value="est_profit">Profit (Est.)</MenuItem>
+                    <MenuItem value="roi">ROI %</MenuItem>
                     <MenuItem value="liquidity_score"><GlossaryTooltip term="liquidity_score">Liquidity</GlossaryTooltip></MenuItem>
                     <MenuItem value="appreciation_score"><GlossaryTooltip term="appreciation_slope">Appreciation</GlossaryTooltip></MenuItem>
                     <MenuItem value="appreciation_consistency"><GlossaryTooltip term="appreciation_consistency">Consistency (R²)</GlossaryTooltip></MenuItem>

@@ -812,6 +812,19 @@ export default function CardDetail() {
                       * Low sample — fewer than {LOW_SAMPLE_THRESHOLD} sales
                     </Typography>
                   )}
+                  {nmMedian && nmMedian > 0 && conditions.some(([cond, data]) => {
+                    if (cond === 'Near Mint') return false;
+                    const median = getMedian(data.prices);
+                    const suspicious = isSuspiciousPrice(cond, median, data.prices.length);
+                    return !suspicious && data.prices.length > 0 && median > nmMedian;
+                  }) && (
+                    <Box sx={{ mt: 0.5, display: 'flex', alignItems: 'flex-start', gap: 0.5 }}>
+                      <InfoOutlinedIcon sx={{ fontSize: 12, color: '#666', mt: 0.1 }} />
+                      <Typography sx={{ color: '#888', fontSize: '0.6rem', fontFamily: 'monospace', fontStyle: 'italic' }}>
+                        Some conditions show higher prices than NM — this can happen when rare variants (e.g., 1st Edition) are sold in lower conditions.
+                      </Typography>
+                    </Box>
+                  )}
                   {/* Graded pricing info */}
                   <Box sx={{ mt: 1.5, p: 1, bgcolor: '#0a0a1a', border: '1px solid #222', borderRadius: 1, display: 'flex', alignItems: 'flex-start', gap: 0.5 }}>
                     <InfoOutlinedIcon sx={{ fontSize: 14, color: '#555', mt: 0.2 }} />
