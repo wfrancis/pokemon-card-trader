@@ -178,7 +178,7 @@ function HotCardsSection() {
 
               {/* Key metrics */}
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.5 }}>
-                {card.price_change_7d !== null && (
+                {card.price_change_7d !== null && Math.abs(card.price_change_7d) <= 500 && (
                   <Typography
                     variant="body2"
                     sx={{

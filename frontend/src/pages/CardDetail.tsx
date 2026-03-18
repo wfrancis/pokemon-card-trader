@@ -631,6 +631,28 @@ export default function CardDetail() {
                 const mid = Math.floor(sorted.length / 2);
                 return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
               };
+              // Get NM median as reference price for outlier detection
+              const nmData = conditionMap['Near Mint'];
+              const nmMedian = nmData ? getMedian(nmData.prices) : null;
+
+              // Filter out outlier sales: if NM median exists and is >= $10, remove sales
+              // that are < 20% of NM median from lower conditions (likely misgraded or bulk lots)
+              if (nmMedian && nmMedian >= 10) {
+                const lowerConditions = ['Lightly Played', 'Moderately Played', 'Heavily Played', 'Damaged'];
+                for (const cond of lowerConditions) {
+                  if (conditionMap[cond]) {
+                    const outlierThreshold = nmMedian * 0.20;
+                    conditionMap[cond].prices = conditionMap[cond].prices.filter(
+                      p => p >= outlierThreshold
+                    );
+                    // Remove entry if no prices remain after filtering
+                    if (conditionMap[cond].prices.length === 0) {
+                      delete conditionMap[cond];
+                    }
+                  }
+                }
+              }
+
               const conditions = Object.entries(conditionMap)
                 .sort((a, b) => {
                   const ai = conditionOrder.indexOf(a[0]);
@@ -639,6 +661,14 @@ export default function CardDetail() {
                 });
               if (conditions.length === 0) return null;
               const LOW_SAMPLE_THRESHOLD = 5;
+
+              // Check if a condition's median is suspiciously low compared to NM
+              const isSuspiciousPrice = (cond: string, median: number, count: number): boolean => {
+                if (!nmMedian || nmMedian < 10) return false;
+                if (cond === 'Near Mint') return false;
+                // If median is still < 30% of NM after outlier filtering and sample is tiny, flag it
+                return median < nmMedian * 0.30 && count < LOW_SAMPLE_THRESHOLD;
+              };
               const conditionGuideData: { abbr: string; name: string; color: string; description: string; condKey: string }[] = [
                 { abbr: 'NM', name: 'Near Mint', color: '#00ff41', description: 'Looks brand new \u2014 sharp corners, clean surface, no marks', condKey: 'Near Mint' },
                 { abbr: 'LP', name: 'Lightly Played', color: '#8bc34a', description: 'Minor edge wear or small scratches \u2014 still looks great', condKey: 'Lightly Played' },
@@ -702,6 +732,8 @@ export default function CardDetail() {
                       {conditionGuideData.map((cg) => {
                         const matchedCond = conditions.find(([c]) => c === cg.condKey);
                         const medianVal = matchedCond ? getMedian(matchedCond[1].prices) : null;
+                        const sampleCount = matchedCond ? matchedCond[1].prices.length : 0;
+                        const suspicious = medianVal !== null && isSuspiciousPrice(cg.condKey, medianVal, sampleCount);
                         return (
                           <Box key={cg.abbr} sx={{ px: 1.5, py: 0.8, borderBottom: '1px solid #1a1a2e', display: 'flex', gap: 1, alignItems: 'flex-start' }}>
                             <Typography sx={{ color: cg.color, fontWeight: 700, fontSize: '0.7rem', fontFamily: '"JetBrains Mono", monospace', minWidth: 30 }}>
@@ -712,9 +744,15 @@ export default function CardDetail() {
                                 <Box component="span" sx={{ fontWeight: 700 }}>{cg.name}</Box> &mdash; {cg.description}
                               </Typography>
                               {medianVal !== null && (
-                                <Typography sx={{ color: cg.color, fontSize: '0.6rem', fontFamily: '"JetBrains Mono", monospace', mt: 0.3 }}>
-                                  This card: ~${medianVal.toFixed(2)} median
-                                </Typography>
+                                suspicious ? (
+                                  <Typography sx={{ color: '#ff9800', fontSize: '0.6rem', fontFamily: '"JetBrains Mono", monospace', mt: 0.3 }}>
+                                    Insufficient data ({sampleCount} sale{sampleCount !== 1 ? 's' : ''})
+                                  </Typography>
+                                ) : (
+                                  <Typography sx={{ color: cg.color, fontSize: '0.6rem', fontFamily: '"JetBrains Mono", monospace', mt: 0.3 }}>
+                                    This card: ~${medianVal.toFixed(2)} median
+                                  </Typography>
+                                )
                               )}
                             </Box>
                           </Box>
@@ -735,23 +773,32 @@ export default function CardDetail() {
                       const count = data.prices.length;
                       const median = getMedian(data.prices);
                       const isLowSample = count < LOW_SAMPLE_THRESHOLD;
+                      const suspicious = isSuspiciousPrice(cond, median, count);
                       const sorted = [...data.prices].sort((a, b) => a - b);
                       const low = sorted[0];
                       const high = sorted[sorted.length - 1];
                       return (
-                        <Box key={cond} sx={{ borderTop: '1px solid #222', opacity: isLowSample ? 0.5 : 1, '&:hover': { bgcolor: '#1a1a2e33' } }}>
+                        <Box key={cond} sx={{ borderTop: '1px solid #222', opacity: (isLowSample || suspicious) ? 0.5 : 1, '&:hover': { bgcolor: '#1a1a2e33' } }}>
                           <Box sx={{ display: 'flex', px: 1, py: 0.4, alignItems: 'center' }}>
-                            <Typography sx={{ flex: 1, color: isLowSample ? '#666' : '#ccc', fontSize: '0.7rem', fontFamily: 'monospace' }}>
+                            <Typography sx={{ flex: 1, color: (isLowSample || suspicious) ? '#666' : '#ccc', fontSize: '0.7rem', fontFamily: 'monospace' }}>
                               {cond === 'Near Mint' ? <GlossaryTooltip term="nm">NM</GlossaryTooltip> : cond === 'Lightly Played' ? <GlossaryTooltip term="lp">LP</GlossaryTooltip> : cond === 'Moderately Played' ? <GlossaryTooltip term="mp">MP</GlossaryTooltip> : cond === 'Heavily Played' ? <GlossaryTooltip term="hp">HP</GlossaryTooltip> : cond === 'Damaged' ? <GlossaryTooltip term="dmg">DMG</GlossaryTooltip> : cond}
                             </Typography>
-                            <Typography sx={{ width: 55, textAlign: 'right', color: isLowSample ? '#666' : '#00ff41', fontSize: '0.7rem', fontFamily: '"JetBrains Mono", monospace', fontWeight: 700 }}>
-                              ${median.toFixed(2)}
-                            </Typography>
-                            <Typography sx={{ width: 55, textAlign: 'right', fontSize: '0.65rem', fontFamily: 'monospace', color: isLowSample ? '#ff9800' : '#888' }}>
-                              {count}{isLowSample && ' *'}
-                            </Typography>
+                            {suspicious ? (
+                              <Typography sx={{ width: 110, textAlign: 'right', color: '#ff9800', fontSize: '0.6rem', fontFamily: '"JetBrains Mono", monospace', fontStyle: 'italic' }}>
+                                Insufficient data
+                              </Typography>
+                            ) : (
+                              <>
+                                <Typography sx={{ width: 55, textAlign: 'right', color: isLowSample ? '#666' : '#00ff41', fontSize: '0.7rem', fontFamily: '"JetBrains Mono", monospace', fontWeight: 700 }}>
+                                  ${median.toFixed(2)}
+                                </Typography>
+                                <Typography sx={{ width: 55, textAlign: 'right', fontSize: '0.65rem', fontFamily: 'monospace', color: isLowSample ? '#ff9800' : '#888' }}>
+                                  {count}{isLowSample && ' *'}
+                                </Typography>
+                              </>
+                            )}
                           </Box>
-                          {count > 1 && (
+                          {!suspicious && count > 1 && (
                             <Typography sx={{ px: 1, pb: 0.3, color: '#555', fontSize: '0.6rem', fontFamily: 'monospace' }}>
                               range ${low.toFixed(2)} - ${high.toFixed(2)}
                             </Typography>
@@ -1230,7 +1277,7 @@ export default function CardDetail() {
                       <Typography sx={{ color: '#00ff41', fontSize: '0.8rem', fontFamily: '"JetBrains Mono", monospace', fontWeight: 700 }}>
                         {sc.current_price != null ? `$${sc.current_price.toFixed(2)}` : '--'}
                       </Typography>
-                      {sc.price_change_7d != null && (
+                      {sc.price_change_7d != null && Math.abs(sc.price_change_7d) <= 500 && (
                         <Typography sx={{
                           color: sc.price_change_7d >= 0 ? '#00ff41' : '#ff1744',
                           fontSize: '0.65rem',

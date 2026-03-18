@@ -264,12 +264,15 @@ export default function Watchlist() {
         }
         setCardPriceHistories(histMap);
 
-        // Build a map of cardId -> { date -> price }
+        // Build a map of cardId -> { date -> price }, skipping $0/null prices
         const cardPriceMap: Record<number, Record<string, number>> = {};
         for (const { cardId, data } of priceResults) {
           const dateMap: Record<string, number> = {};
           for (const pt of data) {
-            dateMap[pt.date] = pt.market_price;
+            // Skip zero or null prices — these are sync gaps, not real values
+            if (pt.market_price && pt.market_price > 0) {
+              dateMap[pt.date] = pt.market_price;
+            }
           }
           cardPriceMap[cardId] = dateMap;
         }
@@ -283,14 +286,39 @@ export default function Watchlist() {
           dates.push(d.toISOString().slice(0, 10));
         }
 
-        // For each date, sum portfolio value with forward-fill
+        // Pre-seed lastKnown with the most recent valid price before the chart window
+        // This prevents dips at the start of the chart when no data exists yet
         const lastKnown: Record<number, number> = {};
+        for (const row of rows) {
+          const priceMap = cardPriceMap[row.cardId] || {};
+          const allDates = Object.keys(priceMap).sort();
+          // Find the most recent price on or before the chart start
+          const chartStart = dates[0];
+          let seedPrice: number | null = null;
+          for (const d of allDates) {
+            if (d <= chartStart) {
+              seedPrice = priceMap[d];
+            } else {
+              break;
+            }
+          }
+          // Use seed price, or fallback to first available price, or current_price
+          if (seedPrice && seedPrice > 0) {
+            lastKnown[row.cardId] = seedPrice;
+          } else if (allDates.length > 0) {
+            lastKnown[row.cardId] = priceMap[allDates[0]];
+          } else if (row.card?.current_price && row.card.current_price > 0) {
+            lastKnown[row.cardId] = row.card.current_price;
+          }
+        }
+
+        // For each date, sum portfolio value with forward-fill
         const series = dates.map(date => {
           let total = 0;
           for (const row of rows) {
             const qty = row.quantity ?? 1;
             const priceMap = cardPriceMap[row.cardId] || {};
-            if (priceMap[date] !== undefined) {
+            if (priceMap[date] !== undefined && priceMap[date] > 0) {
               lastKnown[row.cardId] = priceMap[date];
             }
             const price = lastKnown[row.cardId] ?? row.card?.current_price ?? 0;
@@ -403,7 +431,11 @@ export default function Watchlist() {
         const idx7d = Math.max(0, priceHist.length - 8);
         const price7d = priceHist[idx7d].market_price;
         if (price7d > 0) {
-          change7dStr = (((latest - price7d) / price7d) * 100).toFixed(2);
+          const raw = ((latest - price7d) / price7d) * 100;
+          // Cap at +/- 500% to filter out data artifacts
+          if (Math.abs(raw) <= 500) {
+            change7dStr = raw.toFixed(2);
+          }
         }
       }
 
@@ -1018,7 +1050,9 @@ export default function Watchlist() {
                         const idx7d = Math.max(0, priceHist.length - 8);
                         const price7d = priceHist[idx7d].market_price;
                         if (price7d > 0) {
-                          change7d = ((latest - price7d) / price7d) * 100;
+                          const raw = ((latest - price7d) / price7d) * 100;
+                          // Cap at +/- 500% to filter out data artifacts
+                          change7d = Math.abs(raw) <= 500 ? raw : null;
                         }
                       }
                       const trendColor = change7d != null && change7d >= 0 ? '#00ff41' : '#ff1744';

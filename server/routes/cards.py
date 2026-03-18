@@ -168,7 +168,10 @@ def get_similar_cards(card_id: int, db: Session = Depends(get_db)):
                 .first()
             )
             if old_price and old_price[0] and old_price[0] > 0:
-                price_change_7d = ((c.current_price - old_price[0]) / old_price[0]) * 100
+                raw_change = ((c.current_price - old_price[0]) / old_price[0]) * 100
+                # Cap at +/- 500% to filter out data artifacts (variant mixing, stale data)
+                if abs(raw_change) <= 500:
+                    price_change_7d = raw_change
 
         similar.append({
             "id": c.id,
