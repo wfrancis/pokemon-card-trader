@@ -171,7 +171,9 @@ export default function PriceChart({ priceData, cardName, compareData, onRemoveC
       });
     };
     const sma30 = calcSMA(chartData, 30);
-    const sma90 = calcSMA(chartData, 90);
+    // Use 60-point window (or all data if < 60 points) for longer-term SMA
+    const longWindow = Math.min(90, Math.max(60, Math.floor(chartData.length * 0.6)));
+    const sma90 = calcSMA(chartData, longWindow);
     return chartData.map((d, i) => ({
       ...d,
       sma30: sma30[i],

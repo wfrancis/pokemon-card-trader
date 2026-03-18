@@ -249,3 +249,7 @@ Every sprint follows this loop until all personas are satisfied:
 - **Simplicity First**: Make every change as simple as possible. Impact minimal code.
 - **No Laziness**: Find root causes. No temporary fixes. Senior developer standards.
 - **Minimal Impact**: Changes should only touch what's necessary. Avoid introducing bugs.
+
+## Hard Constraint: 9.5+ Persona Average
+
+**DO NOT STOP iterating until the 4-persona average score reaches 9.5+.** This is non-negotiable. The implement → deploy → QA → persona eval → fix loop continues until all 4 personas (Jake, Maria, Alex, Sam) average 9.5 or higher on the live Fly.io deployment. No adjusted scores, no excuses — raw scores only. If a feature is broken for Chrome MCP agents, it's broken for real users too. Fix it.

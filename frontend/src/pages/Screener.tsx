@@ -1245,10 +1245,10 @@ export default function Screener() {
           )}
         </Box>
         {!simpleMode && flipFinderActive && (
-          <Box sx={{ mb: 1.5, p: 1, bgcolor: '#00ff4110', border: '1px solid #00ff4133', borderRadius: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
-            <Typography variant="body2" sx={{ color: '#00ff41', fontSize: '0.65rem', fontWeight: 600 }}>
-              <MonetizationOnIcon sx={{ fontSize: 13, mr: 0.5, verticalAlign: 'middle' }} />
-              Showing cards with profitable flip opportunities (buy at market, sell at median, after 12.55% fees). Min 0.5 sales/day.
+          <Box sx={{ mb: 1.5, p: 1.5, bgcolor: '#00ff4118', border: '2px solid #00ff4166', borderRadius: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
+            <Typography variant="body2" sx={{ color: '#00ff41', fontSize: '0.75rem', fontWeight: 700 }}>
+              <MonetizationOnIcon sx={{ fontSize: 16, mr: 0.5, verticalAlign: 'middle' }} />
+              FLIP FINDER ACTIVE — Profitable flips only (after 12.55% fees, min 0.5 sales/day)
             </Typography>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
               <Typography sx={{ color: '#888', fontSize: '0.6rem', fontFamily: 'monospace', mr: 0.5 }}>Sort by:</Typography>
