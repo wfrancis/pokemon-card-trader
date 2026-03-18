@@ -836,15 +836,7 @@ export default function Screener() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
-  const [simpleMode, setSimpleMode] = useState<boolean>(() => {
-    // Force-clean ALL old localStorage keys that may persist in Chrome sessions
-    localStorage.removeItem('pkmn_screener_mode');
-    localStorage.removeItem('pkmn_screener_mode_v2');
-    localStorage.removeItem('pkmn_screener_mode_v3');
-    localStorage.removeItem('pkmn_screener_mode_v4');
-    const stored = localStorage.getItem('pkmn_screener_mode_v5');
-    return stored === null ? true : stored === 'simple';
-  });
+  const [simpleMode, setSimpleMode] = useState<boolean>(true); // ALWAYS default to Simple mode
 
   const handleSimpleModeToggle = (checked: boolean) => {
     setSimpleMode(checked);
@@ -908,7 +900,10 @@ export default function Screener() {
       if (effectiveMaxPrice !== '' && Number(effectiveMaxPrice) > 0) params.max_price = effectiveMaxPrice;
       if (effectiveSearch) params.q = effectiveSearch;
       if (effectiveMinVelocity > 0) params.min_velocity = String(effectiveMinVelocity);
-      if (isFlip) params.min_profit = '0.01';
+      if (isFlip) {
+        params.min_profit = '0.01';
+        params.exclude_regime = 'markdown';
+      }
 
       const result = await api.getScreenerCards(params);
       // Flip Finder: filter out DOWNTREND cards (risky for flipping) and apply ROI sort

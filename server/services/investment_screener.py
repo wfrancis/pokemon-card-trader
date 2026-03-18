@@ -312,6 +312,7 @@ def get_investment_candidates(
     min_liquidity: int = 0,
     min_appreciation_score: float = 0,
     regime: str | None = None,
+    exclude_regime: str | None = None,
     min_price: float = 10.0,
     max_price: float | None = None,
     min_velocity: float = 0,
@@ -346,6 +347,9 @@ def get_investment_candidates(
 
     if regime:
         query = query.filter(Card.cached_regime == regime)
+
+    if exclude_regime:
+        query = query.filter((Card.cached_regime != exclude_regime) | (Card.cached_regime.is_(None)))
 
     if max_price is not None:
         query = query.filter(Card.current_price <= max_price)
