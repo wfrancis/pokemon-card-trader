@@ -945,11 +945,11 @@ export default function Screener() {
       }
       // Client-side ROI% sort (used both in Flip Finder ROI mode and regular ROI% sort)
       if (needsClientSort || (isFlip && flipSortMode === 'roi')) {
-        const dir = effectiveSortDir === 'asc' ? 1 : -1;
+        const descending = effectiveSortDir !== 'asc';
         result.data.sort((a, b) => {
           const roiA = a.current_price > 0 && a.est_profit != null ? (a.est_profit / a.current_price) * 100 : -Infinity;
           const roiB = b.current_price > 0 && b.est_profit != null ? (b.est_profit / b.current_price) * 100 : -Infinity;
-          return (roiB - roiA) * dir;
+          return descending ? (roiB - roiA) : (roiA - roiB);
         });
       }
       setCards(result.data);
