@@ -407,22 +407,24 @@ export default function PriceChart({ priceData, cardName, compareData, onRemoveC
             </Box>
           )}
           {chartData.length >= 20 && (
-            <Chip
-              label={showBB ? 'BB ON' : 'BB OFF'}
-              size="small"
-              onClick={() => setShowBB(!showBB)}
-              sx={{
-                height: 20,
-                fontSize: '0.6rem',
-                fontWeight: 700,
-                fontFamily: 'monospace',
-                color: showBB ? '#00bcd4' : '#555',
-                borderColor: showBB ? '#00bcd4' : '#333',
-                bgcolor: showBB ? 'rgba(0,188,212,0.1)' : 'transparent',
-                '&:hover': { bgcolor: 'rgba(0,188,212,0.15)' },
-              }}
-              variant="outlined"
-            />
+            <MuiTooltip title="Bollinger Bands show price volatility — when price touches the upper band, it may be overbought">
+              <Chip
+                label="Bollinger Bands"
+                size="small"
+                onClick={() => setShowBB(!showBB)}
+                sx={{
+                  height: 20,
+                  fontSize: '0.6rem',
+                  fontWeight: 700,
+                  fontFamily: 'monospace',
+                  color: showBB ? '#00bcd4' : '#555',
+                  borderColor: showBB ? '#00bcd4' : '#333',
+                  bgcolor: showBB ? 'rgba(0,188,212,0.1)' : 'transparent',
+                  '&:hover': { bgcolor: 'rgba(0,188,212,0.15)' },
+                }}
+                variant="outlined"
+              />
+            </MuiTooltip>
           )}
           {showBB && chartData.length >= 20 && (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>

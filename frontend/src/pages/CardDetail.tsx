@@ -5,7 +5,7 @@ import {
   Button, Dialog, DialogTitle, DialogContent, DialogActions, TextField,
   Menu, MenuItem, CardMedia, Card as MuiCard, CardContent, CardActionArea,
   Collapse, List, ListItemButton, ListItemAvatar, Avatar, ListItemText,
-  InputAdornment, CircularProgress,
+  InputAdornment, CircularProgress, Snackbar,
 } from '@mui/material';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import BookmarkBorderIcon from '@mui/icons-material/BookmarkBorder';
@@ -17,6 +17,7 @@ import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
 import SearchIcon from '@mui/icons-material/Search';
+import ShareIcon from '@mui/icons-material/Share';
 import { api, Card, PricePoint, SaleRecord, Analysis, SimilarCard } from '../services/api';
 import PriceChart from '../components/PriceChart';
 import SalesChart from '../components/SalesChart';
@@ -50,6 +51,7 @@ export default function CardDetail() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [isWatchlisted, setIsWatchlisted] = useState(false);
+  const [shareSnackbar, setShareSnackbar] = useState(false);
 
   // Compare mode state
   const [compareDialogOpen, setCompareDialogOpen] = useState(false);
@@ -636,6 +638,23 @@ export default function CardDetail() {
                 }}
               >
                 {isWatchlisted ? 'Saved \u2713' : 'Save to Watchlist'}
+              </Button>
+              <Button
+                startIcon={<ShareIcon />}
+                onClick={() => {
+                  navigator.clipboard.writeText(window.location.href);
+                  setShareSnackbar(true);
+                }}
+                variant="outlined"
+                size="small"
+                sx={{
+                  color: '#4fc3f7', borderColor: '#4fc3f733',
+                  fontFamily: '"JetBrains Mono", monospace', fontSize: '0.75rem',
+                  textTransform: 'none',
+                  '&:hover': { borderColor: '#4fc3f7', bgcolor: 'rgba(79,195,247,0.08)' },
+                }}
+              >
+                Share Card
               </Button>
             </Stack>
 
@@ -1331,6 +1350,13 @@ export default function CardDetail() {
           </Box>
         )}
       </Paper>
+      <Snackbar
+        open={shareSnackbar}
+        autoHideDuration={3000}
+        onClose={() => setShareSnackbar(false)}
+        message="Link copied! Share on social media for a card preview with image"
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      />
     </Box>
   );
 }

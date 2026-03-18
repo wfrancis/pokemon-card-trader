@@ -1030,16 +1030,15 @@ export default function Screener() {
   const [totalPages, setTotalPages] = useState(1);
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [simpleMode, setSimpleMode] = useState<boolean>(() => {
-    // Clean old keys from previous versions
-    ['pkmn_screener_mode', 'pkmn_screener_mode_v2', 'pkmn_screener_mode_v3', 'pkmn_screener_mode_v4', 'pkmn_screener_mode_v5'].forEach(k => localStorage.removeItem(k));
-    const stored = localStorage.getItem('pkmn_screener_mode_v6');
-    // First visit: default to Simple. After that, remember choice.
+    // Use sessionStorage so each tab starts fresh (Simple default for newcomers)
+    // but remembers choice within the same tab session
+    const stored = sessionStorage.getItem('pkmn_screener_mode');
     return stored === null ? true : stored === 'simple';
   });
 
   const handleSimpleModeToggle = (checked: boolean) => {
     setSimpleMode(checked);
-    localStorage.setItem('pkmn_screener_mode_v6', checked ? 'simple' : 'advanced');
+    sessionStorage.setItem('pkmn_screener_mode', checked ? 'simple' : 'advanced');
   };
 
   // Filters
@@ -1057,7 +1056,7 @@ export default function Screener() {
   const [flipSortMode, setFlipSortMode] = useState<'profit' | 'roi' | 'spread'>('roi');
   // Set Analytics
   const [setAnalytics, setSetAnalytics] = useState<SetAnalytics[]>([]);
-  const [setAnalyticsOpen, setSetAnalyticsOpen] = useState(false);
+  const [setAnalyticsOpen, setSetAnalyticsOpen] = useState(true);
   // Ref mirrors flipFinderActive to avoid stale closures in fetchCards
   const flipFinderRef = useRef(false);
 
@@ -1159,6 +1158,24 @@ export default function Screener() {
   useEffect(() => {
     return () => { if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current); };
   }, []);
+
+  const handleCsvExport = () => {
+    const headers = ['Name', 'Set', 'Price', 'Investment Score', 'Liquidity', 'Appreciation', 'Regime', 'Est Profit', 'ROI%', 'Velocity'];
+    const rows = cards.map(c => [
+      `"${c.name}"`, `"${c.set_name}"`, c.current_price?.toFixed(2) ?? '',
+      c.investment_score?.toFixed(1) ?? '', c.liquidity_score?.toFixed(1) ?? '',
+      c.appreciation_score?.toFixed(1) ?? '', c.regime ?? '',
+      c.est_profit?.toFixed(2) ?? '',
+      c.est_profit != null && c.current_price > 0 ? ((c.est_profit / c.current_price) * 100).toFixed(1) : '',
+      c.sales_per_day?.toFixed(2) ?? '',
+    ]);
+    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url;
+    a.download = `screener_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+  };
 
   const handleTableSort = (col: string) => {
     if (sortBy === col) {
@@ -1616,31 +1633,20 @@ export default function Screener() {
             </Typography>
           )}
           {cards.length > 0 && (
-            <Tooltip title="Export current page as CSV">
-              <IconButton
-                size="small"
-                onClick={() => {
-                  const headers = ['Name', 'Set', 'Price', 'Investment Score', 'Liquidity', 'Appreciation', 'Regime', 'Est Profit', 'ROI%', 'Velocity'];
-                  const rows = cards.map(c => [
-                    `"${c.name}"`, `"${c.set_name}"`, c.current_price?.toFixed(2) ?? '',
-                    c.investment_score?.toFixed(1) ?? '', c.liquidity_score?.toFixed(1) ?? '',
-                    c.appreciation_score?.toFixed(1) ?? '', c.regime ?? '',
-                    c.est_profit?.toFixed(2) ?? '',
-                    c.est_profit != null && c.current_price > 0 ? ((c.est_profit / c.current_price) * 100).toFixed(1) : '',
-                    c.sales_per_day?.toFixed(2) ?? '',
-                  ]);
-                  const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-                  const blob = new Blob([csv], { type: 'text/csv' });
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement('a'); a.href = url;
-                  a.download = `screener_${new Date().toISOString().slice(0,10)}.csv`;
-                  a.click(); URL.revokeObjectURL(url);
-                }}
-                sx={{ color: '#666', '&:hover': { color: '#00ff41' } }}
-              >
-                <DownloadIcon sx={{ fontSize: 16 }} />
-              </IconButton>
-            </Tooltip>
+            <Button
+              variant="outlined"
+              startIcon={<DownloadIcon />}
+              onClick={handleCsvExport}
+              size="small"
+              sx={{
+                color: '#4fc3f7', borderColor: '#4fc3f733',
+                fontFamily: '"JetBrains Mono", monospace', fontSize: '0.7rem',
+                textTransform: 'none',
+                '&:hover': { borderColor: '#4fc3f7', bgcolor: 'rgba(79,195,247,0.08)' },
+              }}
+            >
+              Export CSV
+            </Button>
           )}
         </Box>
         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
