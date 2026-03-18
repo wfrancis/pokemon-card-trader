@@ -1139,14 +1139,14 @@ if os.path.isdir(FRONTEND_BUILD):
         # Inject OG meta tags for card detail pages
         if full_path.startswith("card/"):
             try:
-                card_id = full_path.split("/", 1)[1]
-                if card_id:
-                    card = db.query(Card).filter(Card.id == card_id).first()
-                    if card:
-                        og_html = _build_og_html(card)
-                        if og_html:
-                            return HTMLResponse(content=og_html)
-            except (IndexError, Exception):
+                card_id_str = full_path.split("/", 1)[1]
+                card_id = int(card_id_str)
+                card = db.query(Card).filter(Card.id == card_id).first()
+                if card:
+                    og_html = _build_og_html(card)
+                    if og_html:
+                        return HTMLResponse(content=og_html)
+            except (ValueError, IndexError, Exception):
                 pass
 
         file_path = os.path.join(FRONTEND_BUILD, full_path)
