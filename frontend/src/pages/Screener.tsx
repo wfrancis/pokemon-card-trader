@@ -914,9 +914,10 @@ export default function Screener() {
 
       // ROI% sort is client-side only — send est_profit to backend as proxy
       const needsClientSort = effectiveSortBy === 'roi';
+      const needsFullFetch = isFlip && flipSortMode === 'roi';
       const params: Record<string, string> = {
-        page: String(page),
-        page_size: '48',
+        page: needsFullFetch ? '1' : String(page),
+        page_size: needsFullFetch ? '200' : '48',
         sort_by: needsClientSort ? 'est_profit' : effectiveSortBy,
         sort_dir: effectiveSortDir,
         min_price: String(effectiveMinPrice),

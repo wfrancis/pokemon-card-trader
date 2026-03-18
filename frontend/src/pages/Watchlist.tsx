@@ -1089,7 +1089,7 @@ export default function Watchlist() {
           <BookmarkIcon sx={{ color: '#333', fontSize: 48, mb: 1 }} />
           <Typography sx={{ color: '#666', mb: 1 }}>Your watchlist is empty</Typography>
           <Typography sx={{ color: '#555', fontSize: '0.8rem' }}>
-            Visit a card's detail page and click the bookmark icon to add it here.
+            Visit a card's detail page and click the "SAVE TO WATCHLIST" button to add it here.
           </Typography>
         </Paper>
       ) : (
