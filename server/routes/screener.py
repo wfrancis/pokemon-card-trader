@@ -19,6 +19,7 @@ def screener(
     min_liquidity: int = Query(0, ge=0, le=100, description="Minimum liquidity score"),
     min_appreciation: float = Query(0, ge=0, le=100, description="Minimum appreciation score"),
     regime: str = Query(None, description="Filter by regime: markup, accumulation, distribution, markdown"),
+    exclude_regime: str = Query(None, description="Exclude cards with this regime (e.g., markdown to exclude downtrend)"),
     min_price: float = Query(10.0, ge=0, description="Minimum card price"),
     max_price: float = Query(None, ge=0, description="Maximum card price"),
     min_velocity: float = Query(0, ge=0, le=50, description="Minimum sales per day (30d avg)"),
@@ -34,7 +35,7 @@ def screener(
 ):
     """Get investment candidates — cards filtered by liquidity and appreciation metrics."""
     # Build cache key from all params
-    cache_key = f"screener:{q}:{min_liquidity}:{min_appreciation}:{regime}:{min_price}:{max_price}:{min_velocity}:{min_profit}:{sort_by}:{sort_dir}:{page}:{page_size}"
+    cache_key = f"screener:{q}:{min_liquidity}:{min_appreciation}:{regime}:{exclude_regime}:{min_price}:{max_price}:{min_velocity}:{min_profit}:{sort_by}:{sort_dir}:{page}:{page_size}"
     cached = cache_get(cache_key)
     if cached is not None:
         return cached
@@ -44,6 +45,7 @@ def screener(
         min_liquidity=min_liquidity,
         min_appreciation_score=min_appreciation,
         regime=regime,
+        exclude_regime=exclude_regime,
         min_price=min_price,
         max_price=max_price,
         min_velocity=min_velocity,

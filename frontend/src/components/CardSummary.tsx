@@ -40,13 +40,15 @@ export default function CardSummary({ card, sales, medianPrice, analysis }: Card
       parts.push(`${sales.length} sale${sales.length !== 1 ? 's' : ''} on record, but none in the last 30 days.`);
     }
 
-    // Sentence 3: trend (from SMA crossover)
-    if (analysis?.sma_30 != null && analysis?.sma_90 != null) {
-      if (analysis.sma_30 > analysis.sma_90) {
+    // Sentence 3: trend (from SMA crossover — require >5% difference to avoid misleading flat markets)
+    if (analysis?.sma_30 != null && analysis?.sma_90 != null && analysis.sma_90 > 0) {
+      const pctDiff = ((analysis.sma_30 - analysis.sma_90) / analysis.sma_90) * 100;
+      if (pctDiff >= 5) {
         parts.push('Prices have been trending up.');
-      } else {
+      } else if (pctDiff <= -5) {
         parts.push('Prices have been trending down.');
       }
+      // If within +/-5%, don't mention trend (sideways market)
     }
 
     // Sentence 4: actionable guidance

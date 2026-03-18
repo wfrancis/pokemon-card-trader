@@ -614,21 +614,6 @@ export default function CardDetail() {
               >
                 {isWatchlisted ? 'Saved \u2713' : 'Save to Watchlist'}
               </Button>
-              {card.tcgplayer_product_id && (
-                <Button
-                  variant="outlined"
-                  size="small"
-                  startIcon={<OpenInNewIcon sx={{ fontSize: 14 }} />}
-                  href={`https://www.tcgplayer.com/product/${card.tcgplayer_product_id}`}
-                  target="_blank"
-                  sx={{
-                    color: '#00e676', borderColor: '#00e67644', fontSize: '0.65rem', fontWeight: 700,
-                    '&:hover': { borderColor: '#00e676', bgcolor: '#00e67615' },
-                  }}
-                >
-                  Buy on TCGPlayer
-                </Button>
-              )}
             </Stack>
 
 
@@ -930,8 +915,11 @@ export default function CardDetail() {
               <SalesChart sales={sales} medianPrice={medianPrice} cardName={card.name} />
             ) : (
               <>
-                <Typography variant="h3" sx={{ mb: 1, color: '#00bcd4' }}>
+                <Typography variant="h3" sx={{ mb: 0.3, color: '#00bcd4' }}>
                   PRICE HISTORY
+                </Typography>
+                <Typography sx={{ color: '#555', fontSize: '0.6rem', fontFamily: 'monospace', mb: 1 }}>
+                  TCGPlayer listing price over time (may differ from actual sale prices shown in Sales tab)
                 </Typography>
                 <PriceChart
                   priceData={prices}

@@ -342,7 +342,7 @@ export default function CardExplorer() {
               // otherwise the freeSolo Enter triggers handleSearchChange via onInputChange
             }
           }}
-          renderOption={(props, option) => (
+          renderOption={({ key: _key, ...props }, option) => (
             <Box
               component="li"
               {...props}
@@ -353,6 +353,7 @@ export default function CardExplorer() {
                 gap: 1.5,
                 py: 0.75,
                 px: 1.5,
+                cursor: 'pointer',
               }}
             >
               {option.image_small ? (
