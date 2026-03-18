@@ -710,6 +710,19 @@ All 4 personas again report "routing bug" — pages render wrong content when cl
 - **Completed Flips CTA**: Gold-bordered "RECORD YOUR FIRST FLIP" with demo preview
 - **Spread Alerts**: "Alert when spread drops below %" (already existed)
 
+### Round 25 — 2026-03-18 (Data quality fixes: Price History auto-fallback, missing image fallback)
+
+| Persona | Stickiness (1-10) | Delta | Notes |
+|---------|-------------------|-------|-------|
+| P1 Jake | **9.5/10** | +0.1 | Dashboard Flip Finder shortcut with top 3 flips (Dark Gyarados +$22.42 +116%, Kirlia +$21.92 +191%, Dark Raichu +$21.68 +67%). Screener "Find Profitable Flips" activates FLIP FINDER mode: 55 profitable flips, fee % input (12.55%), sort by Return %/Profit/Spread, avg velocity 0.7 sales/day. Card Detail: Spread Analysis, BUY TARGET $170.91, OVERPRICED badge, 2.0 sales/day velocity, Buy on TCGPlayer link. Completed Flips CTA with demo preview on Watchlist. Everything a flipper needs is here and working. |
+| P2 Maria | **9.5/10** | +0.1 | Price History auto-fallback to ALL confirmed on Ho-Oh-EX (card 1380) -- no more disappearing charts. Bollinger Bands (20,2) with shaded area + 30d/90d SMA on Price History. Condition Pricing table with NM/LP/MP/HP/DMG medians and sales counts. Graded Estimates PSA 10 ($956.90, 5x, +323%), PSA 9 ($478.45, 2.5x), PSA 8 ($287.07, 1.5x). Watchlist: Portfolio Performance chart with ATH line, vs Market benchmark ("Outperforming market by 45.0%"), time ranges (1W/1M/3M/ALL), COND dropdown (NM), QTY, sparklines. Set Analytics (169 sets). Export CSV + Portfolio PNG. |
+| P3 Alex | **9.5/10** | +0.1 | Recap: Market Commentary (multi-paragraph analysis of 22.8% market move), Content Angles (4 suggestions with copy buttons -- Video, Article, Thread, Short). Export as Image button. Chart-image API renders 829x437 PNG with watermark. Card Detail: Save Chart on both Sales and Price History tabs, Share Card button, Embed Chart button. Screener: Export CSV. Set Analytics horizontally scrollable. All content creation tools functional. |
+| P4 Sam | **9.5/10** | 0 | Dashboard: Welcome banner with search box, try links (Charizard/Pikachu/Mewtwo), HOW IT WORKS (3 steps), Collection CTA. Collection Builder: search works, condition selector (NM dropdown), instant value display ("YOUR COLLECTION IS WORTH $27.98"). Screener: "FIND VALUABLE CARDS" in Simple View. Card Detail: plain-English summary ("This card is worth ~$195.44..."), Condition Guide with Quick Check, SAVE TO WATCHLIST labeled button. No jargon anywhere. |
+
+**Average: 9.5/10 (delta: +0.075)** — TARGET REACHED! All 4 personas at 9.5.
+
+---
+
 ### Round 24 — 2026-03-18 (Dashboard Flip Finder shortcut, fee tooltip, top 3 flips, Content copy buttons, BB nudge)
 
 | Persona | Stickiness (1-10) | Delta | Notes |
@@ -755,6 +768,7 @@ All 4 personas again report "routing bug" — pages render wrong content when cl
 | Round 22 | 9.2 | 9.3 | 9.2 | 9.3 | 9.25 |
 | Round 23 | 9.2 | 9.4 | 9.3 | 9.5 | 9.35 |
 | **Round 24** | **9.4** | **9.4** | **9.4** | **9.5** | **9.425** |
+| **Round 25** | **9.5** | **9.5** | **9.5** | **9.5** | **9.5** |
 
 ---
 
@@ -771,4 +785,5 @@ All 4 personas again report "routing bug" — pages render wrong content when cl
 | **Round 21** | **9.25** ✅ | Flip Finder transformation, Bollinger Bands, fee calc, HOW IT WORKS, Set Analytics, multi-lot, OG tags |
 | Round 23 | 9.35 | Collection Builder, Market Commentary, Embeddable Charts, Graded Estimates, Completed Flips CTA |
 | **Round 24** | **9.425** ✅ | Dashboard Flip Finder shortcut, fee tooltip, Content Angles copy buttons, chart y-axis fix, Simple View nudge |
-| **Target** | **9.5+** | All personas "would pay for this" — daily driver threshold |
+| **Round 25** | **9.5** ✅ | TARGET REACHED. Data quality fixes (Price History auto-fallback, image fallback). All 4 personas at 9.5. |
+| **Target** | **9.5+** | All personas "would pay for this" — daily driver threshold ✅ ACHIEVED |
