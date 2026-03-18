@@ -204,7 +204,7 @@ export default function Dashboard() {
               </Box>
               <Box sx={{ display: 'flex', gap: 3, mt: 1 }}>
                 <Box>
-                  <Tooltip title="Total value of all cards we track, added together" arrow><Typography sx={{ color: '#555', fontSize: '0.55rem', textTransform: 'uppercase', fontFamily: '"JetBrains Mono", monospace', cursor: 'help', borderBottom: '1px dotted #333' }}>Catalog Value</Typography></Tooltip>
+                  <Tooltip title="Total value of all 6,600+ cards we track added together" arrow><Typography sx={{ color: '#555', fontSize: '0.55rem', textTransform: 'uppercase', fontFamily: '"JetBrains Mono", monospace', cursor: 'help', borderBottom: '1px dotted #333' }}>Catalog Value</Typography></Tooltip>
                   <Typography sx={{ color: '#00bcd4', fontWeight: 700, fontFamily: '"JetBrains Mono", monospace', fontSize: '1rem' }}>
                     ${index?.total_market_cap ? (index.total_market_cap > 1000 ? `${(index.total_market_cap / 1000).toFixed(1)}K` : index.total_market_cap.toFixed(0)) : '—'}
                   </Typography>
@@ -255,11 +255,11 @@ export default function Dashboard() {
                   color: '#ff9800', textTransform: 'uppercase', letterSpacing: 1, fontWeight: 700,
                   cursor: 'help',
                 }}>
-                  Top Profit Picks
+                  Cards Worth Checking Out
                 </Typography>
               </Tooltip>
               <Typography sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: { xs: '0.5rem', sm: '0.55rem' }, color: '#666', ml: 0.5, display: { xs: 'none', sm: 'block' } }}>
-                Buy low, sell higher — profit shown after 12.55% fees
+                These cards are selling for more than their listing price — potential money-makers
               </Typography>
             </Box>
             <Link
@@ -314,24 +314,25 @@ export default function Dashboard() {
                       {profit !== null ? `+$${profit.toFixed(2)}` : '--'}
                     </Typography>
                     {roi !== null && (
-                      <Tooltip title="Return on Investment — profit as % of purchase price" arrow>
+                      <Tooltip title="How much profit you'd make as a percentage of what you paid" arrow>
                         <Box sx={{
                           px: 0.7, py: 0.1, borderRadius: '3px',
                           bgcolor: roi >= 0 ? 'rgba(0,255,65,0.12)' : 'rgba(255,23,68,0.12)',
                           border: `1px solid ${roi >= 0 ? 'rgba(0,255,65,0.25)' : 'rgba(255,23,68,0.25)'}`,
+                          cursor: 'help',
                         }}>
                           <Typography sx={{
                             fontFamily: '"JetBrains Mono", monospace', fontSize: '0.6rem', fontWeight: 700,
                             color: roi >= 0 ? '#00ff41' : '#ff1744',
                           }}>
-                            {roi >= 0 ? '+' : ''}{roi.toFixed(0)}% ROI
+                            {roi >= 0 ? '+' : ''}{roi.toFixed(0)}% Return
                           </Typography>
                         </Box>
                       </Tooltip>
                     )}
-                    <Tooltip title="Sales per day — how often this card sells" arrow>
+                    <Tooltip title="How often this card sells — higher means easier to resell" arrow>
                       <Typography sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.6rem', color: '#888', cursor: 'help', display: { xs: 'none', sm: 'block' } }}>
-                        {card.sales_per_day !== null ? `${card.sales_per_day.toFixed(1)}/day` : '--'}
+                        {card.sales_per_day !== null ? `Sells ${card.sales_per_day.toFixed(1)} times/day` : '--'}
                       </Typography>
                     </Tooltip>
                   </Box>

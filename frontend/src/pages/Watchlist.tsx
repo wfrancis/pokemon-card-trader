@@ -3,7 +3,8 @@ import {
   Box, Paper, Typography, Avatar, IconButton, TextField, Collapse,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
   InputAdornment, CircularProgress, Snackbar, ClickAwayListener, Button,
-  Dialog, DialogTitle, DialogContent, DialogActions,
+  Dialog, DialogTitle, DialogContent, DialogActions, Chip,
+  Tooltip as MuiTooltip,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import SellIcon from '@mui/icons-material/Sell';
@@ -14,6 +15,12 @@ import SearchIcon from '@mui/icons-material/Search';
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import DownloadIcon from '@mui/icons-material/Download';
+import CameraAltIcon from '@mui/icons-material/CameraAlt';
+import TrendingUpIcon from '@mui/icons-material/TrendingUp';
+import TrendingDownIcon from '@mui/icons-material/TrendingDown';
+import PieChartIcon from '@mui/icons-material/PieChart';
+import StorefrontIcon from '@mui/icons-material/Storefront';
+import html2canvas from 'html2canvas';
 import { useNavigate } from 'react-router-dom';
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis,
@@ -249,11 +256,13 @@ export default function Watchlist() {
     if (soldCards.length === 0) return null;
     const totalProfit = soldCards.reduce((s, c) => s + c.profit, 0);
     const totalTrades = soldCards.length;
+    const wins = soldCards.filter(c => c.profit >= 0).length;
+    const winRate = (wins / totalTrades) * 100;
     const avgRoi = soldCards.reduce((s, c) => {
       const cost = c.buyPrice * c.quantity;
       return s + (cost > 0 ? (c.profit / cost) * 100 : 0);
     }, 0) / totalTrades;
-    return { totalProfit, totalTrades, avgRoi };
+    return { totalProfit, totalTrades, avgRoi, winRate };
   }, [soldCards]);
 
   // Quick Add state
@@ -317,6 +326,9 @@ export default function Watchlist() {
   const [chartLoading, setChartLoading] = useState(false);
   const [cardPriceHistories, setCardPriceHistories] = useState<Map<number, PricePoint[]>>(new Map());
   const [marketIndexHistory, setMarketIndexHistory] = useState<{ week: string; avg: number }[]>([]);
+  const [chartRange, setChartRange] = useState<'1W' | '1M' | '3M' | 'ALL'>('ALL');
+  const [allChartData, setAllChartData] = useState<{ date: string; value: number }[]>([]);
+  const chartContainerRef = useRef<HTMLDivElement>(null);
 
   // Fetch price histories for all watchlist cards and build portfolio value over time
   useEffect(() => {
@@ -378,10 +390,10 @@ export default function Watchlist() {
           cardPriceMap[cardId] = dateMap;
         }
 
-        // Generate last 30 days
+        // Generate ALL available days (up to 180 days back to capture full history)
         const dates: string[] = [];
         const now = new Date();
-        for (let i = 29; i >= 0; i--) {
+        for (let i = 179; i >= 0; i--) {
           const d = new Date(now);
           d.setDate(d.getDate() - i);
           dates.push(d.toISOString().slice(0, 10));
@@ -429,7 +441,11 @@ export default function Watchlist() {
           return { date, value: parseFloat(total.toFixed(2)) };
         });
 
-        setChartData(series);
+        // Filter out leading dates where all cards have value 0
+        const firstNonZeroIdx = series.findIndex(d => d.value > 0);
+        const trimmed = firstNonZeroIdx >= 0 ? series.slice(firstNonZeroIdx) : series;
+        setAllChartData(trimmed);
+        setChartData(trimmed);
       } catch {
         // ignore
       } finally {
@@ -438,6 +454,26 @@ export default function Watchlist() {
     })();
     return () => { cancelled = true; };
   }, [rows]);
+
+  // Filter chart data by selected time range
+  useEffect(() => {
+    if (allChartData.length === 0) return;
+    const now = new Date();
+    let cutoff: Date;
+    switch (chartRange) {
+      case '1W':
+        cutoff = new Date(now); cutoff.setDate(cutoff.getDate() - 7); break;
+      case '1M':
+        cutoff = new Date(now); cutoff.setMonth(cutoff.getMonth() - 1); break;
+      case '3M':
+        cutoff = new Date(now); cutoff.setMonth(cutoff.getMonth() - 3); break;
+      default:
+        setChartData(allChartData); return;
+    }
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    const filtered = allChartData.filter(d => d.date >= cutoffStr);
+    setChartData(filtered.length > 0 ? filtered : allChartData);
+  }, [chartRange, allChartData]);
 
   // Fetch market index history for benchmark overlay
   useEffect(() => {
@@ -522,6 +558,95 @@ export default function Watchlist() {
     if (first === 0) return null;
     return { amount: last - first, pct: ((last - first) / first) * 100 };
   }, [chartData]);
+
+  // Multi-timeframe portfolio performance
+  const timeframeSummaries = useMemo(() => {
+    if (allChartData.length < 2) return null;
+    const latest = allChartData[allChartData.length - 1].value;
+    const now = new Date();
+
+    const getChangeForDays = (days: number) => {
+      const cutoff = new Date(now);
+      cutoff.setDate(cutoff.getDate() - days);
+      const cutoffStr = cutoff.toISOString().slice(0, 10);
+      const dataInRange = allChartData.filter(d => d.date >= cutoffStr);
+      if (dataInRange.length < 1) return null;
+      const startVal = dataInRange[0].value;
+      if (startVal === 0) return null;
+      return { pct: ((latest - startVal) / startVal) * 100, amount: latest - startVal };
+    };
+
+    return {
+      week: getChangeForDays(7),
+      month: getChangeForDays(30),
+      allTime: allChartData[0].value > 0 ? {
+        pct: ((latest - allChartData[0].value) / allChartData[0].value) * 100,
+        amount: latest - allChartData[0].value,
+      } : null,
+    };
+  }, [allChartData]);
+
+  // High watermark
+  const highWatermark = useMemo(() => {
+    if (chartData.length === 0) return null;
+    return Math.max(...chartData.map(d => d.value));
+  }, [chartData]);
+
+  // Portfolio performance stats (best/worst/most concentrated)
+  const performanceStats = useMemo(() => {
+    if (rows.length === 0) return null;
+    const cardPerf = rows.map(r => {
+      const lots = getLotsForItem(r);
+      const qty = lots.length > 0 ? totalQtyFromLots(lots) : (r.quantity ?? 1);
+      const effectiveCostBasis = lots.length > 0 ? avgCostFromLots(lots) : r.costBasis;
+      const price = r.card?.current_price || 0;
+      const totalVal = price * qty;
+      const pnlPct = effectiveCostBasis != null && effectiveCostBasis > 0 ? ((price - effectiveCostBasis) / effectiveCostBasis) * 100 : null;
+      return { name: r.card?.name || 'Unknown', pnlPct, totalVal };
+    });
+
+    const withPnl = cardPerf.filter(c => c.pnlPct !== null) as { name: string; pnlPct: number; totalVal: number }[];
+    const best = withPnl.length > 0 ? withPnl.reduce((a, b) => a.pnlPct > b.pnlPct ? a : b) : null;
+    const worst = withPnl.length > 0 ? withPnl.reduce((a, b) => a.pnlPct < b.pnlPct ? a : b) : null;
+
+    const totalPortfolio = cardPerf.reduce((s, c) => s + c.totalVal, 0);
+    const mostConcentrated = totalPortfolio > 0
+      ? cardPerf.reduce((a, b) => a.totalVal > b.totalVal ? a : b)
+      : null;
+    const concentrationPct = mostConcentrated && totalPortfolio > 0
+      ? (mostConcentrated.totalVal / totalPortfolio) * 100
+      : 0;
+
+    return { best, worst, mostConcentrated, concentrationPct };
+  }, [rows]);
+
+  // Portfolio chart PNG export
+  const exportChartPNG = useCallback(async () => {
+    if (!chartContainerRef.current) return;
+    try {
+      const canvas = await html2canvas(chartContainerRef.current, {
+        backgroundColor: '#0a0a1a',
+        scale: 2,
+      });
+      // Add watermark
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.font = '14px "JetBrains Mono", monospace';
+        ctx.fillStyle = 'rgba(255, 215, 0, 0.4)';
+        ctx.textAlign = 'right';
+        ctx.fillText('PKMN TRADER \u2022 pokemon-card-trader.fly.dev', canvas.width - 20, canvas.height - 12);
+      }
+      const link = document.createElement('a');
+      link.download = `pkmn_portfolio_${new Date().toISOString().slice(0, 10)}.png`;
+      link.href = canvas.toDataURL('image/png');
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setSnackMsg('Portfolio chart exported as PNG');
+    } catch {
+      setSnackMsg('Failed to export chart');
+    }
+  }, []);
 
   const exportCSV = useCallback(() => {
     const header = ['Card Name', 'Set', 'Price', 'Purchase Price', 'Quantity', 'Total Value', 'Total Cost', 'Profit/Loss', '7d Change %'];
@@ -797,34 +922,86 @@ export default function Watchlist() {
             sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 2, py: 1, cursor: 'pointer', '&:hover': { bgcolor: '#1a1a2e' } }}
             onClick={() => setChartOpen(!chartOpen)}
           >
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
               <Typography sx={{ color: '#ffd700', fontFamily: 'monospace', fontSize: '0.75rem', fontWeight: 700, letterSpacing: 1 }}>
                 PORTFOLIO PERFORMANCE
               </Typography>
-              {monthChange && (
-                <Typography sx={{
-                  fontFamily: '"JetBrains Mono", monospace', fontSize: '0.75rem', fontWeight: 700,
-                  color: monthChange.amount >= 0 ? '#00ff41' : '#ff1744',
-                }}>
-                  Portfolio {monthChange.amount >= 0 ? 'up' : 'down'} {Math.abs(monthChange.pct).toFixed(1)}% this month
-                </Typography>
+              {timeframeSummaries && (
+                <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
+                  {timeframeSummaries.week && (
+                    <Typography sx={{
+                      fontFamily: '"JetBrains Mono", monospace', fontSize: '0.65rem', fontWeight: 700,
+                      color: timeframeSummaries.week.pct >= 0 ? '#00ff41' : '#ff1744',
+                    }}>
+                      1W: {timeframeSummaries.week.pct >= 0 ? '+' : ''}{timeframeSummaries.week.pct.toFixed(1)}%
+                    </Typography>
+                  )}
+                  {timeframeSummaries.month && (
+                    <Typography sx={{
+                      fontFamily: '"JetBrains Mono", monospace', fontSize: '0.65rem', fontWeight: 700,
+                      color: timeframeSummaries.month.pct >= 0 ? '#00ff41' : '#ff1744',
+                    }}>
+                      1M: {timeframeSummaries.month.pct >= 0 ? '+' : ''}{timeframeSummaries.month.pct.toFixed(1)}%
+                    </Typography>
+                  )}
+                  {timeframeSummaries.allTime && (
+                    <Typography sx={{
+                      fontFamily: '"JetBrains Mono", monospace', fontSize: '0.65rem', fontWeight: 700,
+                      color: timeframeSummaries.allTime.pct >= 0 ? '#00ff41' : '#ff1744',
+                    }}>
+                      ALL: {timeframeSummaries.allTime.pct >= 0 ? '+' : ''}{timeframeSummaries.allTime.pct.toFixed(1)}%
+                    </Typography>
+                  )}
+                </Box>
               )}
               {vsMarket && (
                 <Typography sx={{
-                  fontFamily: '"JetBrains Mono", monospace', fontSize: '0.7rem', fontWeight: 600,
+                  fontFamily: '"JetBrains Mono", monospace', fontSize: '0.65rem', fontWeight: 600,
                   color: vsMarket.diff >= 0 ? '#00ff41' : '#ff1744',
-                  ml: 1,
                 }}>
-                  vs Market: {vsMarket.diff >= 0 ? '+' : ''}{vsMarket.diff.toFixed(1)}%
+                  vs Mkt: {vsMarket.diff >= 0 ? '+' : ''}{vsMarket.diff.toFixed(1)}%
                 </Typography>
               )}
             </Box>
-            <IconButton size="small" sx={{ color: '#666' }}>
-              {chartOpen ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-            </IconButton>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <MuiTooltip title="Export chart as PNG">
+                <IconButton size="small" onClick={(e) => { e.stopPropagation(); exportChartPNG(); }} sx={{ color: '#4fc3f7', '&:hover': { color: '#81d4fa' } }}>
+                  <CameraAltIcon sx={{ fontSize: 16 }} />
+                </IconButton>
+              </MuiTooltip>
+              <IconButton size="small" sx={{ color: '#666' }}>
+                {chartOpen ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+              </IconButton>
+            </Box>
           </Box>
           <Collapse in={chartOpen}>
-            <Box sx={{ px: 2, pb: 2 }}>
+            <Box ref={chartContainerRef} sx={{ px: 2, pb: 2 }}>
+              {/* Time Range Buttons */}
+              <Box sx={{ display: 'flex', gap: 0.5, mb: 1.5, justifyContent: 'flex-end' }}>
+                {(['1W', '1M', '3M', 'ALL'] as const).map(range => (
+                  <Button
+                    key={range}
+                    size="small"
+                    variant={chartRange === range ? 'contained' : 'outlined'}
+                    onClick={() => setChartRange(range)}
+                    sx={{
+                      minWidth: 36,
+                      px: 1,
+                      py: 0.25,
+                      fontFamily: '"JetBrains Mono", monospace',
+                      fontSize: '0.65rem',
+                      fontWeight: 700,
+                      textTransform: 'none',
+                      ...(chartRange === range
+                        ? { bgcolor: '#ffd700', color: '#000', '&:hover': { bgcolor: '#ffea00' } }
+                        : { color: '#666', borderColor: '#333', '&:hover': { borderColor: '#555', bgcolor: 'rgba(255,215,0,0.05)' } }
+                      ),
+                    }}
+                  >
+                    {range}
+                  </Button>
+                ))}
+              </Box>
               {/* Summary stats row */}
               <Box sx={{ display: 'flex', gap: 3, mb: 1.5, flexWrap: 'wrap' }}>
                 <Box>
@@ -902,6 +1079,15 @@ export default function Watchlist() {
                         label={{ value: `Break-even $${totalCost.toFixed(0)}`, fill: '#ffb74d', fontSize: 10, fontFamily: 'monospace', position: 'right' }}
                       />
                     )}
+                    {highWatermark != null && highWatermark > 0 && (
+                      <ReferenceLine
+                        y={highWatermark}
+                        stroke="#ba68c8"
+                        strokeDasharray="4 4"
+                        strokeWidth={1}
+                        label={{ value: `ATH $${highWatermark.toFixed(0)}`, fill: '#ba68c8', fontSize: 9, fontFamily: 'monospace', position: 'left' }}
+                      />
+                    )}
                     <Area
                       type="monotone"
                       dataKey="value"
@@ -919,15 +1105,21 @@ export default function Watchlist() {
                   No price history available
                 </Typography>
               )}
-              {totalCost > 0 && chartData.length > 0 && (
-                <Box sx={{ display: 'flex', gap: 2, mt: 0.5, justifyContent: 'center' }}>
+              {chartData.length > 0 && (
+                <Box sx={{ display: 'flex', gap: 2, mt: 0.5, justifyContent: 'center', flexWrap: 'wrap' }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                     <Box sx={{ width: 16, height: 2, bgcolor: '#00ff41', borderRadius: 1 }} />
                     <Typography sx={{ color: '#888', fontFamily: 'monospace', fontSize: '0.6rem' }}>Portfolio Value</Typography>
                   </Box>
+                  {totalCost > 0 && (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                      <Box sx={{ width: 16, height: 0, borderTop: '2px dashed #ffb74d', borderRadius: 1 }} />
+                      <Typography sx={{ color: '#888', fontFamily: 'monospace', fontSize: '0.6rem' }}>Break-even</Typography>
+                    </Box>
+                  )}
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                    <Box sx={{ width: 16, height: 0, borderTop: '2px dashed #ffb74d', borderRadius: 1 }} />
-                    <Typography sx={{ color: '#888', fontFamily: 'monospace', fontSize: '0.6rem' }}>Break-even (Cost Basis)</Typography>
+                    <Box sx={{ width: 16, height: 0, borderTop: '2px dashed #ba68c8', borderRadius: 1 }} />
+                    <Typography sx={{ color: '#888', fontFamily: 'monospace', fontSize: '0.6rem' }}>All-Time High</Typography>
                   </Box>
                 </Box>
               )}
@@ -1082,6 +1274,186 @@ export default function Watchlist() {
         </Paper>
       )}
 
+      {/* Portfolio Performance Stats */}
+      {performanceStats && rows.length > 0 && (performanceStats.best || performanceStats.mostConcentrated) && (
+        <Box sx={{ display: 'flex', gap: { xs: 1, sm: 2 }, mb: 2, flexWrap: 'wrap' }}>
+          {performanceStats.best && (
+            <Paper sx={{ p: 1.5, flex: '1 1 auto', minWidth: { xs: '45%', sm: 150 }, display: 'flex', alignItems: 'center', gap: 1 }}>
+              <TrendingUpIcon sx={{ color: '#00ff41', fontSize: 20 }} />
+              <Box>
+                <Typography sx={{ color: '#555', fontSize: '0.55rem', textTransform: 'uppercase', fontFamily: 'monospace' }}>Best Performer</Typography>
+                <Typography sx={{ color: '#00ff41', fontWeight: 700, fontFamily: '"JetBrains Mono", monospace', fontSize: '0.8rem' }}>
+                  {performanceStats.best.name.length > 18 ? performanceStats.best.name.slice(0, 17) + '\u2026' : performanceStats.best.name}{' '}
+                  +{performanceStats.best.pnlPct.toFixed(1)}%
+                </Typography>
+              </Box>
+            </Paper>
+          )}
+          {performanceStats.worst && (
+            <Paper sx={{ p: 1.5, flex: '1 1 auto', minWidth: { xs: '45%', sm: 150 }, display: 'flex', alignItems: 'center', gap: 1 }}>
+              <TrendingDownIcon sx={{ color: '#ff1744', fontSize: 20 }} />
+              <Box>
+                <Typography sx={{ color: '#555', fontSize: '0.55rem', textTransform: 'uppercase', fontFamily: 'monospace' }}>Worst Performer</Typography>
+                <Typography sx={{ color: '#ff1744', fontWeight: 700, fontFamily: '"JetBrains Mono", monospace', fontSize: '0.8rem' }}>
+                  {performanceStats.worst.name.length > 18 ? performanceStats.worst.name.slice(0, 17) + '\u2026' : performanceStats.worst.name}{' '}
+                  {performanceStats.worst.pnlPct.toFixed(1)}%
+                </Typography>
+              </Box>
+            </Paper>
+          )}
+          {performanceStats.mostConcentrated && (
+            <Paper sx={{ p: 1.5, flex: '1 1 auto', minWidth: { xs: '45%', sm: 150 }, display: 'flex', alignItems: 'center', gap: 1 }}>
+              <PieChartIcon sx={{ color: '#4fc3f7', fontSize: 20 }} />
+              <Box>
+                <Typography sx={{ color: '#555', fontSize: '0.55rem', textTransform: 'uppercase', fontFamily: 'monospace' }}>Most Concentrated</Typography>
+                <Typography sx={{ color: '#4fc3f7', fontWeight: 700, fontFamily: '"JetBrains Mono", monospace', fontSize: '0.8rem' }}>
+                  {performanceStats.mostConcentrated.name.length > 18 ? performanceStats.mostConcentrated.name.slice(0, 17) + '\u2026' : performanceStats.mostConcentrated.name}{' '}
+                  {performanceStats.concentrationPct.toFixed(0)}%
+                </Typography>
+              </Box>
+            </Paper>
+          )}
+        </Box>
+      )}
+
+      {/* Completed Flips Section -- moved above card table for visibility */}
+      <Box sx={{ mb: 2 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+          <SellIcon sx={{ color: '#ffd700', fontSize: 20 }} />
+          <Typography sx={{ color: '#ffd700', fontSize: '1rem', fontFamily: '"JetBrains Mono", monospace', fontWeight: 700, letterSpacing: 1 }}>
+            COMPLETED FLIPS
+          </Typography>
+          <Typography sx={{ color: '#666', ml: 'auto', fontFamily: 'monospace', fontSize: '0.7rem' }}>
+            {soldCards.length} trade{soldCards.length !== 1 ? 's' : ''}
+          </Typography>
+        </Box>
+        {soldCards.length === 0 && (
+          <Paper sx={{ p: 3, bgcolor: '#0a0a0a', border: '1px solid #1a1a1a', textAlign: 'center' }}>
+            <StorefrontIcon sx={{ color: '#333', fontSize: 40, mb: 1 }} />
+            <Typography sx={{ color: '#888', fontSize: '0.85rem', fontFamily: 'monospace', mb: 0.5 }}>
+              No completed trades yet
+            </Typography>
+            <Typography sx={{ color: '#555', fontSize: '0.7rem', fontFamily: 'monospace' }}>
+              Use the gold sell button on any card to record a sale and track your realized P&L, win rate, and ROI.
+            </Typography>
+          </Paper>
+        )}
+
+        {soldCards.length > 0 && (<>
+          {/* Summary Stats with Win Rate */}
+          {soldSummary && (
+            <Box sx={{ display: 'flex', gap: { xs: 1, sm: 2 }, mb: 2, flexWrap: 'wrap' }}>
+              <Paper sx={{ p: 1.5, flex: '1 1 auto', minWidth: { xs: '45%', sm: 100 }, textAlign: 'center' }}>
+                <Typography sx={{ color: '#666', fontSize: '0.6rem', textTransform: 'uppercase', fontFamily: 'monospace' }}>Realized Profit</Typography>
+                <Typography sx={{
+                  fontWeight: 700, fontFamily: '"JetBrains Mono", monospace', fontSize: '1.1rem',
+                  color: soldSummary.totalProfit >= 0 ? '#00ff41' : '#ff1744',
+                }}>
+                  {soldSummary.totalProfit >= 0 ? '+' : ''}${soldSummary.totalProfit.toFixed(2)}
+                </Typography>
+              </Paper>
+              <Paper sx={{ p: 1.5, flex: '1 1 auto', minWidth: { xs: '45%', sm: 100 }, textAlign: 'center' }}>
+                <Typography sx={{ color: '#666', fontSize: '0.6rem', textTransform: 'uppercase', fontFamily: 'monospace' }}>Win Rate</Typography>
+                <Typography sx={{
+                  fontWeight: 700, fontFamily: '"JetBrains Mono", monospace', fontSize: '1.1rem',
+                  color: soldSummary.winRate >= 50 ? '#00ff41' : '#ff1744',
+                }}>
+                  {soldSummary.winRate.toFixed(0)}%
+                </Typography>
+              </Paper>
+              <Paper sx={{ p: 1.5, flex: '1 1 auto', minWidth: { xs: '45%', sm: 100 }, textAlign: 'center' }}>
+                <Typography sx={{ color: '#666', fontSize: '0.6rem', textTransform: 'uppercase', fontFamily: 'monospace' }}>Avg ROI</Typography>
+                <Typography sx={{
+                  fontWeight: 700, fontFamily: '"JetBrains Mono", monospace', fontSize: '1.1rem',
+                  color: soldSummary.avgRoi >= 0 ? '#00ff41' : '#ff1744',
+                }}>
+                  {soldSummary.avgRoi >= 0 ? '+' : ''}{soldSummary.avgRoi.toFixed(1)}%
+                </Typography>
+              </Paper>
+              <Paper sx={{ p: 1.5, flex: '1 1 auto', minWidth: { xs: '45%', sm: 100 }, textAlign: 'center' }}>
+                <Typography sx={{ color: '#666', fontSize: '0.6rem', textTransform: 'uppercase', fontFamily: 'monospace' }}>Total Trades</Typography>
+                <Typography sx={{ color: '#4fc3f7', fontWeight: 700, fontFamily: '"JetBrains Mono", monospace', fontSize: '1.1rem' }}>
+                  {soldSummary.totalTrades}
+                </Typography>
+              </Paper>
+            </Box>
+          )}
+
+          <TableContainer component={Paper} sx={{ overflowX: 'auto', mb: 1 }}>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}>CARD</TableCell>
+                  <TableCell align="right" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}>QTY</TableCell>
+                  <TableCell align="right" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}>BUY</TableCell>
+                  <TableCell align="right" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}>SELL</TableCell>
+                  <TableCell align="right" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}>FEES</TableCell>
+                  <TableCell align="right" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}>NET PROFIT</TableCell>
+                  <TableCell align="right" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}>ROI%</TableCell>
+                  <TableCell align="right" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}>DATE</TableCell>
+                  <TableCell align="center" sx={{ width: 40 }}></TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {soldCards.map((sc, idx) => {
+                  const fees = sc.sellPrice * sc.quantity * 0.1255;
+                  const cost = sc.buyPrice * sc.quantity;
+                  const roi = cost > 0 ? (sc.profit / cost) * 100 : 0;
+                  return (
+                    <TableRow key={idx} sx={{ '&:hover': { bgcolor: '#1a1a2e' } }}>
+                      <TableCell>
+                        <Box>
+                          <Typography sx={{ fontWeight: 600, fontSize: '0.8rem' }}>{sc.cardName}</Typography>
+                          <Typography sx={{ color: '#666', fontSize: '0.6rem' }}>{sc.setName}</Typography>
+                        </Box>
+                      </TableCell>
+                      <TableCell align="right">
+                        <Typography sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.8rem', color: '#ccc' }}>{sc.quantity}</Typography>
+                      </TableCell>
+                      <TableCell align="right">
+                        <Typography sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.8rem', color: '#888' }}>${sc.buyPrice.toFixed(2)}</Typography>
+                      </TableCell>
+                      <TableCell align="right">
+                        <Typography sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.8rem', color: '#ccc' }}>${sc.sellPrice.toFixed(2)}</Typography>
+                      </TableCell>
+                      <TableCell align="right">
+                        <Typography sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.8rem', color: '#ff1744' }}>-${fees.toFixed(2)}</Typography>
+                      </TableCell>
+                      <TableCell align="right">
+                        <Typography sx={{
+                          fontFamily: '"JetBrains Mono", monospace', fontWeight: 700, fontSize: '0.85rem',
+                          color: sc.profit >= 0 ? '#00ff41' : '#ff1744',
+                        }}>
+                          {sc.profit >= 0 ? '+' : ''}${sc.profit.toFixed(2)}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="right">
+                        <Typography sx={{
+                          fontFamily: '"JetBrains Mono", monospace', fontWeight: 700, fontSize: '0.85rem',
+                          color: roi >= 0 ? '#00ff41' : '#ff1744',
+                        }}>
+                          {roi >= 0 ? '+' : ''}{roi.toFixed(1)}%
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="right">
+                        <Typography sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.75rem', color: '#888' }}>
+                          {sc.sellDate}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="center">
+                        <IconButton size="small" onClick={() => removeSoldCard(idx)} sx={{ color: '#555', '&:hover': { color: '#ff1744' } }}>
+                          <DeleteIcon sx={{ fontSize: 14 }} />
+                        </IconButton>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </>)}
+      </Box>
+
       {loading ? (
         <Typography sx={{ color: '#666', textAlign: 'center', py: 4 }}>Loading watchlist...</Typography>
       ) : rows.length === 0 ? (
@@ -1105,8 +1477,8 @@ export default function Watchlist() {
                 <TableCell align="right" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}><GlossaryTooltip term="cost_basis">PAID</GlossaryTooltip></TableCell>
                 <TableCell align="right" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}><GlossaryTooltip term="pnl">Profit/Loss</GlossaryTooltip></TableCell>
                 <TableCell align="right" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}><GlossaryTooltip term="pnl">Profit/Loss %</GlossaryTooltip></TableCell>
-                <TableCell align="right" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}>ALERT ▲</TableCell>
-                <TableCell align="right" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}>ALERT ▼</TableCell>
+                <TableCell align="right" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}>ALERT &#9650;</TableCell>
+                <TableCell align="right" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}>ALERT &#9660;</TableCell>
                 <TableCell align="center" sx={{ width: 64 }}></TableCell>
               </TableRow>
             </TableHead>
@@ -1136,16 +1508,31 @@ export default function Watchlist() {
                         </Box>
                       </Box>
                     </TableCell>
-                    <TableCell align="right" onClick={e => { e.stopPropagation(); openLotDialog(row); }} sx={{ cursor: 'pointer', '&:hover': { bgcolor: 'rgba(255, 215, 0, 0.05)' } }}>
-                      <Typography sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.85rem', color: '#ccc' }}>
-                        {qty}
-                      </Typography>
-                      {lots.length > 1 && (
-                        <Typography sx={{ color: '#4fc3f7', fontSize: '0.55rem', fontFamily: 'monospace' }}>
-                          {lots.length} lots
-                        </Typography>
-                      )}
-                    </TableCell>
+                    <MuiTooltip title="Click to manage purchase lots" arrow placement="top">
+                      <TableCell align="right" onClick={e => { e.stopPropagation(); openLotDialog(row); }} sx={{ cursor: 'pointer', '&:hover': { bgcolor: 'rgba(255, 215, 0, 0.05)' } }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5 }}>
+                          <Typography sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.85rem', color: '#ccc' }}>
+                            {qty}
+                          </Typography>
+                          {lots.length > 0 && (
+                            <Chip
+                              label={`${lots.length} lot${lots.length !== 1 ? 's' : ''}`}
+                              size="small"
+                              sx={{
+                                height: 16,
+                                fontSize: '0.55rem',
+                                fontFamily: 'monospace',
+                                bgcolor: 'rgba(79, 195, 247, 0.15)',
+                                color: '#4fc3f7',
+                                border: '1px solid rgba(79, 195, 247, 0.3)',
+                                cursor: 'pointer',
+                                '& .MuiChip-label': { px: 0.5 },
+                              }}
+                            />
+                          )}
+                        </Box>
+                      </TableCell>
+                    </MuiTooltip>
                     <TableCell align="right">
                       <Typography sx={{ color: '#00ff41', fontFamily: '"JetBrains Mono", monospace', fontWeight: 700, fontSize: '0.85rem' }}>
                         ${totalRowValue.toFixed(2)}
@@ -1184,7 +1571,7 @@ export default function Watchlist() {
                                 </LineChart>
                               </ResponsiveContainer>
                             ) : (
-                              <Typography sx={{ color: '#555', fontSize: '0.6rem' }}>—</Typography>
+                              <Typography sx={{ color: '#555', fontSize: '0.6rem' }}>--</Typography>
                             )}
                           </TableCell>
                           <TableCell align="right">
@@ -1192,17 +1579,32 @@ export default function Watchlist() {
                               fontFamily: '"JetBrains Mono", monospace', fontWeight: 700, fontSize: '0.85rem',
                               color: change7d != null ? (change7d >= 0 ? '#00ff41' : '#ff1744') : '#555',
                             }}>
-                              {change7d != null ? `${change7d >= 0 ? '+' : ''}${change7d.toFixed(1)}%` : '—'}
+                              {change7d != null ? `${change7d >= 0 ? '+' : ''}${change7d.toFixed(1)}%` : '--'}
                             </Typography>
                           </TableCell>
                         </>
                       );
                     })()}
-                    <TableCell align="right" onClick={e => { e.stopPropagation(); openLotDialog(row); }} sx={{ cursor: 'pointer', '&:hover': { bgcolor: 'rgba(255, 215, 0, 0.05)' } }}>
-                      <Typography sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.85rem', color: effectiveCostBasis != null ? '#888' : '#555' }}>
-                        {effectiveCostBasis != null ? `$${effectiveCostBasis.toFixed(2)}` : 'Set cost'}
-                      </Typography>
-                    </TableCell>
+                    <MuiTooltip title="Click to manage purchase lots" arrow placement="top">
+                      <TableCell align="right" onClick={e => { e.stopPropagation(); openLotDialog(row); }} sx={{ cursor: 'pointer', '&:hover': { bgcolor: 'rgba(255, 215, 0, 0.05)' } }}>
+                        {effectiveCostBasis != null ? (
+                          <Box>
+                            <Typography sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.85rem', color: '#888' }}>
+                              ${effectiveCostBasis.toFixed(2)}
+                            </Typography>
+                            {lots.length > 1 && (
+                              <Typography sx={{ color: '#666', fontSize: '0.55rem', fontFamily: 'monospace' }}>
+                                avg ({lots.length} lots)
+                              </Typography>
+                            )}
+                          </Box>
+                        ) : (
+                          <Typography sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.85rem', color: '#555' }}>
+                            Set cost
+                          </Typography>
+                        )}
+                      </TableCell>
+                    </MuiTooltip>
                     <TableCell align="right">
                       <Typography sx={{
                         fontFamily: '"JetBrains Mono", monospace', fontWeight: 700, fontSize: '0.85rem',
@@ -1518,131 +1920,6 @@ export default function Watchlist() {
           </Button>
         </DialogActions>
       </Dialog>
-
-      {/* Completed Flips Section — always visible */}
-      <Box sx={{ mt: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
-          <SellIcon sx={{ color: '#ffd700', fontSize: 20 }} />
-          <Typography sx={{ color: '#ffd700', fontSize: '1rem', fontFamily: '"JetBrains Mono", monospace', fontWeight: 700, letterSpacing: 1 }}>
-            COMPLETED FLIPS
-          </Typography>
-          <Typography sx={{ color: '#666', ml: 'auto', fontFamily: 'monospace', fontSize: '0.7rem' }}>
-            {soldCards.length} trade{soldCards.length !== 1 ? 's' : ''}
-          </Typography>
-        </Box>
-        {soldCards.length === 0 && (
-          <Paper sx={{ p: 2, bgcolor: '#0a0a0a', border: '1px solid #1a1a1a', textAlign: 'center' }}>
-            <Typography sx={{ color: '#555', fontSize: '0.75rem', fontFamily: 'monospace' }}>
-              No completed trades yet. Use the gold sell button on any card above to record a sale and track your realized profit.
-            </Typography>
-          </Paper>
-        )}
-
-        {soldCards.length > 0 && (<>
-          {/* Summary Stats */}
-          {soldSummary && (
-            <Box sx={{ display: 'flex', gap: { xs: 1, sm: 2 }, mb: 2, flexWrap: 'wrap' }}>
-              <Paper sx={{ p: 1.5, flex: '1 1 auto', minWidth: { xs: '45%', sm: 120 }, textAlign: 'center' }}>
-                <Typography sx={{ color: '#666', fontSize: '0.6rem', textTransform: 'uppercase', fontFamily: 'monospace' }}>Realized Profit</Typography>
-                <Typography sx={{
-                  fontWeight: 700, fontFamily: '"JetBrains Mono", monospace', fontSize: '1.2rem',
-                  color: soldSummary.totalProfit >= 0 ? '#00ff41' : '#ff1744',
-                }}>
-                  {soldSummary.totalProfit >= 0 ? '+' : ''}${soldSummary.totalProfit.toFixed(2)}
-                </Typography>
-              </Paper>
-              <Paper sx={{ p: 1.5, flex: '1 1 auto', minWidth: { xs: '45%', sm: 120 }, textAlign: 'center' }}>
-                <Typography sx={{ color: '#666', fontSize: '0.6rem', textTransform: 'uppercase', fontFamily: 'monospace' }}>Total Trades</Typography>
-                <Typography sx={{ color: '#4fc3f7', fontWeight: 700, fontFamily: '"JetBrains Mono", monospace', fontSize: '1.2rem' }}>
-                  {soldSummary.totalTrades}
-                </Typography>
-              </Paper>
-              <Paper sx={{ p: 1.5, flex: '1 1 auto', minWidth: { xs: '45%', sm: 120 }, textAlign: 'center' }}>
-                <Typography sx={{ color: '#666', fontSize: '0.6rem', textTransform: 'uppercase', fontFamily: 'monospace' }}>Avg ROI</Typography>
-                <Typography sx={{
-                  fontWeight: 700, fontFamily: '"JetBrains Mono", monospace', fontSize: '1.2rem',
-                  color: soldSummary.avgRoi >= 0 ? '#00ff41' : '#ff1744',
-                }}>
-                  {soldSummary.avgRoi >= 0 ? '+' : ''}{soldSummary.avgRoi.toFixed(1)}%
-                </Typography>
-              </Paper>
-            </Box>
-          )}
-
-          <TableContainer component={Paper} sx={{ overflowX: 'auto' }}>
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}>CARD</TableCell>
-                  <TableCell align="right" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}>QTY</TableCell>
-                  <TableCell align="right" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}>BUY</TableCell>
-                  <TableCell align="right" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}>SELL</TableCell>
-                  <TableCell align="right" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}>FEES</TableCell>
-                  <TableCell align="right" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}>NET PROFIT</TableCell>
-                  <TableCell align="right" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}>ROI%</TableCell>
-                  <TableCell align="right" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}>DATE</TableCell>
-                  <TableCell align="center" sx={{ width: 40 }}></TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {soldCards.map((sc, idx) => {
-                  const fees = sc.sellPrice * sc.quantity * 0.1255;
-                  const cost = sc.buyPrice * sc.quantity;
-                  const roi = cost > 0 ? (sc.profit / cost) * 100 : 0;
-                  return (
-                    <TableRow key={idx} sx={{ '&:hover': { bgcolor: '#1a1a2e' } }}>
-                      <TableCell>
-                        <Box>
-                          <Typography sx={{ fontWeight: 600, fontSize: '0.8rem' }}>{sc.cardName}</Typography>
-                          <Typography sx={{ color: '#666', fontSize: '0.6rem' }}>{sc.setName}</Typography>
-                        </Box>
-                      </TableCell>
-                      <TableCell align="right">
-                        <Typography sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.8rem', color: '#ccc' }}>{sc.quantity}</Typography>
-                      </TableCell>
-                      <TableCell align="right">
-                        <Typography sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.8rem', color: '#888' }}>${sc.buyPrice.toFixed(2)}</Typography>
-                      </TableCell>
-                      <TableCell align="right">
-                        <Typography sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.8rem', color: '#ccc' }}>${sc.sellPrice.toFixed(2)}</Typography>
-                      </TableCell>
-                      <TableCell align="right">
-                        <Typography sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.8rem', color: '#ff1744' }}>-${fees.toFixed(2)}</Typography>
-                      </TableCell>
-                      <TableCell align="right">
-                        <Typography sx={{
-                          fontFamily: '"JetBrains Mono", monospace', fontWeight: 700, fontSize: '0.85rem',
-                          color: sc.profit >= 0 ? '#00ff41' : '#ff1744',
-                        }}>
-                          {sc.profit >= 0 ? '+' : ''}${sc.profit.toFixed(2)}
-                        </Typography>
-                      </TableCell>
-                      <TableCell align="right">
-                        <Typography sx={{
-                          fontFamily: '"JetBrains Mono", monospace', fontWeight: 700, fontSize: '0.85rem',
-                          color: roi >= 0 ? '#00ff41' : '#ff1744',
-                        }}>
-                          {roi >= 0 ? '+' : ''}{roi.toFixed(1)}%
-                        </Typography>
-                      </TableCell>
-                      <TableCell align="right">
-                        <Typography sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.75rem', color: '#888' }}>
-                          {sc.sellDate}
-                        </Typography>
-                      </TableCell>
-                      <TableCell align="center">
-                        <IconButton size="small" onClick={() => removeSoldCard(idx)} sx={{ color: '#555', '&:hover': { color: '#ff1744' } }}>
-                          <DeleteIcon sx={{ fontSize: 14 }} />
-                        </IconButton>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        </>)}
-      </Box>
 
       <Snackbar
         open={snackMsg !== null}

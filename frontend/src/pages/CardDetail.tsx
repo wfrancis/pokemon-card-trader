@@ -406,11 +406,34 @@ export default function CardDetail() {
                     <Typography sx={{ color: '#555', fontSize: '0.55rem', fontFamily: 'monospace', mt: 0.2 }}>
                       after 12.55% seller fees
                     </Typography>
-                    {/* Suggested buy price when overpriced */}
-                    {!isProfitable && medianPrice > 0 && (
-                      <Box sx={{ mt: 0.3, p: 0.5, bgcolor: '#1a1a0a', border: '1px solid #33330033', borderRadius: 0.5 }}>
-                        <Typography sx={{ color: '#ff9800', fontSize: '0.55rem', fontFamily: 'monospace' }}>
-                          Buy below ${(medianPrice * SELLER_FEE_RATE).toFixed(2)} for a profitable flip
+                    {/* Buy Target — prominent standalone box */}
+                    {medianPrice > 0 && (
+                      <Box sx={{
+                        mt: 0.8,
+                        p: 1,
+                        bgcolor: isProfitable ? '#00ff4108' : '#0a1a0a',
+                        border: `2px solid ${isProfitable ? '#00ff4155' : '#ff980055'}`,
+                        borderRadius: 1,
+                        textAlign: 'center',
+                      }}>
+                        <Typography sx={{
+                          color: isProfitable ? '#00ff41' : '#ff9800',
+                          fontSize: '0.85rem',
+                          fontFamily: '"JetBrains Mono", monospace',
+                          fontWeight: 800,
+                          letterSpacing: 0.5,
+                        }}>
+                          BUY TARGET: ${(medianPrice * SELLER_FEE_RATE).toFixed(2)}
+                        </Typography>
+                        <Typography sx={{
+                          color: '#888',
+                          fontSize: '0.55rem',
+                          fontFamily: 'monospace',
+                          mt: 0.2,
+                        }}>
+                          {isProfitable
+                            ? 'Current price is in the buy zone for a profitable flip'
+                            : 'Buy at or below this price for a profitable flip after fees'}
                         </Typography>
                       </Box>
                     )}

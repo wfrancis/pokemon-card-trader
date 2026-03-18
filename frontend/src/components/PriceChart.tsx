@@ -70,6 +70,7 @@ function cleanTickValue(v: number): string {
 export default function PriceChart({ priceData, cardName, compareData, onRemoveCompare }: Props) {
   const chartRef = useRef<HTMLDivElement>(null);
   const [range, setRange] = useState<TimeRange>('ALL');
+  const [showBB, setShowBB] = useState(true);
 
   // Drag-to-zoom state
   const [refAreaLeft, setRefAreaLeft] = useState<string>('');
@@ -174,10 +175,33 @@ export default function PriceChart({ priceData, cardName, compareData, onRemoveC
     // Use 60-point window (or all data if < 60 points) for longer-term SMA
     const longWindow = Math.min(90, Math.max(60, Math.floor(chartData.length * 0.6)));
     const sma90 = calcSMA(chartData, longWindow);
+
+    // Bollinger Bands: 20-period SMA +/- 2 * stddev
+    const bbWindow = 20;
+    const bbUpper: (number | null)[] = [];
+    const bbLower: (number | null)[] = [];
+    for (let i = 0; i < chartData.length; i++) {
+      if (i < bbWindow - 1) {
+        bbUpper.push(null);
+        bbLower.push(null);
+      } else {
+        let sum = 0;
+        for (let j = i - bbWindow + 1; j <= i; j++) sum += chartData[j].price;
+        const mean = sum / bbWindow;
+        let sqSum = 0;
+        for (let j = i - bbWindow + 1; j <= i; j++) sqSum += (chartData[j].price - mean) ** 2;
+        const stddev = Math.sqrt(sqSum / bbWindow);
+        bbUpper.push(mean + 2 * stddev);
+        bbLower.push(mean - 2 * stddev);
+      }
+    }
+
     return chartData.map((d, i) => ({
       ...d,
       sma30: sma30[i],
       sma90: sma90[i],
+      bbUpper: bbUpper[i],
+      bbLower: bbLower[i],
     }));
   }, [chartData]);
 
@@ -363,9 +387,9 @@ export default function PriceChart({ priceData, cardName, compareData, onRemoveC
         </ToggleButtonGroup>
       </Box>
 
-      {/* SMA Legend */}
+      {/* SMA Legend + BB Toggle */}
       {!isComparing && (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 0.5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 0.5, flexWrap: 'wrap' }}>
           {chartData.length >= 30 && (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
               <Box sx={{ width: 16, height: 0, borderTop: '2px dashed #00bcd4' }} />
@@ -379,6 +403,32 @@ export default function PriceChart({ priceData, cardName, compareData, onRemoveC
               <Box sx={{ width: 16, height: 0, borderTop: '2px dashed #ff9800' }} />
               <Typography sx={{ color: '#ff9800', fontSize: '0.65rem', fontFamily: 'monospace', fontWeight: 600 }}>
                 90d SMA
+              </Typography>
+            </Box>
+          )}
+          {chartData.length >= 20 && (
+            <Chip
+              label={showBB ? 'BB ON' : 'BB OFF'}
+              size="small"
+              onClick={() => setShowBB(!showBB)}
+              sx={{
+                height: 20,
+                fontSize: '0.6rem',
+                fontWeight: 700,
+                fontFamily: 'monospace',
+                color: showBB ? '#00bcd4' : '#555',
+                borderColor: showBB ? '#00bcd4' : '#333',
+                bgcolor: showBB ? 'rgba(0,188,212,0.1)' : 'transparent',
+                '&:hover': { bgcolor: 'rgba(0,188,212,0.15)' },
+              }}
+              variant="outlined"
+            />
+          )}
+          {showBB && chartData.length >= 20 && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <Box sx={{ width: 16, height: 8, bgcolor: '#00bcd420', border: '1px solid #00bcd440', borderRadius: 0.5 }} />
+              <Typography sx={{ color: '#00bcd4', fontSize: '0.6rem', fontFamily: 'monospace', fontWeight: 600, opacity: 0.8 }}>
+                Bollinger Bands (20, 2)
               </Typography>
             </Box>
           )}
@@ -548,9 +598,42 @@ export default function PriceChart({ priceData, cardName, compareData, onRemoveC
                 if (name === 'sma30') return [v, '30d SMA'];
                 if (name === 'sma90') return [v, '90d SMA'];
                 if (name === 'priceFill') return [null, null];
+                if (name === 'bbUpper') return [v, 'BB Upper'];
+                if (name === 'bbLower') return [v, 'BB Lower'];
+                if (name === 'bbArea' || name === 'bbLowerMask') return [null, null];
                 return [v, 'Price'];
               }}
             />
+
+            {/* Bollinger Bands: upper and lower lines with filled area between */}
+            {showBB && chartData.length >= 20 && (
+              <Area
+                type="monotone"
+                dataKey="bbUpper"
+                stroke="#00bcd440"
+                strokeWidth={1}
+                fill="#00bcd4"
+                fillOpacity={0.06}
+                isAnimationActive={false}
+                tooltipType="none"
+                name="bbUpper"
+                connectNulls={false}
+              />
+            )}
+            {showBB && chartData.length >= 20 && (
+              <Area
+                type="monotone"
+                dataKey="bbLower"
+                stroke="#00bcd440"
+                strokeWidth={1}
+                fill="#000000"
+                fillOpacity={0.9}
+                isAnimationActive={false}
+                tooltipType="none"
+                name="bbLower"
+                connectNulls={false}
+              />
+            )}
 
             {/* Price fill gradient */}
             <Area
