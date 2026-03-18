@@ -160,14 +160,20 @@ export default function WeeklyRecap() {
         <Typography variant="h4" sx={{ color: '#00bcd4', fontWeight: 700, letterSpacing: { xs: 1, sm: 3 }, fontSize: { xs: '1.1rem', sm: '1.25rem' } }}>
           WEEKLY MARKET RECAP
         </Typography>
-        <Tooltip title="Export as Image">
-          <IconButton
-            onClick={handleExport}
-            sx={{ color: '#00bcd4', '&:hover': { bgcolor: '#1a1a1a' } }}
-          >
-            <CameraAltIcon />
-          </IconButton>
-        </Tooltip>
+        <Button
+          variant="outlined"
+          startIcon={<CameraAltIcon />}
+          onClick={handleExport}
+          size="small"
+          sx={{
+            color: '#4fc3f7', borderColor: '#4fc3f733',
+            fontFamily: '"JetBrains Mono", monospace', fontSize: '0.7rem',
+            textTransform: 'none',
+            '&:hover': { borderColor: '#4fc3f7', bgcolor: 'rgba(79,195,247,0.08)' },
+          }}
+        >
+          Export as Image
+        </Button>
       </Box>
       <Typography sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.85rem', mb: 1.5 }}>
         {formatDate(period.start)} &mdash; {formatDate(period.end)}

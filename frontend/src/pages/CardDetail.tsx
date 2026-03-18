@@ -5,7 +5,7 @@ import {
   Button, Dialog, DialogTitle, DialogContent, DialogActions, TextField,
   Menu, MenuItem, CardMedia, Card as MuiCard, CardContent, CardActionArea,
   Collapse, List, ListItemButton, ListItemAvatar, Avatar, ListItemText,
-  InputAdornment, CircularProgress, Snackbar,
+  InputAdornment, CircularProgress, Snackbar, Tooltip,
 } from '@mui/material';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import BookmarkBorderIcon from '@mui/icons-material/BookmarkBorder';
@@ -639,23 +639,25 @@ export default function CardDetail() {
               >
                 {isWatchlisted ? 'Saved \u2713' : 'Save to Watchlist'}
               </Button>
-              <Button
-                startIcon={<ShareIcon />}
-                onClick={() => {
-                  navigator.clipboard.writeText(window.location.href);
-                  setShareSnackbar(true);
-                }}
-                variant="outlined"
-                size="small"
-                sx={{
-                  color: '#4fc3f7', borderColor: '#4fc3f733',
-                  fontFamily: '"JetBrains Mono", monospace', fontSize: '0.75rem',
-                  textTransform: 'none',
-                  '&:hover': { borderColor: '#4fc3f7', bgcolor: 'rgba(79,195,247,0.08)' },
-                }}
-              >
-                Share Card
-              </Button>
+              <Tooltip title="Copy link — includes card image and price preview for Twitter/Discord" arrow>
+                <Button
+                  startIcon={<ShareIcon />}
+                  onClick={() => {
+                    navigator.clipboard.writeText(window.location.href);
+                    setShareSnackbar(true);
+                  }}
+                  variant="outlined"
+                  size="small"
+                  sx={{
+                    color: '#4fc3f7', borderColor: '#4fc3f733',
+                    fontFamily: '"JetBrains Mono", monospace', fontSize: '0.75rem',
+                    textTransform: 'none',
+                    '&:hover': { borderColor: '#4fc3f7', bgcolor: 'rgba(79,195,247,0.08)' },
+                  }}
+                >
+                  Share Card
+                </Button>
+              </Tooltip>
             </Stack>
 
 

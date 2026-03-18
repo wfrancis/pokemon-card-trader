@@ -4,7 +4,7 @@ import {
   Pagination, Select, MenuItem, FormControl, InputLabel, Slider,
   Tooltip, Skeleton, TextField, InputAdornment, ToggleButtonGroup, ToggleButton,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TableSortLabel,
-  Switch, IconButton, CircularProgress, Collapse, Button,
+  Switch, IconButton, CircularProgress, Collapse, Button, Snackbar,
 } from '@mui/material';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import WaterDropIcon from '@mui/icons-material/WaterDrop';
@@ -22,6 +22,8 @@ import DownloadIcon from '@mui/icons-material/Download';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import StyleIcon from '@mui/icons-material/Style';
+import BookmarkBorderIcon from '@mui/icons-material/BookmarkBorder';
+import BookmarkIcon from '@mui/icons-material/Bookmark';
 import { useNavigate } from 'react-router-dom';
 import { api, ScreenerCard, ScreenerStats, SetAnalytics } from '../services/api';
 import GlossaryTooltip from '../components/GlossaryTooltip';
@@ -278,9 +280,50 @@ function FlipFinderTable({ cards, page, onSort, sortBy, sortDir, flipSortMode, o
     { id: 'spread_pct', label: 'Spread%', width: 75 },
     { id: 'velocity', label: 'Velocity', width: 80 },
     { id: 'regime', label: 'Regime', width: 90 },
+    { id: 'watchlist', label: '', width: 30 },
   ];
 
+  const isInWatchlist = (cardId: string) => {
+    try {
+      const wl = JSON.parse(localStorage.getItem('pkmn_watchlist') || '[]');
+      return wl.some((w: any) => w.id === cardId);
+    } catch { return false; }
+  };
+
+  const [watchlistIds, setWatchlistIds] = useState<Set<string>>(() => {
+    try {
+      const wl = JSON.parse(localStorage.getItem('pkmn_watchlist') || '[]');
+      return new Set(wl.map((w: any) => w.id));
+    } catch { return new Set(); }
+  });
+  const [wlSnackbar, setWlSnackbar] = useState(false);
+
+  const quickAddToWatchlist = (card: ScreenerCard) => {
+    try {
+      const wl = JSON.parse(localStorage.getItem('pkmn_watchlist') || '[]');
+      if (wl.some((w: any) => w.id === card.id)) return;
+      wl.push({
+        id: card.id,
+        name: card.name,
+        image_small: card.image_small,
+        set_name: card.set_name,
+        added_at: new Date().toISOString(),
+      });
+      localStorage.setItem('pkmn_watchlist', JSON.stringify(wl));
+      setWatchlistIds(new Set(wl.map((w: any) => w.id)));
+      setWlSnackbar(true);
+    } catch (e) { console.error('Failed to save to watchlist', e); }
+  };
+
   return (
+    <>
+    <Snackbar
+      open={wlSnackbar}
+      autoHideDuration={2000}
+      onClose={() => setWlSnackbar(false)}
+      message="Added to Watchlist"
+      anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+    />
     <TableContainer component={Paper} sx={{ bgcolor: '#0a0a0a', border: '1px solid #00ff4133' }}>
       <Table size="small" sx={{ '& td, & th': { borderColor: '#1a1a1a', py: 0.75 } }}>
         <TableHead>
@@ -379,12 +422,26 @@ function FlipFinderTable({ cards, page, onSort, sortBy, sortDir, flipSortMode, o
                     />
                   )}
                 </TableCell>
+                <TableCell sx={{ width: 30, p: 0.5 }}>
+                  <IconButton
+                    size="small"
+                    onClick={(e) => { e.stopPropagation(); quickAddToWatchlist(card); }}
+                    title={watchlistIds.has(card.id) ? 'Already saved' : 'Add to Watchlist'}
+                  >
+                    {watchlistIds.has(card.id) ? (
+                      <BookmarkIcon sx={{ fontSize: 16, color: '#ffd700' }} />
+                    ) : (
+                      <BookmarkBorderIcon sx={{ fontSize: 16, color: '#ffd700' }} />
+                    )}
+                  </IconButton>
+                </TableCell>
               </TableRow>
             );
           })}
         </TableBody>
       </Table>
     </TableContainer>
+    </>
   );
 }
 
@@ -1246,11 +1303,11 @@ export default function Screener() {
         </Typography>
       ) : simpleMode ? (
         <Typography variant="body2" sx={{ color: '#666', mb: 2, fontSize: '0.7rem' }}>
-          Search through thousands of Pokemon cards ranked by investment potential.
+          Search through thousands of Pokemon cards to find hidden gems.
         </Typography>
       ) : (
         <Typography variant="body2" sx={{ color: '#666', mb: 2, fontSize: '0.7rem' }}>
-          Find cards that are consistently liquid AND have steady price appreciation. Sorted by combined investment score.
+          Find cards that are consistently liquid AND have steady price appreciation. Sorted by combined score.
         </Typography>
       )}
 
