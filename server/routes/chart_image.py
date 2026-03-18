@@ -69,6 +69,19 @@ def get_chart_image(
     price_change_pct = (price_change / prices[0] * 100) if prices[0] > 0 else 0
     line_color = '#00ff41' if price_change >= 0 else '#ff1744'
 
+    # Y-axis clipping: if max price > 5x median, cap at 90th percentile to prevent spike flattening
+    import statistics
+    median_price = statistics.median(prices)
+    max_price = max(prices)
+    if max_price > 5 * median_price and len(prices) >= 5:
+        sorted_prices = sorted(prices)
+        p90_idx = int(len(sorted_prices) * 0.9)
+        y_upper = sorted_prices[p90_idx] * 1.1  # 10% padding above 90th percentile
+        y_lower = min(prices) * 0.95
+    else:
+        y_upper = None
+        y_lower = None
+
     # Create the chart with dark theme
     fig, ax = plt.subplots(figsize=(width / 100, height / 100), dpi=100)
     fig.patch.set_facecolor('#0a0a0a')
@@ -76,6 +89,10 @@ def get_chart_image(
 
     # Plot price line
     ax.plot(dates, prices, color=line_color, linewidth=2, solid_capstyle='round')
+
+    # Apply y-axis clipping if needed
+    if y_upper is not None:
+        ax.set_ylim(y_lower, y_upper)
 
     # Fill under the line with gradient-like effect
     ax.fill_between(dates, prices, min(prices) * 0.98, color=line_color, alpha=0.08)

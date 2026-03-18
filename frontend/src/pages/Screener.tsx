@@ -1119,6 +1119,7 @@ export default function Screener() {
   const [flipFinderActive, setFlipFinderActive] = useState(false);
   const [flipSortMode, setFlipSortMode] = useState<'profit' | 'roi' | 'spread'>('roi');
   const [feeRate, setFeeRate] = useState(12.55);
+  const [simpleNudgeDismissed, setSimpleNudgeDismissed] = useState(() => sessionStorage.getItem('pkmn_simple_nudge_dismissed') === '1');
   // Set Analytics
   const [setAnalytics, setSetAnalytics] = useState<SetAnalytics[]>([]);
   const [setAnalyticsOpen, setSetAnalyticsOpen] = useState(true);
@@ -1355,6 +1356,24 @@ export default function Screener() {
         </Paper>
       )}
 
+      {/* Back to Simple View nudge in Advanced mode */}
+      {!simpleMode && !simpleNudgeDismissed && (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+          <Chip
+            label="Looking for something simpler? Switch to Simple View"
+            size="small"
+            onClick={() => handleSimpleModeToggle(true)}
+            onDelete={() => { setSimpleNudgeDismissed(true); sessionStorage.setItem('pkmn_simple_nudge_dismissed', '1'); }}
+            deleteIcon={<ClearIcon sx={{ fontSize: 14 }} />}
+            sx={{
+              bgcolor: '#00bcd411', border: '1px solid #00bcd433', color: '#00bcd4',
+              fontSize: '0.7rem', fontFamily: '"JetBrains Mono", monospace',
+              cursor: 'pointer', '&:hover': { bgcolor: '#00bcd422' },
+            }}
+          />
+        </Box>
+      )}
+
       {/* Stats */}
       {!simpleMode && !flipFinderActive && <StatsBar stats={stats} />}
 
@@ -1513,20 +1532,22 @@ export default function Screener() {
                   </Typography>
                 </Box>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <TextField
-                    size="small"
-                    label="Fee %"
-                    type="number"
-                    value={feeRate}
-                    onChange={(e) => setFeeRate(Math.max(0, Math.min(50, parseFloat(e.target.value) || 12.55)))}
-                    inputProps={{ step: 0.5, min: 0, max: 50 }}
-                    sx={{
-                      width: 90,
-                      '& .MuiInputBase-input': { color: '#00ff41', fontFamily: 'monospace', fontSize: '0.8rem', py: 0.5 },
-                      '& .MuiInputLabel-root': { color: '#666', fontSize: '0.7rem' },
-                      '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: '#333' } },
-                    }}
-                  />
+                  <Tooltip title="Change fee % for different platforms (eBay ~13%, TCGPlayer ~12.55%, local ~0%)" arrow placement="top">
+                    <TextField
+                      size="small"
+                      label="Seller Fee %"
+                      type="number"
+                      value={feeRate}
+                      onChange={(e) => setFeeRate(Math.max(0, Math.min(50, parseFloat(e.target.value) || 12.55)))}
+                      inputProps={{ step: 0.5, min: 0, max: 50 }}
+                      sx={{
+                        width: 120,
+                        '& .MuiInputBase-input': { color: '#00ff41', fontFamily: 'monospace', fontSize: '0.85rem', py: 0.7 },
+                        '& .MuiInputLabel-root': { color: '#aaa', fontSize: '0.75rem' },
+                        '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: '#00ff4155', borderWidth: 2 }, '&:hover fieldset': { borderColor: '#00ff41' } },
+                      }}
+                    />
+                  </Tooltip>
                   <Typography sx={{ color: '#888', fontSize: '0.75rem', fontFamily: 'monospace', mr: 0.5 }}>Sort:</Typography>
                   {(['roi', 'profit', 'spread'] as const).map((mode) => (
                     <Button

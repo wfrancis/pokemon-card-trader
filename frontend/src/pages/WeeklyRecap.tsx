@@ -12,6 +12,7 @@ import HistoryIcon from '@mui/icons-material/History';
 import InsightsIcon from '@mui/icons-material/Insights';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import LightbulbIcon from '@mui/icons-material/Lightbulb';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import { useNavigate } from 'react-router-dom';
 import html2canvas from 'html2canvas';
 import {
@@ -69,6 +70,7 @@ export default function WeeklyRecap() {
   const [selectedWeek, setSelectedWeek] = useState<string | null>(null); // null = current week
   const [weekLoading, setWeekLoading] = useState(false);
   const [trendData, setTrendData] = useState<{ date: string; avg_price: number }[]>([]);
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const navigate = useNavigate();
   const recapRef = useRef<HTMLDivElement>(null);
 
@@ -534,13 +536,26 @@ export default function WeeklyRecap() {
               </Typography>
             </Box>
             {angles.map((a, i) => (
-              <Box key={i} sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: i < angles.length - 1 ? 1 : 0 }}>
+              <Box key={i} sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: i < angles.length - 1 ? 1 : 0 }}>
                 <Typography sx={{ color: '#4fc3f7', fontFamily: 'monospace', fontSize: '0.85rem', lineHeight: 1.6, flexShrink: 0 }}>
                   &bull;
                 </Typography>
-                <Typography sx={{ color: '#c0c0c0', fontFamily: 'monospace', fontSize: '0.85rem', lineHeight: 1.6 }}>
+                <Typography sx={{ color: '#c0c0c0', fontFamily: 'monospace', fontSize: '0.85rem', lineHeight: 1.6, flex: 1 }}>
                   {a}
                 </Typography>
+                <Tooltip title={copiedIndex === i ? 'Copied!' : 'Copy to clipboard'} arrow>
+                  <IconButton
+                    size="small"
+                    onClick={() => {
+                      navigator.clipboard.writeText(a);
+                      setCopiedIndex(i);
+                      setTimeout(() => setCopiedIndex(null), 2000);
+                    }}
+                    sx={{ color: copiedIndex === i ? '#00ff41' : '#4fc3f766', '&:hover': { color: '#4fc3f7' }, flexShrink: 0 }}
+                  >
+                    <ContentCopyIcon sx={{ fontSize: 16 }} />
+                  </IconButton>
+                </Tooltip>
               </Box>
             ))}
           </Paper>

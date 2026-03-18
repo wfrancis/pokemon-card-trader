@@ -271,11 +271,22 @@ export default function Dashboard() {
             <Typography sx={{ color: '#00ff41', fontSize: '0.95rem', fontWeight: 700, fontFamily: '"JetBrains Mono", monospace' }}>
               FLIP FINDER
             </Typography>
-            <Typography sx={{ color: '#888', fontSize: '0.75rem' }}>
-              {topFlips.length > 0 && topFlips[0].est_profit !== null
-                ? `Best flip: ${topFlips[0].name} +$${topFlips[0].est_profit.toFixed(2)} (+${(topFlips[0].current_price > 0 ? (topFlips[0].est_profit / topFlips[0].current_price) * 100 : 0).toFixed(0)}% Return)`
-                : `Find cards you can buy and resell for profit — ${topFlips.length || '50+'}  opportunities right now`}
-            </Typography>
+            {topFlips.length > 0 && topFlips[0].est_profit !== null ? (
+              <Box>
+                {topFlips.slice(0, 3).map((flip, i) => {
+                  const roi = flip.current_price > 0 ? (flip.est_profit! / flip.current_price) * 100 : 0;
+                  return (
+                    <Typography key={flip.id} sx={{ color: i === 0 ? '#ccc' : '#888', fontSize: '0.72rem', fontFamily: '"JetBrains Mono", monospace', lineHeight: 1.5 }}>
+                      {flip.name} <span style={{ color: '#00ff41', fontWeight: 700 }}>+${flip.est_profit!.toFixed(2)}</span> <span style={{ color: '#00ff4199' }}>({roi >= 0 ? '+' : ''}{roi.toFixed(0)}%)</span>
+                    </Typography>
+                  );
+                })}
+              </Box>
+            ) : (
+              <Typography sx={{ color: '#888', fontSize: '0.75rem' }}>
+                {`Find cards you can buy and resell for profit — ${topFlips.length || '50+'}  opportunities right now`}
+              </Typography>
+            )}
           </Box>
           <Box sx={{ ml: 'auto' }}>
             <ArrowForwardIcon sx={{ color: '#00ff4166' }} />
