@@ -361,6 +361,7 @@ All 4 personas again report "routing bug" — pages render wrong content when cl
 | **Round 8** | **9.1** | **8.8** | **8.7** | **8.6** | **8.8** |
 | Round 9 | 8.4 | 8.4 | 8.5 | 7.8 | 8.275 |
 | **Round 10** | **8.4** | **8.5** | **8.5** | **8.2** | **8.4** |
+| **Round 11** | **8.8** | **8.7** | **8.7** | **8.4** | **8.65** |
 
 #### Remaining Gaps to 9.5+
 1. **Screener Simple mode default persistence** — localStorage issue where existing browsers retain Advanced mode

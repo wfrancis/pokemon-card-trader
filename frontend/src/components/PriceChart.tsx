@@ -149,6 +149,27 @@ export default function PriceChart({ priceData, cardName, compareData, onRemoveC
     return rangeData.filter(d => d.date >= zoomLeft && d.date <= zoomRight);
   }, [rangeData, isZoomed, zoomLeft, zoomRight]);
 
+  // Compute SMA overlay data (rolling average over data points, not calendar days)
+  const smaData = useMemo(() => {
+    const calcSMA = (data: { date: string; price: number }[], window: number) => {
+      return data.map((point, i) => {
+        if (i < window - 1) return null;
+        let sum = 0;
+        for (let j = i - window + 1; j <= i; j++) {
+          sum += data[j].price;
+        }
+        return sum / window;
+      });
+    };
+    const sma30 = calcSMA(chartData, 30);
+    const sma90 = calcSMA(chartData, 90);
+    return chartData.map((d, i) => ({
+      ...d,
+      sma30: sma30[i],
+      sma90: sma90[i],
+    }));
+  }, [chartData]);
+
   const compareChartData = useMemo(() => {
     if (!isZoomed || !zoomLeft || !zoomRight) return rangeCompareData;
     return rangeCompareData.filter(d => d.date >= zoomLeft && d.date <= zoomRight);
@@ -330,6 +351,28 @@ export default function PriceChart({ priceData, cardName, compareData, onRemoveC
         </ToggleButtonGroup>
       </Box>
 
+      {/* SMA Legend */}
+      {!isComparing && (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 0.5 }}>
+          {chartData.length >= 30 && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <Box sx={{ width: 16, height: 0, borderTop: '2px dashed #00bcd4' }} />
+              <Typography sx={{ color: '#00bcd4', fontSize: '0.65rem', fontFamily: 'monospace', fontWeight: 600 }}>
+                30d SMA
+              </Typography>
+            </Box>
+          )}
+          {chartData.length >= 90 && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <Box sx={{ width: 16, height: 0, borderTop: '2px dashed #ff9800' }} />
+              <Typography sx={{ color: '#ff9800', fontSize: '0.65rem', fontFamily: 'monospace', fontWeight: 600 }}>
+                90d SMA
+              </Typography>
+            </Box>
+          )}
+        </Box>
+      )}
+
       {/* Chart */}
       <Box sx={{ height: { xs: 280, sm: 350, md: 420 }, cursor: 'crosshair', userSelect: 'none' }}>
       <ResponsiveContainer width="100%" height="100%">
@@ -417,7 +460,7 @@ export default function PriceChart({ priceData, cardName, compareData, onRemoveC
         ) : (
           /* Standard single-card chart */
           <ComposedChart
-            data={chartData}
+            data={smaData}
             margin={{ top: 5, right: 10, bottom: 5, left: 5 }}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
@@ -487,7 +530,14 @@ export default function PriceChart({ priceData, cardName, compareData, onRemoveC
               }}
               labelStyle={{ color: '#ccc', fontSize: 12, fontWeight: 600, marginBottom: 4 }}
               labelFormatter={(label) => formatDate(label as string)}
-              formatter={(value: any) => [`$${Number(value).toFixed(2)}`, 'Price']}
+              formatter={(value: any, name: any) => {
+                if (value == null) return [null, null];
+                const v = `$${Number(value).toFixed(2)}`;
+                if (name === 'sma30') return [v, '30d SMA'];
+                if (name === 'sma90') return [v, '90d SMA'];
+                if (name === 'priceFill') return [null, null];
+                return [v, 'Price'];
+              }}
             />
 
             {/* Price fill gradient */}
@@ -511,6 +561,34 @@ export default function PriceChart({ priceData, cardName, compareData, onRemoveC
               dot={false}
               activeDot={{ r: 4, fill: '#fff', stroke: isPositive ? '#00ff41' : '#ff1744', strokeWidth: 2 }}
               isAnimationActive={false}
+            />
+
+            {/* 30-day SMA overlay */}
+            <Line
+              type="monotone"
+              dataKey="sma30"
+              stroke="#00bcd4"
+              strokeWidth={1.5}
+              strokeDasharray="6 3"
+              dot={false}
+              activeDot={false}
+              isAnimationActive={false}
+              connectNulls={false}
+              name="30d SMA"
+            />
+
+            {/* 90-day SMA overlay */}
+            <Line
+              type="monotone"
+              dataKey="sma90"
+              stroke="#ff9800"
+              strokeWidth={1.5}
+              strokeDasharray="6 3"
+              dot={false}
+              activeDot={false}
+              isAnimationActive={false}
+              connectNulls={false}
+              name="90d SMA"
             />
 
             {/* Drag-to-zoom selection area */}

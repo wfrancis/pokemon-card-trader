@@ -4,7 +4,7 @@ import {
   Pagination, Select, MenuItem, FormControl, InputLabel, Slider,
   Tooltip, Skeleton, TextField, InputAdornment, ToggleButtonGroup, ToggleButton,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TableSortLabel,
-  Switch, IconButton,
+  Switch, IconButton, CircularProgress,
 } from '@mui/material';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import WaterDropIcon from '@mui/icons-material/WaterDrop';
@@ -546,6 +546,7 @@ function SimpleCardTable({ cards, page, onSort, sortBy, sortDir, flipFinderActiv
         ...baseColumns.slice(0, 3),
         { id: 'est_profit', label: 'Est. Profit', width: 90, glossary: 'flip_profit' },
         { id: 'roi_pct', label: 'ROI%', width: 70 },
+        { id: 'spread_pct', label: 'Spread', width: 70 },
         ...baseColumns.slice(3),
       ]
     : baseColumns;
@@ -608,6 +609,9 @@ function SimpleCardTable({ cards, page, onSort, sortBy, sortDir, flipFinderActiv
                 {flipFinderActive && (() => {
                   const profit = calcFlipProfit(card);
                   const roi = calcFlipROI(card);
+                  const spreadPct = card.median_sold != null && card.median_sold > 0
+                    ? ((card.current_price - card.median_sold) / card.median_sold * 100)
+                    : null;
                   return (
                     <>
                     <TableCell sx={{ fontSize: '0.7rem' }}>
@@ -622,6 +626,12 @@ function SimpleCardTable({ cards, page, onSort, sortBy, sortDir, flipFinderActiv
                       color: roi !== null ? (roi >= 0 ? '#00ff41' : '#ff1744') : '#444',
                     }}>
                       {roi !== null ? `${roi >= 0 ? '+' : ''}${roi.toFixed(0)}%` : '--'}
+                    </TableCell>
+                    <TableCell sx={{
+                      fontFamily: 'monospace', fontSize: '0.7rem', fontWeight: 700,
+                      color: spreadPct !== null ? (spreadPct <= 0 ? '#00ff41' : '#ff1744') : '#444',
+                    }}>
+                      {spreadPct !== null ? `${spreadPct >= 0 ? '+' : ''}${spreadPct.toFixed(1)}%` : '--'}
                     </TableCell>
                     </>
                   );
@@ -675,12 +685,13 @@ function CardTable({ cards, page, onSort, sortBy, sortDir, flipFinderActive }: {
     { id: 'time_to_sell', label: 'TTS', width: 75, glossary: 'time_to_sell' },
     { id: 'regime', label: 'Regime', width: 85, glossary: 'regime' },
   ];
-  // Insert Est. Profit and ROI% columns after Price when Flip Finder is active
+  // Insert Est. Profit, ROI%, and Spread columns after Price when Flip Finder is active
   const columns = flipFinderActive
     ? [
         ...baseColumns.slice(0, 3),
         { id: 'est_profit', label: 'Est. Profit', width: 85, glossary: 'flip_profit' },
         { id: 'roi_pct', label: 'ROI%', width: 65 },
+        { id: 'spread_pct', label: 'Spread', width: 65 },
         ...baseColumns.slice(3),
       ]
     : baseColumns;
@@ -749,6 +760,9 @@ function CardTable({ cards, page, onSort, sortBy, sortDir, flipFinderActive }: {
                 {flipFinderActive && (() => {
                   const profit = calcFlipProfit(card);
                   const roi = calcFlipROI(card);
+                  const spreadPct = card.median_sold != null && card.median_sold > 0
+                    ? ((card.current_price - card.median_sold) / card.median_sold * 100)
+                    : null;
                   return (
                     <>
                     <TableCell sx={{
@@ -762,6 +776,12 @@ function CardTable({ cards, page, onSort, sortBy, sortDir, flipFinderActive }: {
                       color: roi !== null ? (roi >= 0 ? '#00ff41' : '#ff1744') : '#444',
                     }}>
                       {roi !== null ? `${roi >= 0 ? '+' : ''}${roi.toFixed(0)}%` : '--'}
+                    </TableCell>
+                    <TableCell sx={{
+                      fontFamily: 'monospace', fontSize: '0.7rem', fontWeight: 700,
+                      color: spreadPct !== null ? (spreadPct <= 0 ? '#00ff41' : '#ff1744') : '#444',
+                    }}>
+                      {spreadPct !== null ? `${spreadPct >= 0 ? '+' : ''}${spreadPct.toFixed(1)}%` : '--'}
                     </TableCell>
                     </>
                   );
@@ -836,11 +856,17 @@ export default function Screener() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
-  const [simpleMode, setSimpleMode] = useState<boolean>(true); // ALWAYS default to Simple mode
+  const [simpleMode, setSimpleMode] = useState<boolean>(() => {
+    // Clean old keys from previous versions
+    ['pkmn_screener_mode', 'pkmn_screener_mode_v2', 'pkmn_screener_mode_v3', 'pkmn_screener_mode_v4', 'pkmn_screener_mode_v5'].forEach(k => localStorage.removeItem(k));
+    const stored = localStorage.getItem('pkmn_screener_mode_v6');
+    // First visit: default to Simple. After that, remember choice.
+    return stored === null ? true : stored === 'simple';
+  });
 
   const handleSimpleModeToggle = (checked: boolean) => {
     setSimpleMode(checked);
-    localStorage.setItem('pkmn_screener_mode_v5', checked ? 'simple' : 'advanced');
+    localStorage.setItem('pkmn_screener_mode_v6', checked ? 'simple' : 'advanced');
   };
 
   // Filters
@@ -1319,9 +1345,18 @@ export default function Screener() {
       {/* Results count + view toggle */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1, flexWrap: 'wrap', gap: 1 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Typography variant="body2" sx={{ color: '#666' }}>
-            {total.toLocaleString()} cards
-          </Typography>
+          {loading ? (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <CircularProgress size={14} sx={{ color: '#00ff41' }} />
+              <Typography variant="body2" sx={{ color: '#666' }}>
+                Loading cards...
+              </Typography>
+            </Box>
+          ) : (
+            <Typography variant="body2" sx={{ color: '#666' }}>
+              {total.toLocaleString()} cards
+            </Typography>
+          )}
           {cards.length > 0 && (
             <Tooltip title="Export current page as CSV">
               <IconButton
@@ -1386,7 +1421,20 @@ export default function Screener() {
             ))}
           </Grid>
         ) : (
-          <Skeleton variant="rounded" height={400} sx={{ bgcolor: '#1a1a1a' }} />
+          <Paper sx={{ bgcolor: '#0a0a0a', border: '1px solid #1a1a1a', overflow: 'hidden' }}>
+            {Array.from({ length: 10 }).map((_, i) => (
+              <Box key={i} sx={{ display: 'flex', alignItems: 'center', gap: 2, px: 2, py: 1, borderBottom: '1px solid #1a1a1a' }}>
+                <Skeleton variant="rounded" width={28} height={38} sx={{ bgcolor: '#1a1a1a', flexShrink: 0 }} />
+                <Box sx={{ flex: 1 }}>
+                  <Skeleton variant="text" width={`${40 + Math.random() * 30}%`} sx={{ bgcolor: '#1a1a1a', fontSize: '0.75rem' }} />
+                  <Skeleton variant="text" width={`${20 + Math.random() * 20}%`} sx={{ bgcolor: '#151515', fontSize: '0.6rem' }} />
+                </Box>
+                <Skeleton variant="text" width={50} sx={{ bgcolor: '#1a1a1a', fontSize: '0.75rem' }} />
+                <Skeleton variant="text" width={40} sx={{ bgcolor: '#1a1a1a', fontSize: '0.75rem' }} />
+                <Skeleton variant="text" width={40} sx={{ bgcolor: '#1a1a1a', fontSize: '0.75rem' }} />
+              </Box>
+            ))}
+          </Paper>
         )
       ) : cards.length === 0 ? (
         <Paper sx={{ p: 4, textAlign: 'center', bgcolor: '#0a0a0a' }}>
