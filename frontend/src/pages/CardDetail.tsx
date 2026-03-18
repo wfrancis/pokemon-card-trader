@@ -313,9 +313,11 @@ export default function CardDetail() {
           <Paper sx={{ p: 2, textAlign: 'center' }}>
             {(() => {
               // Try card images, then construct fallback from set_id + number
-              const imgUrl = card.image_large || card.image_small
-                || (card.set_id && card.number
-                  ? `https://images.pokemontcg.io/${card.set_id}/${card.number.replace(/[A-Za-z]+$/, '')}_hires.png`
+              // Filter out "None" string (data import artifact), strip dots from set_id for pokemontcg.io URLs
+              const rawImg = card.image_large || card.image_small;
+              const imgUrl = (rawImg && rawImg !== 'None') ? rawImg
+                : (card.set_id && card.number
+                  ? `https://images.pokemontcg.io/${card.set_id.replace(/\./g, '')}/${card.number.replace(/[A-Za-z]+$/, '')}_hires.png`
                   : '');
               return imgUrl ? (
                 <Box
