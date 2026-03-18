@@ -1356,6 +1356,7 @@ export default function CardDetail() {
         onClose={() => setShareSnackbar(false)}
         message="Link copied! Share on social media for a card preview with image"
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        ContentProps={{ sx: { bgcolor: '#1a1a2e', border: '1px solid #00ff41', color: '#00ff41' } }}
       />
     </Box>
   );

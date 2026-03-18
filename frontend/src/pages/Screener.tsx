@@ -360,6 +360,9 @@ function FlipFinderTable({ cards, page, onSort, sortBy, sortDir, flipSortMode, o
                   color: card.sales_per_day != null ? (card.sales_per_day >= 1 ? '#00bcd4' : card.sales_per_day >= 0.5 ? '#ff9800' : '#666') : '#444',
                 }}>
                   {card.sales_per_day != null ? `${card.sales_per_day.toFixed(1)} sales/day` : '--'}
+                  {card.sales_per_day != null && card.sales_per_day < 0.3 && (
+                    <Chip label="SLOW" size="small" sx={{ ml: 0.5, height: 16, fontSize: '0.5rem', fontWeight: 700, bgcolor: '#ff98001a', color: '#ff9800', border: '1px solid #ff980033' }} />
+                  )}
                 </TableCell>
                 <TableCell>
                   {card.regime && (
@@ -1280,7 +1283,7 @@ export default function Screener() {
       {simpleMode && !flipFinderActive && (
         <Paper sx={{ p: 1.5, mb: 2, bgcolor: '#0a1a1a', border: '1px solid #00bcd433', borderRadius: 1 }}>
           <Typography variant="caption" sx={{ color: '#888' }}>
-            Find cards that are good investments — liquid (easy to sell) and trending up in price.
+            Find cards that are easy to sell and going up in price.
           </Typography>
         </Paper>
       )}
