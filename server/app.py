@@ -1065,7 +1065,18 @@ async def sync_stale_cards(db: Session = Depends(get_db), days: int = 30):
                     card.current_price = round(mp, 2)
                     card.updated_at = datetime.now(timezone.utc)
 
-                    # Record price history (use card's existing variant)
+                    # Update variant if TCGPlayer reports a different one
+                    printing_type = (price_data.get("printing_type") or "").lower()
+                    PRINTING_TO_VARIANT = {
+                        "normal": "normal", "foil": "holofoil", "holofoil": "holofoil",
+                        "1st edition holofoil": "1stEditionHolofoil",
+                        "1st edition normal": "1stEditionNormal",
+                        "reverse holofoil": "reverseHolofoil",
+                    }
+                    new_variant = PRINTING_TO_VARIANT.get(printing_type, card.price_variant or "normal")
+                    if new_variant != card.price_variant:
+                        logger.info(f"Stale sync: updating {card.name} variant {card.price_variant} -> {new_variant}")
+                        card.price_variant = new_variant
                     variant = card.price_variant or "normal"
                     existing = db.query(PriceHistory).filter(
                         PriceHistory.card_id == card.id,

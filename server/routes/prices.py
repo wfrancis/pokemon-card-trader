@@ -36,6 +36,7 @@ def get_price_history(
         "holofoil": ["holo", "holofoil"],
         "reverse": ["reverse", "reverseHolofoil"],
         "reverseHolofoil": ["reverse", "reverseHolofoil"],
+        "normal": ["normal", "holofoil", "holo"],  # Many vintage "normal" cards are actually holofoil on TCGPlayer
     }
     if card.price_variant:
         variant_names = VARIANT_ALIASES.get(card.price_variant, [card.price_variant])
