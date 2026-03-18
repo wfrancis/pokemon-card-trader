@@ -905,10 +905,12 @@ export default function Screener() {
       const effectiveMaxPrice = isFlip ? '' : maxPrice;
       const effectiveSearch = isFlip ? '' : search;
 
+      // ROI% sort is client-side only — send est_profit to backend as proxy
+      const needsClientSort = effectiveSortBy === 'roi';
       const params: Record<string, string> = {
         page: String(page),
         page_size: '48',
-        sort_by: effectiveSortBy,
+        sort_by: needsClientSort ? 'est_profit' : effectiveSortBy,
         sort_dir: effectiveSortDir,
         min_price: String(effectiveMinPrice),
       };
@@ -930,16 +932,18 @@ export default function Screener() {
       }
 
       const result = await api.getScreenerCards(params);
-      // Flip Finder: filter out DOWNTREND cards (risky for flipping) and apply ROI sort
+      // Flip Finder: filter out DOWNTREND cards
       if (isFlip) {
         result.data = result.data.filter(c => c.regime !== 'markdown');
-        if (flipSortMode === 'roi') {
-          result.data.sort((a, b) => {
-            const roiA = a.current_price > 0 && a.est_profit != null ? (a.est_profit / a.current_price) * 100 : -Infinity;
-            const roiB = b.current_price > 0 && b.est_profit != null ? (b.est_profit / b.current_price) * 100 : -Infinity;
-            return roiB - roiA;
-          });
-        }
+      }
+      // Client-side ROI% sort (used both in Flip Finder ROI mode and regular ROI% sort)
+      if (needsClientSort || (isFlip && flipSortMode === 'roi')) {
+        const dir = effectiveSortDir === 'asc' ? 1 : -1;
+        result.data.sort((a, b) => {
+          const roiA = a.current_price > 0 && a.est_profit != null ? (a.est_profit / a.current_price) * 100 : -Infinity;
+          const roiB = b.current_price > 0 && b.est_profit != null ? (b.est_profit / b.current_price) * 100 : -Infinity;
+          return (roiB - roiA) * dir;
+        });
       }
       setCards(result.data);
       setTotal(result.total);

@@ -265,14 +265,35 @@ export default function Watchlist() {
         setCardPriceHistories(histMap);
 
         // Build a map of cardId -> { date -> price }, skipping $0/null prices
+        // Also detect variant switches (>500% single-day jump) and use the new price baseline
         const cardPriceMap: Record<number, Record<string, number>> = {};
         for (const { cardId, data } of priceResults) {
           const dateMap: Record<string, number> = {};
-          for (const pt of data) {
-            // Skip zero or null prices — these are sync gaps, not real values
-            if (pt.market_price && pt.market_price > 0) {
-              dateMap[pt.date] = pt.market_price;
+          const validPts = data.filter(pt => pt.market_price && pt.market_price > 0);
+          // Detect variant switch: if last price is >5x the median of earlier prices, use only post-switch data
+          if (validPts.length >= 3) {
+            const lastPrice = validPts[validPts.length - 1].market_price;
+            const earlierPrices = validPts.slice(0, -3).map(p => p.market_price);
+            if (earlierPrices.length > 0) {
+              const medianEarlier = earlierPrices.sort((a, b) => a - b)[Math.floor(earlierPrices.length / 2)];
+              if (lastPrice > medianEarlier * 5 || lastPrice < medianEarlier * 0.2) {
+                // Variant switch detected — only use the most recent consistent prices
+                const switchIdx = validPts.findIndex((pt, i) => {
+                  if (i === 0) return false;
+                  const prev = validPts[i - 1].market_price;
+                  return pt.market_price > prev * 5 || pt.market_price < prev * 0.2;
+                });
+                const postSwitch = switchIdx > 0 ? validPts.slice(switchIdx) : validPts;
+                for (const pt of postSwitch) {
+                  dateMap[pt.date] = pt.market_price;
+                }
+                cardPriceMap[cardId] = dateMap;
+                continue;
+              }
             }
+          }
+          for (const pt of validPts) {
+            dateMap[pt.date] = pt.market_price;
           }
           cardPriceMap[cardId] = dateMap;
         }
