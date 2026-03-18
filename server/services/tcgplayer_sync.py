@@ -234,14 +234,16 @@ async def sync_tcgplayer_prices(db: Session, limit: int = 500) -> dict:
                     stats["no_price"] += 1
                     continue
 
-                # Sanity check: reject prices that differ >3x from last known
-                # (likely a wrong variant match — tighter than the original 10x)
+                # Sanity check: reject extreme swings, loosen for stale data
                 if card.current_price and card.current_price > 0:
                     ratio = market_price / card.current_price
-                    if ratio < 0.33 or ratio > 3.0:
+                    days_stale = (datetime.now(timezone.utc) - card.updated_at).days if card.updated_at else 999
+                    max_ratio = 10.0 if days_stale > 7 else 3.0
+                    min_ratio = 0.1 if days_stale > 7 else 0.33
+                    if ratio < min_ratio or ratio > max_ratio:
                         logger.warning(
                             f"Price sanity check FAILED for {card.name} ({card.set_name} #{card.number}): "
-                            f"${card.current_price} -> ${market_price} (ratio {ratio:.2f}). Skipping."
+                            f"${card.current_price} -> ${market_price} (ratio {ratio:.2f}, stale {days_stale}d). Skipping."
                         )
                         stats["no_price"] += 1
                         continue

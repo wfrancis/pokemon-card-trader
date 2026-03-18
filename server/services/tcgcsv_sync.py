@@ -599,13 +599,18 @@ async def sync_tcgcsv_prices(db: Session) -> dict:
             stats["no_price"] += 1
             continue
 
-        # Sanity check: reject >3x swings (matches tcgplayer_sync.py pattern)
+        # Sanity check: reject extreme swings, but loosen threshold for stale data
         if card.current_price and card.current_price > 0:
             ratio = market_price / card.current_price
-            if ratio < 0.33 or ratio > 3.0:
+            # If data is stale (updated_at > 7 days ago), allow wider swings (10x)
+            # Otherwise use strict 3x limit for daily updates
+            days_stale = (datetime.now(timezone.utc) - card.updated_at).days if card.updated_at else 999
+            max_ratio = 10.0 if days_stale > 7 else 3.0
+            min_ratio = 0.1 if days_stale > 7 else 0.33
+            if ratio < min_ratio or ratio > max_ratio:
                 logger.warning(
                     f"TCGCSV sanity skip: {card.name} ({card.set_name} #{card.number}) "
-                    f"${card.current_price:.2f} → ${market_price:.2f} (ratio {ratio:.2f})"
+                    f"${card.current_price:.2f} → ${market_price:.2f} (ratio {ratio:.2f}, stale {days_stale}d)"
                 )
                 stats["skipped_sanity"] += 1
                 continue
