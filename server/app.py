@@ -683,6 +683,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def add_cache_headers(request, call_next):
+    """Add cache headers: long cache for hashed static assets, short for API."""
+    response = await call_next(request)
+    path = request.url.path
+    if path.startswith("/static/"):
+        # React build hashes filenames — safe to cache forever
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    elif path.startswith("/api/"):
+        # API responses: short cache to reduce repeated calls
+        response.headers["Cache-Control"] = "public, max-age=60"
+    return response
+
+
 # API Routes (must be registered BEFORE static file mount)
 app.include_router(cards.router)
 app.include_router(prices.router)

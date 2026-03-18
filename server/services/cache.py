@@ -6,8 +6,8 @@ from typing import Any
 _cache: dict[str, tuple[float, Any]] = {}
 _lock = threading.Lock()
 
-# Default TTL in seconds (5 minutes)
-DEFAULT_TTL = 300
+# Default TTL in seconds (30 minutes — data updates every 6-48 hours so longer cache is fine)
+DEFAULT_TTL = 1800
 
 
 def get(key: str) -> Any | None:
