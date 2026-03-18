@@ -54,9 +54,19 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
   const handleExportPng = async () => {
     if (!chartRef.current) return;
     try {
+      const watermark = document.createElement('div');
+      watermark.style.cssText = 'text-align:center;padding:16px;color:#666;font-size:14px;font-family:monospace;';
+      watermark.textContent = 'PKMN TRADER \u2022 pokemon-card-trader.fly.dev';
+      chartRef.current.appendChild(watermark);
+
       const canvas = await html2canvas(chartRef.current, { backgroundColor: '#000', scale: 2 });
+
+      chartRef.current.removeChild(watermark);
+
       const link = document.createElement('a');
-      link.download = `${cardName.replace(/[^a-zA-Z0-9]/g, '_')}_sales_chart.png`;
+      const dateStr = new Date().toISOString().split('T')[0];
+      const safeName = cardName.replace(/[^a-zA-Z0-9]/g, '_');
+      link.download = `pkmn_${safeName}_sales_${dateStr}.png`;
       link.href = canvas.toDataURL('image/png');
       link.click();
     } catch (err) {
@@ -244,9 +254,10 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
           <Typography variant="h4" sx={{ fontWeight: 700, fontFamily: 'monospace' }}>
             COMPLETED SALES
           </Typography>
-          <MuiTooltip title="Download as PNG">
-            <IconButton onClick={handleExportPng} size="small" sx={{ color: '#888', '&:hover': { color: '#00bcd4' } }}>
-              <DownloadIcon fontSize="small" />
+          <MuiTooltip title="Save Chart as PNG">
+            <IconButton onClick={handleExportPng} size="small" sx={{ color: '#888', border: '1px solid #333', borderRadius: 1, px: 1, '&:hover': { color: '#00bcd4', borderColor: '#00bcd4' } }}>
+              <DownloadIcon sx={{ fontSize: 16, mr: 0.5 }} />
+              <Typography sx={{ fontSize: '0.65rem', fontFamily: 'monospace', fontWeight: 600 }}>PNG</Typography>
             </IconButton>
           </MuiTooltip>
           {isZoomed && (
