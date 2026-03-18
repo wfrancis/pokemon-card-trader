@@ -25,7 +25,7 @@ import StyleIcon from '@mui/icons-material/Style';
 import BookmarkBorderIcon from '@mui/icons-material/BookmarkBorder';
 import BookmarkIcon from '@mui/icons-material/Bookmark';
 import WhatshotIcon from '@mui/icons-material/Whatshot';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api, ScreenerCard, ScreenerStats, SetAnalytics } from '../services/api';
 import GlossaryTooltip from '../components/GlossaryTooltip';
 
@@ -1085,6 +1085,7 @@ function CardTable({ cards, page, onSort, sortBy, sortDir, flipFinderActive, fee
 }
 
 export default function Screener() {
+  const [searchParams] = useSearchParams();
   const [cards, setCards] = useState<ScreenerCard[]>([]);
   const [stats, setStats] = useState<ScreenerStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1130,6 +1131,14 @@ export default function Screener() {
     api.getSetAnalytics().then(setSetAnalytics).catch(console.error);
     return () => { document.title = 'PKMN Trader — Pokemon Card Market'; };
   }, [flipFinderActive]);
+
+  // Auto-activate Flip Finder if URL has ?flipFinder=true
+  useEffect(() => {
+    if (searchParams.get('flipFinder') === 'true' && !flipFinderActive) {
+      activateFlipFinder();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const fetchCards = useCallback(async () => {
     setLoading(true);

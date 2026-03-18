@@ -5,6 +5,8 @@ import ShowChartIcon from '@mui/icons-material/ShowChart';
 import SearchIcon from '@mui/icons-material/Search';
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
 import LocalFireDepartmentIcon from '@mui/icons-material/LocalFireDepartment';
+import MonetizationOnIcon from '@mui/icons-material/MonetizationOn';
+import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import TrendingFlatIcon from '@mui/icons-material/TrendingFlat';
@@ -255,6 +257,29 @@ export default function Dashboard() {
               )}
             </Grid>
           </Grid>
+        </Paper>
+
+        {/* Flip Finder CTA */}
+        <Paper
+          sx={{ p: 2, mb: 2, bgcolor: '#001a00', border: '2px solid #00ff4133', borderRadius: 2, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', gap: 2,
+            '&:hover': { borderColor: '#00ff41', bgcolor: '#001a0a' } }}
+          onClick={() => navigate('/screener?flipFinder=true')}
+        >
+          <MonetizationOnIcon sx={{ fontSize: 36, color: '#00ff41' }} />
+          <Box sx={{ flex: 1 }}>
+            <Typography sx={{ color: '#00ff41', fontSize: '0.95rem', fontWeight: 700, fontFamily: '"JetBrains Mono", monospace' }}>
+              FLIP FINDER
+            </Typography>
+            <Typography sx={{ color: '#888', fontSize: '0.75rem' }}>
+              {topFlips.length > 0 && topFlips[0].est_profit !== null
+                ? `Best flip: ${topFlips[0].name} +$${topFlips[0].est_profit.toFixed(2)} (+${(topFlips[0].current_price > 0 ? (topFlips[0].est_profit / topFlips[0].current_price) * 100 : 0).toFixed(0)}% Return)`
+                : `Find cards you can buy and resell for profit — ${topFlips.length || '50+'}  opportunities right now`}
+            </Typography>
+          </Box>
+          <Box sx={{ ml: 'auto' }}>
+            <ArrowForwardIcon sx={{ color: '#00ff4166' }} />
+          </Box>
         </Paper>
 
         {/* Top Flip Opportunities */}
