@@ -1046,11 +1046,13 @@ async def sync_stale_cards(db: Session = Depends(get_db), days: int = 30):
                 # Get product ID (use stored or search)
                 product_id = card.tcgplayer_product_id
                 if not product_id:
-                    product_id = await _search_tcgplayer(
+                    product_data = await _search_tcgplayer(
                         client, card.name, card.set_name or "", card.number or ""
                     )
-                    if product_id:
-                        card.tcgplayer_product_id = product_id
+                    if product_data:
+                        product_id = product_data.get("productId")
+                        if product_id:
+                            card.tcgplayer_product_id = int(product_id)
 
                 if not product_id:
                     stats["no_price"] += 1
