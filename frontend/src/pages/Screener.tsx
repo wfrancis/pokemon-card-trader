@@ -201,31 +201,30 @@ function isGoodBuy(card: ScreenerCard): boolean {
   return (card.investment_score ?? 0) >= 70 && card.breakeven_adjusted_slope !== null && card.breakeven_adjusted_slope > 0;
 }
 
-function calcFlipProfit(card: ScreenerCard): number | null {
+function calcFlipProfit(card: ScreenerCard, feeRate: number = 12.55): number | null {
   if (card.median_sold == null || card.current_price == null) return null;
-  // 12.55% seller fees
-  return card.median_sold - (card.current_price * 1.1255);
+  return card.median_sold - (card.current_price * (1 + feeRate / 100));
 }
 
-function calcFlipROI(card: ScreenerCard): number | null {
-  const profit = calcFlipProfit(card);
+function calcFlipROI(card: ScreenerCard, feeRate: number = 12.55): number | null {
+  const profit = calcFlipProfit(card, feeRate);
   if (profit === null || card.current_price == null || card.current_price === 0) return null;
   return (profit / card.current_price) * 100;
 }
 
-function FlipFinderStatsBar({ cards }: { cards: ScreenerCard[] }) {
+function FlipFinderStatsBar({ cards, feeRate = 12.55 }: { cards: ScreenerCard[]; feeRate?: number }) {
   const profitableCards = cards.filter(c => {
-    const p = calcFlipProfit(c);
+    const p = calcFlipProfit(c, feeRate);
     return p !== null && p > 0;
   });
   const avgROI = profitableCards.length > 0
-    ? profitableCards.reduce((sum, c) => sum + (calcFlipROI(c) ?? 0), 0) / profitableCards.length
+    ? profitableCards.reduce((sum, c) => sum + (calcFlipROI(c, feeRate) ?? 0), 0) / profitableCards.length
     : 0;
   const avgVelocity = profitableCards.length > 0
     ? profitableCards.reduce((sum, c) => sum + (c.sales_per_day ?? 0), 0) / profitableCards.length
     : 0;
   const bestFlip = profitableCards.reduce<{ name: string; profit: number } | null>((best, c) => {
-    const p = calcFlipProfit(c);
+    const p = calcFlipProfit(c, feeRate);
     if (p === null) return best;
     if (!best || p > best.profit) return { name: c.name, profit: p };
     return best;
@@ -258,7 +257,7 @@ function FlipFinderStatsBar({ cards }: { cards: ScreenerCard[] }) {
   );
 }
 
-function FlipFinderTable({ cards, page, onSort, sortBy, sortDir, flipSortMode, onFlipSortChange }: {
+function FlipFinderTable({ cards, page, onSort, sortBy, sortDir, flipSortMode, onFlipSortChange, feeRate = 12.55 }: {
   cards: ScreenerCard[];
   page: number;
   onSort: (col: string) => void;
@@ -266,6 +265,7 @@ function FlipFinderTable({ cards, page, onSort, sortBy, sortDir, flipSortMode, o
   sortDir: string;
   flipSortMode: 'profit' | 'roi' | 'spread';
   onFlipSortChange: (mode: 'profit' | 'roi' | 'spread') => void;
+  feeRate?: number;
 }) {
   const navigate = useNavigate();
   const columns = [
@@ -298,8 +298,8 @@ function FlipFinderTable({ cards, page, onSort, sortBy, sortDir, flipSortMode, o
         <TableBody>
           {cards.map((card, idx) => {
             const rank = (page - 1) * 48 + idx + 1;
-            const profit = calcFlipProfit(card);
-            const roi = calcFlipROI(card);
+            const profit = calcFlipProfit(card, feeRate);
+            const roi = calcFlipROI(card, feeRate);
             const spreadPct = card.median_sold != null && card.median_sold > 0
               ? ((card.current_price - card.median_sold) / card.median_sold * 100)
               : null;
@@ -385,7 +385,7 @@ function FlipFinderTable({ cards, page, onSort, sortBy, sortDir, flipSortMode, o
   );
 }
 
-function SimpleCardTile({ card, flipFinderActive }: { card: ScreenerCard; flipFinderActive?: boolean }) {
+function SimpleCardTile({ card, flipFinderActive, feeRate = 12.55 }: { card: ScreenerCard; flipFinderActive?: boolean; feeRate?: number }) {
   const navigate = useNavigate();
   const badge = getValueBadge(card);
   const trend7d = card.appreciation_slope !== null ? card.appreciation_slope * 7 : null;
@@ -429,8 +429,8 @@ function SimpleCardTile({ card, flipFinderActive }: { card: ScreenerCard; flipFi
 
       {/* Flip profit (shown when Flip Finder is active) */}
       {(() => {
-        const profit = calcFlipProfit(card);
-        const roi = calcFlipROI(card);
+        const profit = calcFlipProfit(card, feeRate);
+        const roi = calcFlipROI(card, feeRate);
         if (profit === null) return null;
         return (
           <>
@@ -498,7 +498,7 @@ function SimpleCardTile({ card, flipFinderActive }: { card: ScreenerCard; flipFi
   );
 }
 
-function CardTile({ card, rank, flipFinderActive }: { card: ScreenerCard; rank: number; flipFinderActive?: boolean }) {
+function CardTile({ card, rank, flipFinderActive, feeRate = 12.55 }: { card: ScreenerCard; rank: number; flipFinderActive?: boolean; feeRate?: number }) {
   const navigate = useNavigate();
   const regimeColor = REGIME_COLORS[card.regime || 'unknown'] || '#666';
   const isTopTier = (card.investment_score || 0) >= 50;
@@ -593,8 +593,8 @@ function CardTile({ card, rank, flipFinderActive }: { card: ScreenerCard; rank: 
 
       {/* Flip profit (shown when Flip Finder is active) */}
       {(() => {
-        const profit = calcFlipProfit(card);
-        const roi = calcFlipROI(card);
+        const profit = calcFlipProfit(card, feeRate);
+        const roi = calcFlipROI(card, feeRate);
         if (profit === null) return null;
         return (
           <Typography variant="body2" sx={{
@@ -700,13 +700,14 @@ function CardTile({ card, rank, flipFinderActive }: { card: ScreenerCard; rank: 
   );
 }
 
-function SimpleCardTable({ cards, page, onSort, sortBy, sortDir, flipFinderActive }: {
+function SimpleCardTable({ cards, page, onSort, sortBy, sortDir, flipFinderActive, feeRate = 12.55 }: {
   cards: ScreenerCard[];
   page: number;
   onSort: (col: string) => void;
   sortBy: string;
   sortDir: string;
   flipFinderActive?: boolean;
+  feeRate?: number;
 }) {
   const navigate = useNavigate();
   const baseColumns: { id: string; label: string; width?: number; sortable?: boolean; glossary?: string }[] = [
@@ -782,8 +783,8 @@ function SimpleCardTable({ cards, page, onSort, sortBy, sortDir, flipFinderActiv
                   ${card.current_price.toFixed(2)}
                 </TableCell>
                 {(() => {
-                  const profit = calcFlipProfit(card);
-                  const roi = calcFlipROI(card);
+                  const profit = calcFlipProfit(card, feeRate);
+                  const roi = calcFlipROI(card, feeRate);
                   const spreadPct = card.median_sold != null && card.median_sold > 0
                     ? ((card.current_price - card.median_sold) / card.median_sold * 100)
                     : null;
@@ -837,13 +838,14 @@ function SimpleCardTable({ cards, page, onSort, sortBy, sortDir, flipFinderActiv
   );
 }
 
-function CardTable({ cards, page, onSort, sortBy, sortDir, flipFinderActive }: {
+function CardTable({ cards, page, onSort, sortBy, sortDir, flipFinderActive, feeRate = 12.55 }: {
   cards: ScreenerCard[];
   page: number;
   onSort: (col: string) => void;
   sortBy: string;
   sortDir: string;
   flipFinderActive?: boolean;
+  feeRate?: number;
 }) {
   const navigate = useNavigate();
   const baseColumns: { id: string; label: string; width?: number; glossary?: string }[] = [
@@ -931,8 +933,8 @@ function CardTable({ cards, page, onSort, sortBy, sortDir, flipFinderActive }: {
                   ${card.current_price.toFixed(2)}
                 </TableCell>
                 {(() => {
-                  const profit = calcFlipProfit(card);
-                  const roi = calcFlipROI(card);
+                  const profit = calcFlipProfit(card, feeRate);
+                  const roi = calcFlipROI(card, feeRate);
                   const spreadPct = card.median_sold != null && card.median_sold > 0
                     ? ((card.current_price - card.median_sold) / card.median_sold * 100)
                     : null;
@@ -1054,6 +1056,7 @@ export default function Screener() {
   const [investmentGradeOnly, setInvestmentGradeOnly] = useState(false);
   const [flipFinderActive, setFlipFinderActive] = useState(false);
   const [flipSortMode, setFlipSortMode] = useState<'profit' | 'roi' | 'spread'>('roi');
+  const [feeRate, setFeeRate] = useState(12.55);
   // Set Analytics
   const [setAnalytics, setSetAnalytics] = useState<SetAnalytics[]>([]);
   const [setAnalyticsOpen, setSetAnalyticsOpen] = useState(true);
@@ -1286,7 +1289,7 @@ export default function Screener() {
       {!simpleMode && !flipFinderActive && <StatsBar stats={stats} />}
 
       {/* Flip Finder Stats */}
-      {flipFinderActive && !loading && cards.length > 0 && <FlipFinderStatsBar cards={cards} />}
+      {flipFinderActive && !loading && cards.length > 0 && <FlipFinderStatsBar cards={cards} feeRate={feeRate} />}
 
       {/* Set Analytics */}
       {setAnalytics.length > 0 && (
@@ -1436,10 +1439,24 @@ export default function Screener() {
                     FLIP FINDER ACTIVE
                   </Typography>
                   <Typography variant="body2" sx={{ color: '#888', fontSize: '0.75rem' }}>
-                    Showing {cards.filter(c => { const p = calcFlipProfit(c); return p !== null && p > 0; }).length} profitable flips sorted by {flipSortMode === 'roi' ? 'ROI%' : flipSortMode === 'spread' ? 'spread' : 'profit'} (after 12.55% seller fees)
+                    Showing {cards.filter(c => { const p = calcFlipProfit(c, feeRate); return p !== null && p > 0; }).length} profitable flips sorted by {flipSortMode === 'roi' ? 'ROI%' : flipSortMode === 'spread' ? 'spread' : 'profit'} (after {feeRate}% seller fees)
                   </Typography>
                 </Box>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <TextField
+                    size="small"
+                    label="Fee %"
+                    type="number"
+                    value={feeRate}
+                    onChange={(e) => setFeeRate(Math.max(0, Math.min(50, parseFloat(e.target.value) || 12.55)))}
+                    inputProps={{ step: 0.5, min: 0, max: 50 }}
+                    sx={{
+                      width: 90,
+                      '& .MuiInputBase-input': { color: '#00ff41', fontFamily: 'monospace', fontSize: '0.8rem', py: 0.5 },
+                      '& .MuiInputLabel-root': { color: '#666', fontSize: '0.7rem' },
+                      '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: '#333' } },
+                    }}
+                  />
                   <Typography sx={{ color: '#888', fontSize: '0.75rem', fontFamily: 'monospace', mr: 0.5 }}>Sort:</Typography>
                   {(['roi', 'profit', 'spread'] as const).map((mode) => (
                     <Button
@@ -1710,23 +1727,23 @@ export default function Screener() {
           </Typography>
         </Paper>
       ) : flipFinderActive ? (
-        <FlipFinderTable cards={cards} page={page} onSort={handleTableSort} sortBy={sortBy} sortDir={sortDir} flipSortMode={flipSortMode} onFlipSortChange={(mode) => { setFlipSortMode(mode); setPage(1); }} />
+        <FlipFinderTable cards={cards} page={page} onSort={handleTableSort} sortBy={sortBy} sortDir={sortDir} flipSortMode={flipSortMode} onFlipSortChange={(mode) => { setFlipSortMode(mode); setPage(1); }} feeRate={feeRate} />
       ) : viewMode === 'grid' ? (
         <Grid container spacing={1.5}>
           {cards.map((card, idx) => (
             <Grid size={{ xs: 6, sm: 4, md: 3, lg: 2 }} key={card.id}>
               {simpleMode ? (
-                <SimpleCardTile card={card} flipFinderActive={flipFinderActive} />
+                <SimpleCardTile card={card} flipFinderActive={flipFinderActive} feeRate={feeRate} />
               ) : (
-                <CardTile card={card} rank={(page - 1) * 48 + idx + 1} flipFinderActive={flipFinderActive} />
+                <CardTile card={card} rank={(page - 1) * 48 + idx + 1} flipFinderActive={flipFinderActive} feeRate={feeRate} />
               )}
             </Grid>
           ))}
         </Grid>
       ) : simpleMode ? (
-        <SimpleCardTable cards={cards} page={page} onSort={handleTableSort} sortBy={sortBy} sortDir={sortDir} flipFinderActive={flipFinderActive} />
+        <SimpleCardTable cards={cards} page={page} onSort={handleTableSort} sortBy={sortBy} sortDir={sortDir} flipFinderActive={flipFinderActive} feeRate={feeRate} />
       ) : (
-        <CardTable cards={cards} page={page} onSort={handleTableSort} sortBy={sortBy} sortDir={sortDir} flipFinderActive={flipFinderActive} />
+        <CardTable cards={cards} page={page} onSort={handleTableSort} sortBy={sortBy} sortDir={sortDir} flipFinderActive={flipFinderActive} feeRate={feeRate} />
       )}
 
       {/* Pagination */}
