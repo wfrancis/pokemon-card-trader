@@ -253,7 +253,7 @@ function SimpleCardTile({ card, flipFinderActive }: { card: ScreenerCard; flipFi
       </Typography>
 
       {/* Flip profit (shown when Flip Finder is active) */}
-      {flipFinderActive && (() => {
+      {(() => {
         const profit = calcFlipProfit(card);
         const roi = calcFlipROI(card);
         if (profit === null) return null;
@@ -417,7 +417,7 @@ function CardTile({ card, rank, flipFinderActive }: { card: ScreenerCard; rank: 
       </Typography>
 
       {/* Flip profit (shown when Flip Finder is active) */}
-      {flipFinderActive && (() => {
+      {(() => {
         const profit = calcFlipProfit(card);
         const roi = calcFlipROI(card);
         if (profit === null) return null;
@@ -606,7 +606,7 @@ function SimpleCardTable({ cards, page, onSort, sortBy, sortDir, flipFinderActiv
                 <TableCell sx={{ color: '#00ff41', fontWeight: 700, fontSize: '0.85rem', fontFamily: 'monospace' }}>
                   ${card.current_price.toFixed(2)}
                 </TableCell>
-                {flipFinderActive && (() => {
+                {(() => {
                   const profit = calcFlipProfit(card);
                   const roi = calcFlipROI(card);
                   const spreadPct = card.median_sold != null && card.median_sold > 0
@@ -685,16 +685,14 @@ function CardTable({ cards, page, onSort, sortBy, sortDir, flipFinderActive }: {
     { id: 'time_to_sell', label: 'TTS', width: 75, glossary: 'time_to_sell' },
     { id: 'regime', label: 'Regime', width: 85, glossary: 'regime' },
   ];
-  // Insert Est. Profit, ROI%, and Spread columns after Price when Flip Finder is active
-  const columns = flipFinderActive
-    ? [
-        ...baseColumns.slice(0, 3),
-        { id: 'est_profit', label: 'Est. Profit', width: 85, glossary: 'flip_profit' },
-        { id: 'roi_pct', label: 'ROI%', width: 65 },
-        { id: 'spread_pct', label: 'Spread', width: 65 },
-        ...baseColumns.slice(3),
-      ]
-    : baseColumns;
+  // Always show Est. Profit, ROI%, and Spread columns after Price
+  const columns = [
+    ...baseColumns.slice(0, 3),
+    { id: 'est_profit', label: 'Est. Profit', width: 85, glossary: 'flip_profit' },
+    { id: 'roi_pct', label: 'ROI%', width: 65 },
+    { id: 'spread_pct', label: 'Spread', width: 65 },
+    ...baseColumns.slice(3),
+  ];
 
   const sortable = ['name', 'current_price', 'investment_score', 'liquidity_score', 'appreciation_score', 'appreciation_consistency', 'appreciation_slope'];
 
@@ -757,7 +755,7 @@ function CardTable({ cards, page, onSort, sortBy, sortDir, flipFinderActive }: {
                 <TableCell sx={{ color: '#00ff41', fontWeight: 700, fontSize: '0.75rem', fontFamily: 'monospace' }}>
                   ${card.current_price.toFixed(2)}
                 </TableCell>
-                {flipFinderActive && (() => {
+                {(() => {
                   const profit = calcFlipProfit(card);
                   const roi = calcFlipROI(card);
                   const spreadPct = card.median_sold != null && card.median_sold > 0

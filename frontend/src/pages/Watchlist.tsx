@@ -17,7 +17,7 @@ import DownloadIcon from '@mui/icons-material/Download';
 import { useNavigate } from 'react-router-dom';
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis,
-  CartesianGrid, Tooltip, ReferenceLine, LineChart, Line, Legend,
+  CartesianGrid, Tooltip, ReferenceLine, LineChart, Line,
 } from 'recharts';
 import { api, Card, PricePoint } from '../services/api';
 import type { RecapArchiveResponse } from '../services/api';
@@ -351,15 +351,16 @@ export default function Watchlist() {
       return chartData.map(d => ({
         date: d.date,
         portfolioPct: ((d.value - portfolioStart) / portfolioStart) * 100,
+        marketPct: undefined as number | undefined,
       }));
     }
 
     return chartData.map(d => ({
       date: d.date,
       portfolioPct: ((d.value - portfolioStart) / portfolioStart) * 100,
-      marketPct: marketByDate[d.date] != null
+      marketPct: (marketByDate[d.date] != null
         ? ((marketByDate[d.date] - marketStart) / marketStart) * 100
-        : undefined,
+        : undefined) as number | undefined,
     }));
   }, [chartData, marketIndexHistory]);
 
