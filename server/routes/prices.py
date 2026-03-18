@@ -30,8 +30,16 @@ def get_price_history(
         .filter(PriceHistory.card_id == card_id, PriceHistory.market_price.isnot(None))
         .filter((PriceHistory.condition == effective_condition) | (PriceHistory.condition.is_(None)))
     )
+    # Normalize variant aliases (different sources use different names for the same thing)
+    VARIANT_ALIASES = {
+        "holo": ["holo", "holofoil"],
+        "holofoil": ["holo", "holofoil"],
+        "reverse": ["reverse", "reverseHolofoil"],
+        "reverseHolofoil": ["reverse", "reverseHolofoil"],
+    }
     if card.price_variant:
-        variant_records = query.filter(PriceHistory.variant == card.price_variant).order_by(asc(PriceHistory.date)).all()
+        variant_names = VARIANT_ALIASES.get(card.price_variant, [card.price_variant])
+        variant_records = query.filter(PriceHistory.variant.in_(variant_names)).order_by(asc(PriceHistory.date)).all()
         if variant_records:
             records = variant_records
         else:
@@ -39,7 +47,7 @@ def get_price_history(
             records = (
                 db.query(PriceHistory)
                 .filter(PriceHistory.card_id == card_id, PriceHistory.market_price.isnot(None))
-                .filter(PriceHistory.variant == card.price_variant)
+                .filter(PriceHistory.variant.in_(variant_names))
                 .order_by(asc(PriceHistory.date))
                 .all()
             )
