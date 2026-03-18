@@ -8,6 +8,8 @@ from server.database import get_db
 from server.models.card import Card
 from server.models.card_set import CardSet
 from server.models.price_history import PriceHistory
+from server.services.card_insights import generate_card_insights
+from server.services.cache import get as cache_get, set as cache_set
 
 router = APIRouter(prefix="/api/cards", tags=["cards"])
 
@@ -183,6 +185,26 @@ def get_similar_cards(card_id: int, db: Session = Depends(get_db)):
         })
 
     return {"similar": similar}
+
+
+@router.get("/{card_id}/insights")
+def get_card_insights(card_id: int, db: Session = Depends(get_db)):
+    """Return AI-generated smart insights for a card. Cached for 10 minutes."""
+    from fastapi import HTTPException
+
+    cache_key = f"card_insights:{card_id}"
+    cached = cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    card = db.query(Card).filter(Card.id == card_id).first()
+    if not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+
+    insights = generate_card_insights(card, db)
+    result = {"card_id": card_id, "insights": insights}
+    cache_set(cache_key, result, ttl=600)  # 10 minutes
+    return result
 
 
 def _card_to_dict(card: Card, db: Session = None) -> dict:

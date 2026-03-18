@@ -84,6 +84,19 @@ export default function Dashboard() {
         {/* Onboarding */}
         <OnboardingBanner />
 
+        {/* Collection Builder CTA */}
+        <Paper
+          sx={{ p: 2.5, mb: 2, bgcolor: '#001a00', border: '2px solid #00ff4133', borderRadius: 2, cursor: 'pointer', textAlign: 'center', '&:hover': { borderColor: '#00ff4166' } }}
+          onClick={() => navigate('/collection-builder')}
+        >
+          <Typography sx={{ color: '#00ff41', fontSize: '1rem', fontWeight: 700, fontFamily: '"JetBrains Mono", monospace' }}>
+            What's My Collection Worth?
+          </Typography>
+          <Typography sx={{ color: '#888', fontSize: '0.8rem', mt: 0.5 }}>
+            Add your cards and find out instantly — no account needed
+          </Typography>
+        </Paper>
+
         {/* Header */}
         <Box sx={{ display: 'flex', justifyContent: 'space-between', flexDirection: { xs: 'column', sm: 'row' }, alignItems: { xs: 'flex-start', sm: 'center' }, gap: 1, mb: 2 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>

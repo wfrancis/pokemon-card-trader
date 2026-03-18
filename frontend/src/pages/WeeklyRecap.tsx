@@ -10,6 +10,8 @@ import WhatshotIcon from '@mui/icons-material/Whatshot';
 import CameraAltIcon from '@mui/icons-material/CameraAlt';
 import HistoryIcon from '@mui/icons-material/History';
 import InsightsIcon from '@mui/icons-material/Insights';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import LightbulbIcon from '@mui/icons-material/Lightbulb';
 import { useNavigate } from 'react-router-dom';
 import html2canvas from 'html2canvas';
 import {
@@ -376,6 +378,168 @@ export default function WeeklyRecap() {
                 </Typography>
                 <Typography sx={{ color: '#c0c0c0', fontFamily: 'monospace', fontSize: '0.85rem', lineHeight: 1.6 }}>
                   {t}
+                </Typography>
+              </Box>
+            ))}
+          </Paper>
+        );
+      })()}
+
+      {/* Market Commentary */}
+      {(() => {
+        const paragraphs: string[] = [];
+
+        // Main market move paragraph
+        if (market_index.change_pct !== null) {
+          const pctAbs = Math.abs(market_index.change_pct).toFixed(1);
+          const direction = market_index.change_pct >= 0 ? 'gained' : 'lost';
+
+          if (gainers.length > 0 && Math.abs(market_index.change_pct) >= 0.5) {
+            const g = gainers[0];
+            const gPct = g.change_pct?.toFixed(1) ?? '?';
+            // Determine likely reason
+            let reason = 'increased market demand';
+            const setLower = (g.set_name || '').toLowerCase();
+            if (setLower.includes('base') || setLower.includes('fossil') || setLower.includes('jungle') || setLower.includes('rocket') || setLower.includes('neo') || setLower.includes('gym')) {
+              reason = 'renewed collector interest in vintage cards';
+            } else if (setLower.includes('2024') || setLower.includes('2025') || setLower.includes('2026') || setLower.includes('scarlet') || setLower.includes('violet') || setLower.includes('paldea') || setLower.includes('surging') || setLower.includes('twilight') || setLower.includes('prismatic') || setLower.includes('stellar') || setLower.includes('shrouded')) {
+              reason = 'recent set release hype driving demand';
+            }
+            // Check if multiple gainers from same set
+            const topGainerSet = g.set_name;
+            const sameSetGainers = gainers.filter(c => c.set_name === topGainerSet).length;
+            if (sameSetGainers >= 2) {
+              reason = `set-wide momentum in ${topGainerSet}`;
+            }
+            paragraphs.push(
+              `This week's ${pctAbs}% market move was driven primarily by ${g.name}, which surged ${gPct}% \u2014 likely due to ${reason}.`
+            );
+          } else {
+            paragraphs.push(
+              `The market ${direction} ${pctAbs}% this week across ${market_index.total_cards.toLocaleString()} tracked cards, with a total catalog value of $${market_index.total_market_cap.toLocaleString(undefined, { maximumFractionDigits: 0 })}.`
+            );
+          }
+        }
+
+        // Loser context paragraph
+        if (losers.length > 0 && losers[0].change_pct !== null) {
+          const l = losers[0];
+          const lPct = Math.abs(l.change_pct ?? 0).toFixed(1);
+          let loserReason = 'decreased demand';
+          if (l.change_pct !== null && l.change_pct < -10) {
+            loserReason = 'profit-taking after recent gains';
+          } else if (l.change_pct !== null && l.change_pct < -5) {
+            loserReason = 'a market correction as prices normalize';
+          }
+          paragraphs.push(
+            `Meanwhile, ${l.name} dropped ${lPct}%, suggesting ${loserReason}.`
+          );
+        }
+
+        // Activity paragraph
+        if (hottest.length > 0) {
+          const h = hottest[0];
+          paragraphs.push(
+            `${h.name} led trading activity this week with an activity score of ${h.activity_score.toFixed(0)}, indicating strong market interest at the $${h.current_price.toFixed(2)} price point.`
+          );
+        }
+
+        // Broad market sentiment
+        const gainingCards = gainers.length;
+        const losingCards = losers.length;
+        if (gainingCards > 0 && losingCards > 0) {
+          if (gainingCards > losingCards) {
+            paragraphs.push(
+              `Breadth is positive with more top movers gaining than declining, suggesting broad buying interest and potential for continued upside.`
+            );
+          } else if (losingCards > gainingCards) {
+            paragraphs.push(
+              `Breadth is negative with more top movers declining, suggesting selling pressure may continue into next week.`
+            );
+          } else {
+            paragraphs.push(
+              `Market breadth is balanced between gainers and losers, indicating a consolidation phase.`
+            );
+          }
+        }
+
+        if (paragraphs.length === 0) return null;
+
+        return (
+          <Paper sx={{ p: 2.5, mb: 2, bgcolor: '#0d0d0d', border: '1px solid #1e1e1e', borderLeft: '3px solid #ce93d8' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+              <AutoAwesomeIcon sx={{ color: '#ce93d8', fontSize: 20 }} />
+              <Typography sx={{ color: '#ce93d8', fontWeight: 700, letterSpacing: 1, fontSize: '0.85rem' }}>
+                MARKET COMMENTARY
+              </Typography>
+            </Box>
+            {paragraphs.map((p, i) => (
+              <Typography key={i} sx={{ color: '#c0c0c0', fontFamily: 'monospace', fontSize: '0.85rem', lineHeight: 1.8, mb: i < paragraphs.length - 1 ? 1.5 : 0 }}>
+                {p}
+              </Typography>
+            ))}
+          </Paper>
+        );
+      })()}
+
+      {/* Content Angles */}
+      {(() => {
+        const angles: string[] = [];
+
+        if (gainers.length > 0) {
+          const g = gainers[0];
+          const gPct = g.change_pct?.toFixed(0) ?? '?';
+          angles.push(
+            `Video idea: "${g.name} just jumped ${gPct}% \u2014 is it too late to buy?"`
+          );
+        }
+
+        // Set rally angle: check if multiple gainers share a set
+        const setCounts: Record<string, number> = {};
+        gainers.forEach(g => { setCounts[g.set_name] = (setCounts[g.set_name] || 0) + 1; });
+        const rallySet = Object.entries(setCounts).find(([, count]) => count >= 2);
+        if (rallySet) {
+          angles.push(
+            `Article: "The ${rallySet[0]} rally \u2014 which cards to watch next"`
+          );
+        } else if (gainers.length >= 2) {
+          angles.push(
+            `Article: "This week's top movers \u2014 ${gainers.slice(0, 3).map(g => g.name).join(', ')}"`
+          );
+        }
+
+        // Market breadth angle
+        if (market_index.change_pct !== null) {
+          const direction = market_index.change_pct >= 0 ? 'up' : 'down';
+          angles.push(
+            `Thread: "Market ${direction} ${Math.abs(market_index.change_pct).toFixed(1)}% this week \u2014 here's what's driving it"`
+          );
+        }
+
+        // Hot card angle
+        if (hottest.length > 0) {
+          angles.push(
+            `Short: "${hottest[0].name} is the most-traded card this week \u2014 here's why"`
+          );
+        }
+
+        if (angles.length === 0) return null;
+
+        return (
+          <Paper sx={{ p: 2.5, mb: 2, bgcolor: '#0d0d0d', border: '1px solid #1e1e1e', borderLeft: '3px solid #4fc3f7' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+              <LightbulbIcon sx={{ color: '#4fc3f7', fontSize: 20 }} />
+              <Typography sx={{ color: '#4fc3f7', fontWeight: 700, letterSpacing: 1, fontSize: '0.85rem' }}>
+                CONTENT ANGLES
+              </Typography>
+            </Box>
+            {angles.map((a, i) => (
+              <Box key={i} sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: i < angles.length - 1 ? 1 : 0 }}>
+                <Typography sx={{ color: '#4fc3f7', fontFamily: 'monospace', fontSize: '0.85rem', lineHeight: 1.6, flexShrink: 0 }}>
+                  &bull;
+                </Typography>
+                <Typography sx={{ color: '#c0c0c0', fontFamily: 'monospace', fontSize: '0.85rem', lineHeight: 1.6 }}>
+                  {a}
                 </Typography>
               </Box>
             ))}

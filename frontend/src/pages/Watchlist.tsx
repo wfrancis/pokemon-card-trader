@@ -4,7 +4,7 @@ import {
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
   InputAdornment, CircularProgress, Snackbar, ClickAwayListener, Button,
   Dialog, DialogTitle, DialogContent, DialogActions, Chip,
-  Tooltip as MuiTooltip,
+  Tooltip as MuiTooltip, Select, MenuItem, FormControl,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import SellIcon from '@mui/icons-material/Sell';
@@ -20,6 +20,10 @@ import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import PieChartIcon from '@mui/icons-material/PieChart';
 import StorefrontIcon from '@mui/icons-material/Storefront';
+import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
+import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
+import MonitorHeartIcon from '@mui/icons-material/MonitorHeart';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import html2canvas from 'html2canvas';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -36,6 +40,39 @@ interface Lot {
   date: string;
 }
 
+type CardCondition = 'NM' | 'LP' | 'MP' | 'HP' | 'DMG';
+
+const CONDITION_LABELS: Record<CardCondition, string> = {
+  NM: 'Near Mint',
+  LP: 'Lightly Played',
+  MP: 'Moderately Played',
+  HP: 'Heavily Played',
+  DMG: 'Damaged',
+};
+
+const CONDITION_COLORS: Record<CardCondition, string> = {
+  NM: '#00ff41',
+  LP: '#8bc34a',
+  MP: '#ff9800',
+  HP: '#f44336',
+  DMG: '#9e9e9e',
+};
+
+// Condition discount multipliers relative to NM (Near Mint) price
+// Based on standard TCG market conventions
+const CONDITION_MULTIPLIERS: Record<CardCondition, number> = {
+  NM: 1.0,
+  LP: 0.87,
+  MP: 0.75,
+  HP: 0.55,
+  DMG: 0.35,
+};
+
+function getConditionAdjustedPrice(nmPrice: number, condition?: CardCondition): number {
+  if (!condition || condition === 'NM') return nmPrice;
+  return nmPrice * CONDITION_MULTIPLIERS[condition];
+}
+
 interface WatchlistItem {
   cardId: number;
   costBasis: number | null;
@@ -43,6 +80,7 @@ interface WatchlistItem {
   alertBelow: number | null;
   quantity?: number;
   lots?: Lot[];
+  condition?: CardCondition;
   addedAt: string;
 }
 
@@ -162,6 +200,13 @@ export default function Watchlist() {
     const updated = items.map(w => w.cardId === cardId ? { ...w, quantity: qty } : w);
     localStorage.setItem('pkmn_watchlist', JSON.stringify(updated));
     setRows(prev => prev.map(r => r.cardId === cardId ? { ...r, quantity: qty } : r));
+  };
+
+  const updateCondition = (cardId: number, value: CardCondition) => {
+    const items: WatchlistItem[] = JSON.parse(localStorage.getItem('pkmn_watchlist') || '[]');
+    const updated = items.map(w => w.cardId === cardId ? { ...w, condition: value } : w);
+    localStorage.setItem('pkmn_watchlist', JSON.stringify(updated));
+    setRows(prev => prev.map(r => r.cardId === cardId ? { ...r, condition: value } : r));
   };
 
   const openLotDialog = (row: WatchlistRow) => {
@@ -435,8 +480,8 @@ export default function Watchlist() {
             if (priceMap[date] !== undefined && priceMap[date] > 0) {
               lastKnown[row.cardId] = priceMap[date];
             }
-            const price = lastKnown[row.cardId] ?? row.card?.current_price ?? 0;
-            total += price * qty;
+            const basePrice = lastKnown[row.cardId] ?? row.card?.current_price ?? 0;
+            total += getConditionAdjustedPrice(basePrice, row.condition) * qty;
           }
           return { date, value: parseFloat(total.toFixed(2)) };
         });
@@ -542,7 +587,8 @@ export default function Watchlist() {
   const totalValue = rows.reduce((sum, r) => {
     const lots = getLotsForItem(r);
     const qty = lots.length > 0 ? totalQtyFromLots(lots) : (r.quantity ?? 1);
-    return sum + (r.card?.current_price || 0) * qty;
+    const nmPrice = r.card?.current_price || 0;
+    return sum + getConditionAdjustedPrice(nmPrice, r.condition) * qty;
   }, 0);
   const totalCost = rows.reduce((sum, r) => {
     const lots = getLotsForItem(r);
@@ -599,7 +645,8 @@ export default function Watchlist() {
       const lots = getLotsForItem(r);
       const qty = lots.length > 0 ? totalQtyFromLots(lots) : (r.quantity ?? 1);
       const effectiveCostBasis = lots.length > 0 ? avgCostFromLots(lots) : r.costBasis;
-      const price = r.card?.current_price || 0;
+      const nmPrice = r.card?.current_price || 0;
+      const price = getConditionAdjustedPrice(nmPrice, r.condition);
       const totalVal = price * qty;
       const pnlPct = effectiveCostBasis != null && effectiveCostBasis > 0 ? ((price - effectiveCostBasis) / effectiveCostBasis) * 100 : null;
       return { name: r.card?.name || 'Unknown', pnlPct, totalVal };
@@ -649,13 +696,14 @@ export default function Watchlist() {
   }, []);
 
   const exportCSV = useCallback(() => {
-    const header = ['Card Name', 'Set', 'Price', 'Purchase Price', 'Quantity', 'Total Value', 'Total Cost', 'Profit/Loss', '7d Change %'];
+    const header = ['Card Name', 'Set', 'Condition', 'Price', 'Purchase Price', 'Quantity', 'Total Value', 'Total Cost', 'Profit/Loss', '7d Change %'];
     const csvRows = rows.map(row => {
       const card = row.card;
       const rowLots = getLotsForItem(row);
       const qty = rowLots.length > 0 ? totalQtyFromLots(rowLots) : (row.quantity ?? 1);
       const rowCostBasis = rowLots.length > 0 ? avgCostFromLots(rowLots) : row.costBasis;
-      const price = card?.current_price ?? 0;
+      const nmPrice = card?.current_price ?? 0;
+      const price = getConditionAdjustedPrice(nmPrice, row.condition);
       const rowTotalValue = price * qty;
       const rowTotalCost = (rowCostBasis ?? 0) * qty;
       const rowPnL = rowCostBasis != null ? rowTotalValue - rowTotalCost : '';
@@ -680,6 +728,7 @@ export default function Watchlist() {
       return [
         escape(card?.name ?? 'Unknown'),
         escape(card?.set_name ?? ''),
+        row.condition || 'NM',
         price.toFixed(2),
         rowCostBasis != null ? rowCostBasis.toFixed(2) : '',
         String(qty),
@@ -1209,7 +1258,7 @@ export default function Watchlist() {
                     const rQty = rLots.length > 0 ? totalQtyFromLots(rLots) : (r.quantity ?? 1);
                     return {
                       name: r.card?.name || 'Unknown',
-                      value: (r.card?.current_price || 0) * rQty,
+                      value: getConditionAdjustedPrice(r.card?.current_price || 0, r.condition) * rQty,
                       color: ALLOC_COLORS[i % ALLOC_COLORS.length],
                     };
                   })
@@ -1318,25 +1367,105 @@ export default function Watchlist() {
 
       {/* Completed Flips Section -- moved above card table for visibility */}
       <Box sx={{ mb: 2 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
-          <SellIcon sx={{ color: '#ffd700', fontSize: 20 }} />
-          <Typography sx={{ color: '#ffd700', fontSize: '1rem', fontFamily: '"JetBrains Mono", monospace', fontWeight: 700, letterSpacing: 1 }}>
-            COMPLETED FLIPS
-          </Typography>
-          <Typography sx={{ color: '#666', ml: 'auto', fontFamily: 'monospace', fontSize: '0.7rem' }}>
-            {soldCards.length} trade{soldCards.length !== 1 ? 's' : ''}
-          </Typography>
-        </Box>
-        {soldCards.length === 0 && (
-          <Paper sx={{ p: 3, bgcolor: '#0a0a0a', border: '1px solid #1a1a1a', textAlign: 'center' }}>
+        {/* Summary banner when flips exist */}
+        {soldCards.length > 0 && soldSummary && (
+          <Paper sx={{
+            p: 2, mb: 2, bgcolor: '#0d1a0d',
+            border: `1px solid ${soldSummary.totalProfit >= 0 ? '#00ff4133' : '#ff174433'}`,
+            display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap',
+          }}>
+            <SellIcon sx={{ color: '#ffd700', fontSize: 28 }} />
+            <Box sx={{ flex: 1 }}>
+              <Typography sx={{ color: '#ffd700', fontFamily: '"JetBrains Mono", monospace', fontWeight: 700, fontSize: '0.95rem', letterSpacing: 1 }}>
+                FLIP P&L TRACKER
+              </Typography>
+              <Typography sx={{ color: '#aaa', fontFamily: '"JetBrains Mono", monospace', fontSize: '0.75rem' }}>
+                {'You\'ve completed '}{soldSummary.totalTrades}{' flip'}{soldSummary.totalTrades !== 1 ? 's' : ''}{' with '}
+                <Box component="span" sx={{ color: soldSummary.totalProfit >= 0 ? '#00ff41' : '#ff1744', fontWeight: 700 }}>
+                  {soldSummary.totalProfit >= 0 ? '+' : ''}${soldSummary.totalProfit.toFixed(2)} total profit
+                </Box>
+                {' ('}{soldSummary.winRate.toFixed(0)}{'% win rate, '}{soldSummary.avgRoi >= 0 ? '+' : ''}{soldSummary.avgRoi.toFixed(1)}{'% avg ROI)'}
+              </Typography>
+            </Box>
+          </Paper>
+        )}
+
+        {/* Prominent CTA when no flips recorded but cards exist in watchlist */}
+        {soldCards.length === 0 && rows.length > 0 && (
+          <Paper sx={{
+            p: 3, mb: 2, bgcolor: '#111',
+            border: '2px solid #ffd70055',
+            background: 'linear-gradient(135deg, #111 0%, #1a1400 100%)',
+          }}>
+            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2, flexWrap: { xs: 'wrap', sm: 'nowrap' } }}>
+              <SellIcon sx={{ color: '#ffd700', fontSize: 36, mt: 0.5, flexShrink: 0 }} />
+              <Box sx={{ flex: 1, minWidth: 200 }}>
+                <Typography sx={{ color: '#ffd700', fontFamily: '"JetBrains Mono", monospace', fontWeight: 700, fontSize: '1.1rem', letterSpacing: 1, mb: 0.5 }}>
+                  RECORD YOUR FIRST FLIP
+                </Typography>
+                <Typography sx={{ color: '#ccc', fontFamily: '"JetBrains Mono", monospace', fontSize: '0.8rem', mb: 1.5, lineHeight: 1.6 }}>
+                  Track your flips to see realized profit, win rate, and ROI over time.
+                </Typography>
+                <Typography sx={{ color: '#999', fontFamily: '"JetBrains Mono", monospace', fontSize: '0.75rem', mb: 2 }}>
+                  {'Click the gold '}
+                  <SellIcon sx={{ color: '#ffd700', fontSize: 14, verticalAlign: 'middle', mx: 0.3 }} />
+                  {' icon on any card below to record a sale.'}
+                </Typography>
+
+                {/* Demo preview showing what completed flips look like */}
+                <Paper sx={{ p: 1.5, bgcolor: '#0a0a0a', border: '1px solid #1e1e1e', borderRadius: 1 }}>
+                  <Typography sx={{ color: '#555', fontFamily: '"JetBrains Mono", monospace', fontSize: '0.6rem', textTransform: 'uppercase', mb: 1 }}>
+                    PREVIEW: What your flip tracker will look like
+                  </Typography>
+                  <Box sx={{ display: 'flex', gap: 1, mb: 1, flexWrap: 'wrap' }}>
+                    {[
+                      { label: 'Realized Profit', value: '+$127.50', color: '#00ff41' },
+                      { label: 'Win Rate', value: '75%', color: '#00ff41' },
+                      { label: 'Avg ROI', value: '+34.2%', color: '#00ff41' },
+                      { label: 'Total Trades', value: '4', color: '#4fc3f7' },
+                    ].map((stat) => (
+                      <Paper key={stat.label} sx={{ p: 1, flex: '1 1 auto', minWidth: 70, textAlign: 'center', bgcolor: '#111', border: '1px solid #1a1a1a' }}>
+                        <Typography sx={{ color: '#555', fontSize: '0.5rem', textTransform: 'uppercase', fontFamily: 'monospace' }}>{stat.label}</Typography>
+                        <Typography sx={{ color: stat.color, fontWeight: 700, fontFamily: '"JetBrains Mono", monospace', fontSize: '0.85rem', opacity: 0.6 }}>{stat.value}</Typography>
+                      </Paper>
+                    ))}
+                  </Box>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1, py: 0.5, bgcolor: '#0d0d0d', borderRadius: 0.5, opacity: 0.5 }}>
+                    <Typography sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.7rem', color: '#888', flex: 1 }}>Charizard ex</Typography>
+                    <Typography sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.7rem', color: '#888' }}>$12.50</Typography>
+                    <Typography sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.7rem', color: '#888' }}>$18.00</Typography>
+                    <Typography sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.7rem', color: '#00ff41', fontWeight: 700 }}>+$3.24</Typography>
+                  </Box>
+                </Paper>
+              </Box>
+            </Box>
+          </Paper>
+        )}
+
+        {/* Empty state when no cards AND no flips */}
+        {soldCards.length === 0 && rows.length === 0 && !loading && (
+          <Paper sx={{ p: 3, bgcolor: '#0a0a0a', border: '1px solid #1a1a1a', textAlign: 'center', mb: 2 }}>
             <StorefrontIcon sx={{ color: '#333', fontSize: 40, mb: 1 }} />
             <Typography sx={{ color: '#888', fontSize: '0.85rem', fontFamily: 'monospace', mb: 0.5 }}>
               No completed trades yet
             </Typography>
             <Typography sx={{ color: '#555', fontSize: '0.7rem', fontFamily: 'monospace' }}>
-              Use the gold sell button on any card to record a sale and track your realized P&L, win rate, and ROI.
+              Add cards to your watchlist, then use the gold sell button to record sales.
             </Typography>
           </Paper>
+        )}
+
+        {/* Header for completed flips table (only when flips exist) */}
+        {soldCards.length > 0 && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+            <SellIcon sx={{ color: '#ffd700', fontSize: 20 }} />
+            <Typography sx={{ color: '#ffd700', fontSize: '1rem', fontFamily: '"JetBrains Mono", monospace', fontWeight: 700, letterSpacing: 1 }}>
+              COMPLETED FLIPS
+            </Typography>
+            <Typography sx={{ color: '#666', ml: 'auto', fontFamily: 'monospace', fontSize: '0.7rem' }}>
+              {soldCards.length} trade{soldCards.length !== 1 ? 's' : ''}
+            </Typography>
+          </Box>
         )}
 
         {soldCards.length > 0 && (<>
@@ -1466,11 +1595,12 @@ export default function Watchlist() {
         </Paper>
       ) : (
         <TableContainer component={Paper} sx={{ overflowX: 'auto' }}>
-          <Table size="small" sx={{ minWidth: 900 }}>
+          <Table size="small" sx={{ minWidth: 960 }}>
             <TableHead>
               <TableRow>
                 <TableCell sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}>CARD</TableCell>
                 <TableCell align="right" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}>QTY</TableCell>
+                <TableCell align="center" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem', width: 70 }}>COND</TableCell>
                 <TableCell align="right" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}>CURRENT</TableCell>
                 <TableCell align="center" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem', width: 80 }}>TREND</TableCell>
                 <TableCell align="right" sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem' }}>7D</TableCell>
@@ -1487,7 +1617,8 @@ export default function Watchlist() {
                 const lots = getLotsForItem(row);
                 const qty = lots.length > 0 ? totalQtyFromLots(lots) : (row.quantity ?? 1);
                 const effectiveCostBasis = lots.length > 0 ? avgCostFromLots(lots) : row.costBasis;
-                const price = row.card?.current_price || 0;
+                const nmPrice = row.card?.current_price || 0;
+                const price = getConditionAdjustedPrice(nmPrice, row.condition);
                 const totalRowValue = price * qty;
                 const totalRowCost = (effectiveCostBasis || 0) * qty;
                 const pnl = effectiveCostBasis != null ? totalRowValue - totalRowCost : null;
@@ -1533,10 +1664,53 @@ export default function Watchlist() {
                         </Box>
                       </TableCell>
                     </MuiTooltip>
+                    <TableCell align="center" onClick={e => e.stopPropagation()} sx={{ p: 0.5 }}>
+                      <Select
+                        size="small"
+                        value={row.condition || 'NM'}
+                        onChange={e => updateCondition(row.cardId, e.target.value as CardCondition)}
+                        sx={{
+                          fontFamily: '"JetBrains Mono", monospace',
+                          fontSize: '0.7rem',
+                          fontWeight: 700,
+                          color: CONDITION_COLORS[(row.condition || 'NM') as CardCondition],
+                          minWidth: 60,
+                          height: 28,
+                          '& .MuiSelect-select': { py: 0.3, px: 0.8 },
+                          '& .MuiOutlinedInput-notchedOutline': { borderColor: '#333' },
+                          '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#555' },
+                          '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: CONDITION_COLORS[(row.condition || 'NM') as CardCondition] },
+                          '& .MuiSvgIcon-root': { color: '#555', fontSize: 16 },
+                        }}
+                        MenuProps={{
+                          PaperProps: {
+                            sx: { bgcolor: '#0d0d1a', border: '1px solid #333' },
+                          },
+                        }}
+                      >
+                        {(Object.keys(CONDITION_LABELS) as CardCondition[]).map(cond => (
+                          <MenuItem key={cond} value={cond} sx={{
+                            fontFamily: '"JetBrains Mono", monospace',
+                            fontSize: '0.7rem',
+                            fontWeight: 700,
+                            color: CONDITION_COLORS[cond],
+                            '&:hover': { bgcolor: '#1a1a2e' },
+                            '&.Mui-selected': { bgcolor: '#1a1a2e' },
+                          }}>
+                            {cond}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </TableCell>
                     <TableCell align="right">
                       <Typography sx={{ color: '#00ff41', fontFamily: '"JetBrains Mono", monospace', fontWeight: 700, fontSize: '0.85rem' }}>
                         ${totalRowValue.toFixed(2)}
                       </Typography>
+                      {row.condition && row.condition !== 'NM' && (
+                        <Typography sx={{ color: CONDITION_COLORS[row.condition], fontFamily: 'monospace', fontSize: '0.55rem' }}>
+                          Valued at {row.condition}
+                        </Typography>
+                      )}
                       {qty > 1 && (
                         <Typography sx={{ color: '#555', fontFamily: 'monospace', fontSize: '0.6rem' }}>
                           ${price.toFixed(2)} ea

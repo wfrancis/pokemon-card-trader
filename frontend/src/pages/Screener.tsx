@@ -24,6 +24,7 @@ import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import StyleIcon from '@mui/icons-material/Style';
 import BookmarkBorderIcon from '@mui/icons-material/BookmarkBorder';
 import BookmarkIcon from '@mui/icons-material/Bookmark';
+import WhatshotIcon from '@mui/icons-material/Whatshot';
 import { useNavigate } from 'react-router-dom';
 import { api, ScreenerCard, ScreenerStats, SetAnalytics } from '../services/api';
 import GlossaryTooltip from '../components/GlossaryTooltip';

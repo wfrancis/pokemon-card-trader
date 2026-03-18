@@ -18,6 +18,7 @@ import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
 import SearchIcon from '@mui/icons-material/Search';
 import ShareIcon from '@mui/icons-material/Share';
+import CodeIcon from '@mui/icons-material/Code';
 import { api, Card, PricePoint, SaleRecord, Analysis, SimilarCard } from '../services/api';
 import PriceChart from '../components/PriceChart';
 import SalesChart from '../components/SalesChart';
@@ -52,6 +53,7 @@ export default function CardDetail() {
   const [loading, setLoading] = useState(true);
   const [isWatchlisted, setIsWatchlisted] = useState(false);
   const [shareSnackbar, setShareSnackbar] = useState(false);
+  const [embedSnackbar, setEmbedSnackbar] = useState(false);
 
   // Compare mode state
   const [compareDialogOpen, setCompareDialogOpen] = useState(false);
@@ -658,6 +660,27 @@ export default function CardDetail() {
                   Share Card
                 </Button>
               </Tooltip>
+              <Tooltip title="Copy embeddable chart image URL for Substack, blogs, or Discord" arrow>
+                <Button
+                  startIcon={<CodeIcon />}
+                  onClick={() => {
+                    const embedUrl = `${window.location.origin}/api/cards/${card.id}/chart-image`;
+                    const embedCode = `<img src="${embedUrl}" alt="${card.name} price chart" width="800" />`;
+                    navigator.clipboard.writeText(embedCode);
+                    setEmbedSnackbar(true);
+                  }}
+                  variant="outlined"
+                  size="small"
+                  sx={{
+                    color: '#ce93d8', borderColor: '#ce93d833',
+                    fontFamily: '"JetBrains Mono", monospace', fontSize: '0.75rem',
+                    textTransform: 'none',
+                    '&:hover': { borderColor: '#ce93d8', bgcolor: 'rgba(206,147,216,0.08)' },
+                  }}
+                >
+                  Embed Chart
+                </Button>
+              </Tooltip>
             </Stack>
 
 
@@ -869,21 +892,88 @@ export default function CardDetail() {
                       </Typography>
                     </Box>
                   )}
-                  {/* Graded pricing info */}
-                  <Box sx={{ mt: 1.5, p: 1, bgcolor: '#0a0a1a', border: '1px solid #222', borderRadius: 1, display: 'flex', alignItems: 'flex-start', gap: 0.5 }}>
-                    <InfoOutlinedIcon sx={{ fontSize: 14, color: '#555', mt: 0.2 }} />
-                    <Box>
-                      <Typography sx={{ color: '#888', fontSize: '0.6rem', fontFamily: 'monospace' }}>
-                        Prices are for raw/ungraded cards.
-                      </Typography>
-                      <Typography sx={{ color: '#555', fontSize: '0.55rem', fontFamily: 'monospace', mt: 0.3 }}>
-                        For graded values (PSA, CGC, Beckett):{' '}
-                        <a href={`https://www.pricecharting.com/search-products?q=${encodeURIComponent(card.name)}&type=price`} target="_blank" rel="noopener noreferrer" style={{ color: '#00bcd4' }}>PriceCharting</a>
-                        {' · '}
-                        <a href="https://www.psacard.com/auctionprices" target="_blank" rel="noopener noreferrer" style={{ color: '#00bcd4' }}>PSA Auctions</a>
-                      </Typography>
-                    </Box>
-                  </Box>
+                  {/* Graded Price Estimates */}
+                  {nmMedian && nmMedian > 0 && (() => {
+                    const gradingCostLow = 20;
+                    const gradingCostHigh = 50;
+                    const gradingCostMid = (gradingCostLow + gradingCostHigh) / 2;
+
+                    // Multipliers based on NM price tier
+                    const getMultipliers = (nm: number) => {
+                      if (nm > 100) return { psa10: 5.0, psa9: 2.5, psa8: 1.5 };
+                      if (nm >= 20) return { psa10: 4.0, psa9: 2.0, psa8: 1.3 };
+                      return { psa10: 3.0, psa9: 1.5, psa8: 1.2 };
+                    };
+
+                    const mult = getMultipliers(nmMedian);
+                    const grades = [
+                      { label: 'PSA 10 (Gem Mint)', mult: mult.psa10, color: '#ffd700' },
+                      { label: 'PSA 9 (Mint)', mult: mult.psa9, color: '#81d4fa' },
+                      { label: 'PSA 8 (NM-MT)', mult: mult.psa8, color: '#a5d6a7' },
+                    ];
+
+                    return (
+                      <Box sx={{ mt: 2 }}>
+                        <Typography variant="body2" sx={{
+                          color: '#ba68c8', fontWeight: 700, fontSize: '0.7rem',
+                          fontFamily: '"JetBrains Mono", monospace', letterSpacing: 1, mb: 1,
+                        }}>
+                          GRADED ESTIMATES
+                        </Typography>
+                        <Box sx={{ border: '1px solid #333', borderRadius: 1, overflow: 'hidden' }}>
+                          {/* Header */}
+                          <Box sx={{ display: 'flex', bgcolor: '#1a1a2e', px: 1, py: 0.5 }}>
+                            <Typography sx={{ flex: 1, color: '#666', fontSize: '0.65rem', fontFamily: 'monospace', fontWeight: 700 }}>GRADE</Typography>
+                            <Typography sx={{ width: 65, textAlign: 'right', color: '#666', fontSize: '0.65rem', fontFamily: 'monospace', fontWeight: 700 }}>EST. VALUE</Typography>
+                            <Typography sx={{ width: 50, textAlign: 'right', color: '#666', fontSize: '0.65rem', fontFamily: 'monospace', fontWeight: 700 }}>MULT</Typography>
+                            <Typography sx={{ width: 65, textAlign: 'right', color: '#666', fontSize: '0.65rem', fontFamily: 'monospace', fontWeight: 700 }}>GRADE ROI</Typography>
+                          </Box>
+                          {grades.map(g => {
+                            const estValue = nmMedian * g.mult;
+                            const gradeRoi = ((estValue - nmMedian - gradingCostMid) / (nmMedian + gradingCostMid)) * 100;
+                            return (
+                              <Box key={g.label} sx={{ borderTop: '1px solid #222', '&:hover': { bgcolor: '#1a1a2e33' } }}>
+                                <Box sx={{ display: 'flex', px: 1, py: 0.5, alignItems: 'center' }}>
+                                  <Typography sx={{ flex: 1, color: g.color, fontSize: '0.7rem', fontFamily: '"JetBrains Mono", monospace', fontWeight: 700 }}>
+                                    {g.label}
+                                  </Typography>
+                                  <Typography sx={{ width: 65, textAlign: 'right', color: '#00ff41', fontSize: '0.7rem', fontFamily: '"JetBrains Mono", monospace', fontWeight: 700 }}>
+                                    ${estValue.toFixed(2)}
+                                  </Typography>
+                                  <Typography sx={{ width: 50, textAlign: 'right', color: '#888', fontSize: '0.65rem', fontFamily: '"JetBrains Mono", monospace' }}>
+                                    {g.mult}x
+                                  </Typography>
+                                  <Typography sx={{
+                                    width: 65, textAlign: 'right', fontSize: '0.7rem', fontFamily: '"JetBrains Mono", monospace', fontWeight: 700,
+                                    color: gradeRoi >= 0 ? '#00ff41' : '#ff1744',
+                                  }}>
+                                    {gradeRoi >= 0 ? '+' : ''}{gradeRoi.toFixed(0)}%
+                                  </Typography>
+                                </Box>
+                              </Box>
+                            );
+                          })}
+                        </Box>
+                        <Box sx={{ mt: 0.8, display: 'flex', alignItems: 'flex-start', gap: 0.5 }}>
+                          <InfoOutlinedIcon sx={{ fontSize: 12, color: '#555', mt: 0.1 }} />
+                          <Box>
+                            <Typography sx={{ color: '#888', fontSize: '0.55rem', fontFamily: 'monospace', lineHeight: 1.6 }}>
+                              Estimated graded values based on typical multipliers. Actual prices vary by card popularity and market conditions.
+                            </Typography>
+                            <Typography sx={{ color: '#666', fontSize: '0.55rem', fontFamily: 'monospace', mt: 0.3 }}>
+                              Grading cost: ~${gradingCostLow}-${gradingCostHigh}/card. Grade ROI = (Graded Value - NM Price - Grading Cost) / (NM Price + Grading Cost)
+                            </Typography>
+                            <Typography sx={{ color: '#555', fontSize: '0.55rem', fontFamily: 'monospace', mt: 0.3 }}>
+                              Verified graded prices:{' '}
+                              <a href={`https://www.pricecharting.com/search-products?q=${encodeURIComponent(card.name)}&type=price`} target="_blank" rel="noopener noreferrer" style={{ color: '#00bcd4' }}>PriceCharting</a>
+                              {' · '}
+                              <a href="https://www.psacard.com/auctionprices" target="_blank" rel="noopener noreferrer" style={{ color: '#00bcd4' }}>PSA Auctions</a>
+                            </Typography>
+                          </Box>
+                        </Box>
+                      </Box>
+                    );
+                  })()}
                 </Box>
               );
             })()}
@@ -1359,6 +1449,14 @@ export default function CardDetail() {
         message="Link copied! Share on social media for a card preview with image"
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
         ContentProps={{ sx: { bgcolor: '#1a1a2e', border: '1px solid #00ff41', color: '#00ff41' } }}
+      />
+      <Snackbar
+        open={embedSnackbar}
+        autoHideDuration={4000}
+        onClose={() => setEmbedSnackbar(false)}
+        message="Embed code copied! Paste in your blog, Substack, or HTML page"
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        ContentProps={{ sx: { bgcolor: '#1a1a2e', border: '1px solid #ce93d8', color: '#ce93d8' } }}
       />
     </Box>
   );

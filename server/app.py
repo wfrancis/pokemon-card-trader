@@ -18,6 +18,7 @@ from server.routes import agent
 from server.routes import screener
 from server.routes import alerts
 from server.routes import sets
+from server.routes import chart_image
 from server.services.card_sync import sync_all_cards
 from server.services.price_collector import collect_prices_for_cards
 from server.services.tcgdex_sync import sync_tcgdex_cards, import_tcgdex_prices, sync_tcgdex_sets
@@ -692,6 +693,7 @@ app.include_router(agent.router)
 app.include_router(screener.router)
 app.include_router(alerts.router)
 app.include_router(sets.router)
+app.include_router(chart_image.router)
 
 
 @app.get("/health")
