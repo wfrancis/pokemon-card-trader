@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 import os
@@ -17,6 +17,7 @@ from server.routes import sales
 from server.routes import agent
 from server.routes import screener
 from server.routes import alerts
+from server.routes import sets
 from server.services.card_sync import sync_all_cards
 from server.services.price_collector import collect_prices_for_cards
 from server.services.tcgdex_sync import sync_tcgdex_cards, import_tcgdex_prices, sync_tcgdex_sets
@@ -690,6 +691,7 @@ app.include_router(sales.router)
 app.include_router(agent.router)
 app.include_router(screener.router)
 app.include_router(alerts.router)
+app.include_router(sets.router)
 
 
 @app.get("/health")
@@ -1090,13 +1092,62 @@ async def trigger_sales_history_sync(
 if os.path.isdir(FRONTEND_BUILD):
     app.mount("/static", StaticFiles(directory=os.path.join(FRONTEND_BUILD, "static")), name="static")
 
+    def _build_og_html(card: Card) -> str | None:
+        """Read index.html and inject OG meta tags for a card."""
+        index_path = os.path.join(FRONTEND_BUILD, "index.html")
+        if not os.path.isfile(index_path):
+            return None
+        with open(index_path, "r") as f:
+            html = f.read()
+
+        price_str = f"${card.current_price:.2f}" if card.current_price else "N/A"
+        title = f"{card.name} - {card.set_name} | PKMN Trader"
+        description = f"Market Price: {price_str}"
+        image = card.image_large or card.image_small or ""
+        card_url = f"https://pokemon-card-trader.fly.dev/card/{card.id}"
+
+        # Escape HTML special chars in dynamic values
+        import html as html_mod
+        title = html_mod.escape(title)
+        description = html_mod.escape(description)
+        image = html_mod.escape(image)
+
+        og_tags = f"""
+    <!-- OG Meta Tags -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="{title}" />
+    <meta property="og:description" content="{description}" />
+    <meta property="og:image" content="{image}" />
+    <meta property="og:url" content="{card_url}" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="{title}" />
+    <meta name="twitter:description" content="{description}" />
+    <meta name="twitter:image" content="{image}" />"""
+
+        # Inject before </head>
+        html = html.replace("</head>", og_tags + "\n  </head>", 1)
+        return html
+
     @app.get("/{full_path:path}")
-    async def serve_react(full_path: str):
+    async def serve_react(full_path: str, db: Session = Depends(get_db)):
         """Serve React app for all non-API routes (SPA catch-all)."""
         # Never serve HTML for API routes — if we got here, the route doesn't exist
         if full_path.startswith("api/") or full_path == "api":
             from fastapi import HTTPException
             raise HTTPException(status_code=404, detail=f"API route not found: /{full_path}")
+
+        # Inject OG meta tags for card detail pages
+        if full_path.startswith("card/"):
+            try:
+                card_id = int(full_path.split("/")[1])
+                card = db.query(Card).filter(Card.id == card_id).first()
+                if card:
+                    og_html = _build_og_html(card)
+                    if og_html:
+                        return HTMLResponse(content=og_html)
+            except (ValueError, IndexError):
+                pass
+
         file_path = os.path.join(FRONTEND_BUILD, full_path)
         if os.path.isfile(file_path):
             return FileResponse(file_path)

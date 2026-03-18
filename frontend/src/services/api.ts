@@ -262,6 +262,10 @@ export const api = {
 
   getRecapForWeek: (startDate: string) =>
     fetchApi<WeeklyRecapResponse>(`/api/market/weekly-recap/${startDate}`),
+
+  // Set Analytics
+  getSetAnalytics: () =>
+    fetchApi<SetAnalytics[]>('/api/sets/analytics'),
 };
 
 export interface BacktestTrade {
@@ -662,6 +666,16 @@ export interface AlertHistoryItem {
   is_active: boolean;
   triggered_at: string | null;
   price_at_trigger: number | null;
+}
+
+export interface SetAnalytics {
+  set_name: string;
+  card_count: number;
+  avg_price: number;
+  total_value: number;
+  avg_liquidity_score: number | null;
+  avg_appreciation_score: number | null;
+  avg_7d_change: number | null;
 }
 
 export interface RecapArchiveResponse {

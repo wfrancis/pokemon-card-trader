@@ -23,17 +23,51 @@ import { api, Card, PricePoint } from '../services/api';
 import type { RecapArchiveResponse } from '../services/api';
 import GlossaryTooltip from '../components/GlossaryTooltip';
 
+interface Lot {
+  quantity: number;
+  price: number;
+  date: string;
+}
+
 interface WatchlistItem {
   cardId: number;
   costBasis: number | null;
   alertAbove: number | null;
   alertBelow: number | null;
   quantity?: number;
+  lots?: Lot[];
   addedAt: string;
+}
+
+// Derive lots from legacy single costBasis/quantity if lots array is missing
+function getLotsForItem(item: WatchlistItem): Lot[] {
+  if (item.lots && item.lots.length > 0) return item.lots;
+  if (item.costBasis != null && item.costBasis > 0) {
+    return [{ quantity: item.quantity ?? 1, price: item.costBasis, date: item.addedAt?.slice(0, 10) || new Date().toISOString().slice(0, 10) }];
+  }
+  if ((item.quantity ?? 1) > 0 && item.costBasis == null) {
+    return [];
+  }
+  return [];
+}
+
+// Compute total quantity from lots
+function totalQtyFromLots(lots: Lot[]): number {
+  return lots.reduce((s, l) => s + l.quantity, 0) || 1;
+}
+
+// Compute weighted average cost basis from lots
+function avgCostFromLots(lots: Lot[]): number | null {
+  if (lots.length === 0) return null;
+  const totalQty = lots.reduce((s, l) => s + l.quantity, 0);
+  if (totalQty === 0) return null;
+  const totalCost = lots.reduce((s, l) => s + l.quantity * l.price, 0);
+  return totalCost / totalQty;
 }
 
 interface WatchlistRow extends WatchlistItem {
   card: Card | null;
+  lots?: Lot[];
 }
 
 interface SoldCard {
@@ -60,6 +94,11 @@ export default function Watchlist() {
   const [soldTarget, setSoldTarget] = useState<WatchlistRow | null>(null);
   const [soldSellPrice, setSoldSellPrice] = useState('');
   const [soldSellDate, setSoldSellDate] = useState(new Date().toISOString().slice(0, 10));
+
+  // Lot editing dialog state
+  const [lotDialogOpen, setLotDialogOpen] = useState(false);
+  const [lotTarget, setLotTarget] = useState<WatchlistRow | null>(null);
+  const [editLots, setEditLots] = useState<Lot[]>([]);
 
   useEffect(() => {
     document.title = 'Watchlist | PKMN Trader';
@@ -118,6 +157,46 @@ export default function Watchlist() {
     setRows(prev => prev.map(r => r.cardId === cardId ? { ...r, quantity: qty } : r));
   };
 
+  const openLotDialog = (row: WatchlistRow) => {
+    setLotTarget(row);
+    const lots = getLotsForItem(row);
+    setEditLots(lots.length > 0 ? lots.map(l => ({ ...l })) : [{ quantity: row.quantity ?? 1, price: row.costBasis ?? 0, date: new Date().toISOString().slice(0, 10) }]);
+    setLotDialogOpen(true);
+  };
+
+  const saveLots = () => {
+    if (!lotTarget) return;
+    const validLots = editLots.filter(l => l.quantity > 0);
+    const totalQty = totalQtyFromLots(validLots);
+    const avgCost = avgCostFromLots(validLots);
+
+    const items: WatchlistItem[] = JSON.parse(localStorage.getItem('pkmn_watchlist') || '[]');
+    const updated = items.map(w => w.cardId === lotTarget.cardId ? { ...w, lots: validLots, quantity: totalQty, costBasis: avgCost } : w);
+    localStorage.setItem('pkmn_watchlist', JSON.stringify(updated));
+    setRows(prev => prev.map(r => r.cardId === lotTarget.cardId ? { ...r, lots: validLots, quantity: totalQty, costBasis: avgCost } : r));
+    setLotDialogOpen(false);
+    setLotTarget(null);
+    setSnackMsg(`Updated lots for ${lotTarget.card?.name}`);
+  };
+
+  const addLotRow = () => {
+    setEditLots(prev => [...prev, { quantity: 1, price: 0, date: new Date().toISOString().slice(0, 10) }]);
+  };
+
+  const removeLotRow = (index: number) => {
+    setEditLots(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const updateLotField = (index: number, field: keyof Lot, value: string) => {
+    setEditLots(prev => prev.map((lot, i) => {
+      if (i !== index) return lot;
+      if (field === 'date') return { ...lot, date: value };
+      const num = parseFloat(value);
+      if (field === 'quantity') return { ...lot, quantity: isNaN(num) || num < 1 ? 1 : Math.floor(num) };
+      return { ...lot, price: isNaN(num) ? 0 : num };
+    }));
+  };
+
   const openSoldDialog = (row: WatchlistRow) => {
     setSoldTarget(row);
     setSoldSellPrice('');
@@ -130,8 +209,9 @@ export default function Watchlist() {
     const sellPrice = parseFloat(soldSellPrice);
     if (isNaN(sellPrice) || sellPrice <= 0) return;
 
-    const qty = soldTarget.quantity ?? 1;
-    const buyPrice = soldTarget.costBasis ?? 0;
+    const soldLots = getLotsForItem(soldTarget);
+    const qty = soldLots.length > 0 ? totalQtyFromLots(soldLots) : (soldTarget.quantity ?? 1);
+    const buyPrice = soldLots.length > 0 ? (avgCostFromLots(soldLots) ?? 0) : (soldTarget.costBasis ?? 0);
     const fees = sellPrice * qty * 0.1255;
     const profit = (sellPrice - buyPrice) * qty - fees;
 
@@ -337,7 +417,8 @@ export default function Watchlist() {
         const series = dates.map(date => {
           let total = 0;
           for (const row of rows) {
-            const qty = row.quantity ?? 1;
+            const lots = getLotsForItem(row);
+            const qty = lots.length > 0 ? totalQtyFromLots(lots) : (row.quantity ?? 1);
             const priceMap = cardPriceMap[row.cardId] || {};
             if (priceMap[date] !== undefined && priceMap[date] > 0) {
               lastKnown[row.cardId] = priceMap[date];
@@ -422,8 +503,16 @@ export default function Watchlist() {
     return { portfolioPct: last.portfolioPct, marketPct: last.marketPct, diff };
   }, [benchmarkChartData]);
 
-  const totalValue = rows.reduce((sum, r) => sum + (r.card?.current_price || 0) * (r.quantity ?? 1), 0);
-  const totalCost = rows.reduce((sum, r) => sum + (r.costBasis || 0) * (r.quantity ?? 1), 0);
+  const totalValue = rows.reduce((sum, r) => {
+    const lots = getLotsForItem(r);
+    const qty = lots.length > 0 ? totalQtyFromLots(lots) : (r.quantity ?? 1);
+    return sum + (r.card?.current_price || 0) * qty;
+  }, 0);
+  const totalCost = rows.reduce((sum, r) => {
+    const lots = getLotsForItem(r);
+    if (lots.length > 0) return sum + lots.reduce((s, l) => s + l.quantity * l.price, 0);
+    return sum + (r.costBasis || 0) * (r.quantity ?? 1);
+  }, 0);
   const totalPnL = totalCost > 0 ? totalValue - totalCost : null;
 
   const monthChange = useMemo(() => {
@@ -438,11 +527,13 @@ export default function Watchlist() {
     const header = ['Card Name', 'Set', 'Price', 'Purchase Price', 'Quantity', 'Total Value', 'Total Cost', 'Profit/Loss', '7d Change %'];
     const csvRows = rows.map(row => {
       const card = row.card;
-      const qty = row.quantity ?? 1;
+      const rowLots = getLotsForItem(row);
+      const qty = rowLots.length > 0 ? totalQtyFromLots(rowLots) : (row.quantity ?? 1);
+      const rowCostBasis = rowLots.length > 0 ? avgCostFromLots(rowLots) : row.costBasis;
       const price = card?.current_price ?? 0;
       const rowTotalValue = price * qty;
-      const rowTotalCost = (row.costBasis ?? 0) * qty;
-      const rowPnL = row.costBasis != null ? rowTotalValue - rowTotalCost : '';
+      const rowTotalCost = (rowCostBasis ?? 0) * qty;
+      const rowPnL = rowCostBasis != null ? rowTotalValue - rowTotalCost : '';
 
       // 7d change from price history
       const priceHist = cardPriceHistories.get(row.cardId) || [];
@@ -465,10 +556,10 @@ export default function Watchlist() {
         escape(card?.name ?? 'Unknown'),
         escape(card?.set_name ?? ''),
         price.toFixed(2),
-        row.costBasis != null ? row.costBasis.toFixed(2) : '',
+        rowCostBasis != null ? rowCostBasis.toFixed(2) : '',
         String(qty),
         rowTotalValue.toFixed(2),
-        row.costBasis != null ? rowTotalCost.toFixed(2) : '',
+        rowCostBasis != null ? rowTotalCost.toFixed(2) : '',
         rowPnL !== '' ? (rowPnL as number).toFixed(2) : '',
         change7dStr,
       ].join(',');
@@ -921,11 +1012,15 @@ export default function Watchlist() {
               {(() => {
                 const ALLOC_COLORS = ['#4fc3f7', '#ffb74d', '#81c784', '#e57373', '#ba68c8', '#4db6ac', '#fff176', '#f06292', '#90a4ae', '#aed581'];
                 const cardsWithValue = rows
-                  .map((r, i) => ({
-                    name: r.card?.name || 'Unknown',
-                    value: (r.card?.current_price || 0) * (r.quantity ?? 1),
-                    color: ALLOC_COLORS[i % ALLOC_COLORS.length],
-                  }))
+                  .map((r, i) => {
+                    const rLots = getLotsForItem(r);
+                    const rQty = rLots.length > 0 ? totalQtyFromLots(rLots) : (r.quantity ?? 1);
+                    return {
+                      name: r.card?.name || 'Unknown',
+                      value: (r.card?.current_price || 0) * rQty,
+                      color: ALLOC_COLORS[i % ALLOC_COLORS.length],
+                    };
+                  })
                   .filter(c => c.value > 0);
                 if (cardsWithValue.length < 2 || totalValue <= 0) return null;
                 const allocations = cardsWithValue
@@ -1017,12 +1112,14 @@ export default function Watchlist() {
             </TableHead>
             <TableBody>
               {rows.map(row => {
-                const qty = row.quantity ?? 1;
+                const lots = getLotsForItem(row);
+                const qty = lots.length > 0 ? totalQtyFromLots(lots) : (row.quantity ?? 1);
+                const effectiveCostBasis = lots.length > 0 ? avgCostFromLots(lots) : row.costBasis;
                 const price = row.card?.current_price || 0;
                 const totalRowValue = price * qty;
-                const totalRowCost = (row.costBasis || 0) * qty;
-                const pnl = row.costBasis != null ? totalRowValue - totalRowCost : null;
-                const pnlPct = row.costBasis != null && row.costBasis > 0 ? ((price - row.costBasis) / row.costBasis) * 100 : null;
+                const totalRowCost = (effectiveCostBasis || 0) * qty;
+                const pnl = effectiveCostBasis != null ? totalRowValue - totalRowCost : null;
+                const pnlPct = effectiveCostBasis != null && effectiveCostBasis > 0 ? ((price - effectiveCostBasis) / effectiveCostBasis) * 100 : null;
                 return (
                   <TableRow
                     key={row.cardId}
@@ -1039,15 +1136,15 @@ export default function Watchlist() {
                         </Box>
                       </Box>
                     </TableCell>
-                    <TableCell align="right" onClick={e => e.stopPropagation()}>
-                      <TextField
-                        size="small"
-                        type="number"
-                        value={qty}
-                        onChange={e => updateQuantity(row.cardId, e.target.value)}
-                        inputProps={{ min: 1, style: { textAlign: 'right', fontSize: '0.8rem', fontFamily: '"JetBrains Mono", monospace', color: '#ccc', padding: '4px' } }}
-                        sx={{ width: 50 }}
-                      />
+                    <TableCell align="right" onClick={e => { e.stopPropagation(); openLotDialog(row); }} sx={{ cursor: 'pointer', '&:hover': { bgcolor: 'rgba(255, 215, 0, 0.05)' } }}>
+                      <Typography sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.85rem', color: '#ccc' }}>
+                        {qty}
+                      </Typography>
+                      {lots.length > 1 && (
+                        <Typography sx={{ color: '#4fc3f7', fontSize: '0.55rem', fontFamily: 'monospace' }}>
+                          {lots.length} lots
+                        </Typography>
+                      )}
                     </TableCell>
                     <TableCell align="right">
                       <Typography sx={{ color: '#00ff41', fontFamily: '"JetBrains Mono", monospace', fontWeight: 700, fontSize: '0.85rem' }}>
@@ -1101,19 +1198,10 @@ export default function Watchlist() {
                         </>
                       );
                     })()}
-                    <TableCell align="right" onClick={e => e.stopPropagation()}>
-                      <TextField
-                        size="small"
-                        type="number"
-                        value={row.costBasis ?? ''}
-                        onChange={e => updateCostBasis(row.cardId, e.target.value)}
-                        placeholder="—"
-                        sx={{
-                          width: 80,
-                          '& input': { textAlign: 'right', fontSize: '0.8rem', fontFamily: '"JetBrains Mono", monospace', color: '#888', py: 0.5 },
-                        }}
-                        InputProps={{ startAdornment: <Typography sx={{ color: '#555', fontSize: '0.8rem', mr: 0.3 }}>$</Typography> }}
-                      />
+                    <TableCell align="right" onClick={e => { e.stopPropagation(); openLotDialog(row); }} sx={{ cursor: 'pointer', '&:hover': { bgcolor: 'rgba(255, 215, 0, 0.05)' } }}>
+                      <Typography sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.85rem', color: effectiveCostBasis != null ? '#888' : '#555' }}>
+                        {effectiveCostBasis != null ? `$${effectiveCostBasis.toFixed(2)}` : 'Set cost'}
+                      </Typography>
                     </TableCell>
                     <TableCell align="right">
                       <Typography sx={{
@@ -1199,8 +1287,8 @@ export default function Watchlist() {
                 {soldTarget.card?.name}
               </Typography>
               <Typography sx={{ color: '#666', fontSize: '0.7rem' }}>
-                {soldTarget.card?.set_name} &middot; Qty: {soldTarget.quantity ?? 1}
-                {soldTarget.costBasis != null && ` \u00b7 Cost: $${soldTarget.costBasis.toFixed(2)}/ea`}
+                {soldTarget.card?.set_name} &middot; Qty: {(() => { const sl = getLotsForItem(soldTarget); return sl.length > 0 ? totalQtyFromLots(sl) : (soldTarget.quantity ?? 1); })()}
+                {(() => { const sl = getLotsForItem(soldTarget); const ac = sl.length > 0 ? avgCostFromLots(sl) : soldTarget.costBasis; return ac != null ? ` \u00b7 Avg Cost: $${ac.toFixed(2)}/ea` : ''; })()}
               </Typography>
             </Box>
           )}
@@ -1246,8 +1334,9 @@ export default function Watchlist() {
             <Box sx={{ mt: 2, p: 1.5, bgcolor: '#111', borderRadius: 1, border: '1px solid #1e1e1e' }}>
               {(() => {
                 const sp = parseFloat(soldSellPrice);
-                const qty = soldTarget.quantity ?? 1;
-                const bp = soldTarget.costBasis ?? 0;
+                const soldPreviewLots = getLotsForItem(soldTarget);
+                const qty = soldPreviewLots.length > 0 ? totalQtyFromLots(soldPreviewLots) : (soldTarget.quantity ?? 1);
+                const bp = soldPreviewLots.length > 0 ? (avgCostFromLots(soldPreviewLots) ?? 0) : (soldTarget.costBasis ?? 0);
                 const fees = sp * qty * 0.1255;
                 const profit = (sp - bp) * qty - fees;
                 return (
@@ -1294,6 +1383,138 @@ export default function Watchlist() {
             }}
           >
             Confirm Sale
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Edit Lots Dialog */}
+      <Dialog
+        open={lotDialogOpen}
+        onClose={() => setLotDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            bgcolor: '#0d0d1a',
+            border: '1px solid #333',
+          },
+        }}
+      >
+        <DialogTitle sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.9rem', color: '#ffd700', pb: 1 }}>
+          EDIT LOTS
+        </DialogTitle>
+        <DialogContent>
+          {lotTarget && (
+            <Box sx={{ mb: 2 }}>
+              <Typography sx={{ color: '#ccc', fontSize: '0.85rem', fontWeight: 600 }}>
+                {lotTarget.card?.name}
+              </Typography>
+              <Typography sx={{ color: '#666', fontSize: '0.7rem' }}>
+                {lotTarget.card?.set_name}
+              </Typography>
+            </Box>
+          )}
+          {/* Lots table */}
+          <TableContainer sx={{ mb: 1.5 }}>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem', borderBottom: '1px solid #333', py: 0.5 }}>QTY</TableCell>
+                  <TableCell sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem', borderBottom: '1px solid #333', py: 0.5 }}>PRICE/CARD</TableCell>
+                  <TableCell sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem', borderBottom: '1px solid #333', py: 0.5 }}>DATE</TableCell>
+                  <TableCell sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.65rem', borderBottom: '1px solid #333', py: 0.5, width: 40 }}></TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {editLots.map((lot, idx) => (
+                  <TableRow key={idx}>
+                    <TableCell sx={{ borderBottom: '1px solid #1e1e1e', py: 0.5 }}>
+                      <TextField
+                        size="small"
+                        type="number"
+                        value={lot.quantity}
+                        onChange={e => updateLotField(idx, 'quantity', e.target.value)}
+                        inputProps={{ min: 1, style: { textAlign: 'right', fontSize: '0.8rem', fontFamily: '"JetBrains Mono", monospace', color: '#ccc', padding: '4px' } }}
+                        sx={{ width: 60, '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: '#333' }, '&:hover fieldset': { borderColor: '#555' }, '&.Mui-focused fieldset': { borderColor: '#ffd700' } } }}
+                      />
+                    </TableCell>
+                    <TableCell sx={{ borderBottom: '1px solid #1e1e1e', py: 0.5 }}>
+                      <TextField
+                        size="small"
+                        type="number"
+                        value={lot.price || ''}
+                        onChange={e => updateLotField(idx, 'price', e.target.value)}
+                        placeholder="0.00"
+                        InputProps={{ startAdornment: <Typography sx={{ color: '#555', fontSize: '0.8rem', mr: 0.3 }}>$</Typography> }}
+                        inputProps={{ step: 0.01, style: { textAlign: 'right', fontSize: '0.8rem', fontFamily: '"JetBrains Mono", monospace', color: '#ccc', padding: '4px' } }}
+                        sx={{ width: 100, '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: '#333' }, '&:hover fieldset': { borderColor: '#555' }, '&.Mui-focused fieldset': { borderColor: '#ffd700' } } }}
+                      />
+                    </TableCell>
+                    <TableCell sx={{ borderBottom: '1px solid #1e1e1e', py: 0.5 }}>
+                      <TextField
+                        size="small"
+                        type="date"
+                        value={lot.date}
+                        onChange={e => updateLotField(idx, 'date', e.target.value)}
+                        inputProps={{ style: { fontSize: '0.75rem', fontFamily: '"JetBrains Mono", monospace', color: '#ccc', padding: '4px' } }}
+                        sx={{ width: 140, '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: '#333' }, '&:hover fieldset': { borderColor: '#555' }, '&.Mui-focused fieldset': { borderColor: '#ffd700' } } }}
+                      />
+                    </TableCell>
+                    <TableCell sx={{ borderBottom: '1px solid #1e1e1e', py: 0.5 }}>
+                      <IconButton size="small" onClick={() => removeLotRow(idx)} sx={{ color: '#555', '&:hover': { color: '#ff1744' } }} disabled={editLots.length <= 1}>
+                        <DeleteIcon sx={{ fontSize: 14 }} />
+                      </IconButton>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+          <Button
+            size="small"
+            startIcon={<AddCircleOutlineIcon />}
+            onClick={addLotRow}
+            sx={{ color: '#4fc3f7', fontFamily: '"JetBrains Mono", monospace', fontSize: '0.75rem', textTransform: 'none', mb: 1.5 }}
+          >
+            Add Lot
+          </Button>
+          {/* Summary */}
+          {editLots.length > 0 && (
+            <Box sx={{ p: 1.5, bgcolor: '#111', borderRadius: 1, border: '1px solid #1e1e1e' }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                <Typography sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.7rem' }}>Total Quantity</Typography>
+                <Typography sx={{ color: '#ccc', fontFamily: '"JetBrains Mono", monospace', fontSize: '0.7rem' }}>
+                  {editLots.reduce((s, l) => s + l.quantity, 0)}
+                </Typography>
+              </Box>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                <Typography sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.7rem' }}>Total Cost</Typography>
+                <Typography sx={{ color: '#ccc', fontFamily: '"JetBrains Mono", monospace', fontSize: '0.7rem' }}>
+                  ${editLots.reduce((s, l) => s + l.quantity * l.price, 0).toFixed(2)}
+                </Typography>
+              </Box>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                <Typography sx={{ color: '#666', fontFamily: 'monospace', fontSize: '0.7rem' }}>Avg Cost/Card</Typography>
+                <Typography sx={{ color: '#ffd700', fontFamily: '"JetBrains Mono", monospace', fontSize: '0.7rem', fontWeight: 700 }}>
+                  ${(avgCostFromLots(editLots) ?? 0).toFixed(2)}
+                </Typography>
+              </Box>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setLotDialogOpen(false)} sx={{ color: '#666', fontFamily: 'monospace', textTransform: 'none' }}>
+            Cancel
+          </Button>
+          <Button
+            onClick={saveLots}
+            variant="contained"
+            sx={{
+              bgcolor: '#ffd700', color: '#000', fontFamily: '"JetBrains Mono", monospace', textTransform: 'none', fontWeight: 700,
+              '&:hover': { bgcolor: '#ffea00' },
+            }}
+          >
+            Save Lots
           </Button>
         </DialogActions>
       </Dialog>

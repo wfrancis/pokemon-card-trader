@@ -4,7 +4,7 @@ import {
   Pagination, Select, MenuItem, FormControl, InputLabel, Slider,
   Tooltip, Skeleton, TextField, InputAdornment, ToggleButtonGroup, ToggleButton,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TableSortLabel,
-  Switch, IconButton, CircularProgress,
+  Switch, IconButton, CircularProgress, Collapse,
 } from '@mui/material';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import WaterDropIcon from '@mui/icons-material/WaterDrop';
@@ -19,8 +19,11 @@ import CancelIcon from '@mui/icons-material/Cancel';
 import MonetizationOnIcon from '@mui/icons-material/MonetizationOn';
 import ClearIcon from '@mui/icons-material/Clear';
 import DownloadIcon from '@mui/icons-material/Download';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import StyleIcon from '@mui/icons-material/Style';
 import { useNavigate } from 'react-router-dom';
-import { api, ScreenerCard, ScreenerStats } from '../services/api';
+import { api, ScreenerCard, ScreenerStats, SetAnalytics } from '../services/api';
 import GlossaryTooltip from '../components/GlossaryTooltip';
 
 const REGIME_COLORS: Record<string, string> = {
@@ -880,12 +883,16 @@ export default function Screener() {
   const [investmentGradeOnly, setInvestmentGradeOnly] = useState(false);
   const [flipFinderActive, setFlipFinderActive] = useState(false);
   const [flipSortMode, setFlipSortMode] = useState<'profit' | 'roi'>('profit');
+  // Set Analytics
+  const [setAnalytics, setSetAnalytics] = useState<SetAnalytics[]>([]);
+  const [setAnalyticsOpen, setSetAnalyticsOpen] = useState(false);
   // Ref mirrors flipFinderActive to avoid stale closures in fetchCards
   const flipFinderRef = useRef(false);
 
   useEffect(() => {
     document.title = 'Screener | PKMN Trader';
     api.getScreenerStats().then(setStats).catch(console.error);
+    api.getSetAnalytics().then(setSetAnalytics).catch(console.error);
     return () => { document.title = 'PKMN Trader — Pokemon Card Market'; };
   }, []);
 
@@ -1103,6 +1110,77 @@ export default function Screener() {
 
       {/* Stats */}
       {!simpleMode && <StatsBar stats={stats} />}
+
+      {/* Set Analytics */}
+      {setAnalytics.length > 0 && (
+        <Paper sx={{ mb: 2, bgcolor: '#0a0a0a', border: '1px solid #1a1a1a', overflow: 'hidden' }}>
+          <Box
+            sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 1.5, cursor: 'pointer', '&:hover': { bgcolor: '#111' } }}
+            onClick={() => setSetAnalyticsOpen(!setAnalyticsOpen)}
+          >
+            <StyleIcon sx={{ color: '#ff9800', fontSize: 18 }} />
+            <Typography variant="body2" sx={{ color: '#ff9800', fontWeight: 700, fontSize: '0.75rem' }}>
+              SET ANALYTICS
+            </Typography>
+            <Typography variant="body2" sx={{ color: '#555', fontSize: '0.65rem' }}>
+              ({setAnalytics.length} sets)
+            </Typography>
+            <Box sx={{ ml: 'auto' }}>
+              {setAnalyticsOpen ? <ExpandLessIcon sx={{ color: '#666', fontSize: 18 }} /> : <ExpandMoreIcon sx={{ color: '#666', fontSize: 18 }} />}
+            </Box>
+          </Box>
+          <Collapse in={setAnalyticsOpen}>
+            <Box sx={{
+              display: 'flex', gap: 1.5, overflowX: 'auto', p: 1.5, pt: 0,
+              '&::-webkit-scrollbar': { height: 6 },
+              '&::-webkit-scrollbar-thumb': { bgcolor: '#333', borderRadius: 3 },
+            }}>
+              {setAnalytics.map((s) => (
+                <Paper
+                  key={s.set_name}
+                  sx={{
+                    minWidth: 200, maxWidth: 220, p: 1.5, bgcolor: '#111', border: '1px solid #222',
+                    cursor: 'pointer', flexShrink: 0, transition: 'border-color 0.2s',
+                    '&:hover': { borderColor: '#ff9800' },
+                  }}
+                  onClick={() => {
+                    setSearch(s.set_name);
+                    setPage(1);
+                    setSetAnalyticsOpen(false);
+                  }}
+                >
+                  <Typography variant="body2" sx={{ color: '#e0e0e0', fontWeight: 700, fontSize: '0.7rem', mb: 0.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {s.set_name}
+                  </Typography>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.3 }}>
+                    <Typography variant="body2" sx={{ color: '#888', fontSize: '0.6rem' }}>Cards</Typography>
+                    <Typography variant="body2" sx={{ color: '#e0e0e0', fontSize: '0.6rem', fontFamily: 'monospace' }}>{s.card_count}</Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.3 }}>
+                    <Typography variant="body2" sx={{ color: '#888', fontSize: '0.6rem' }}>Avg Price</Typography>
+                    <Typography variant="body2" sx={{ color: '#00ff41', fontSize: '0.6rem', fontFamily: 'monospace' }}>${s.avg_price.toFixed(2)}</Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.3 }}>
+                    <Typography variant="body2" sx={{ color: '#888', fontSize: '0.6rem' }}>Total Value</Typography>
+                    <Typography variant="body2" sx={{ color: '#00bcd4', fontSize: '0.6rem', fontFamily: 'monospace' }}>${s.total_value.toLocaleString(undefined, { maximumFractionDigits: 0 })}</Typography>
+                  </Box>
+                  {s.avg_7d_change !== null && (
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography variant="body2" sx={{ color: '#888', fontSize: '0.6rem' }}>7d Trend</Typography>
+                      <Typography variant="body2" sx={{
+                        color: s.avg_7d_change >= 0 ? '#00ff41' : '#ff1744',
+                        fontSize: '0.6rem', fontFamily: 'monospace', fontWeight: 700,
+                      }}>
+                        {s.avg_7d_change >= 0 ? '+' : ''}{s.avg_7d_change.toFixed(2)}%
+                      </Typography>
+                    </Box>
+                  )}
+                </Paper>
+              ))}
+            </Box>
+          </Collapse>
+        </Paper>
+      )}
 
       {/* Filters */}
       <Paper sx={{ p: 2, mb: 2, bgcolor: '#0a0a0a', border: '1px solid #1a1a1a' }}>
