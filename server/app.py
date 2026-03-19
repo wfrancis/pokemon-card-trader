@@ -1038,7 +1038,15 @@ async def sync_stale_cards(db: Session = Depends(get_db), days: int = 30):
     )
 
     stats = {"stale_found": len(stale_cards), "updated": 0, "no_price": 0, "errors": 0}
+    stale_ids = [c.id for c in stale_cards]
     logger.info(f"Stale card sync: found {len(stale_cards)} cards with data older than {days} days")
+    logger.info(f"Stale card IDs (first 30): {stale_ids[:30]}")
+    # Check specific cards we care about
+    for target_id in [283, 287, 545, 402, 53]:
+        if target_id in stale_ids:
+            logger.info(f"  TARGET card {target_id} IS in stale list")
+        else:
+            logger.info(f"  TARGET card {target_id} NOT in stale list")
 
     async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
         for card in stale_cards:
