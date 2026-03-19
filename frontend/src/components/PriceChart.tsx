@@ -269,12 +269,12 @@ export default function PriceChart({ priceData, cardName, compareData, onRemoveC
   // Determine if we have too few data points for a meaningful chart
   const uniquePrices = new Set(chartData.map(d => d.price));
   const hasLimitedData = chartData.length <= 3;
-  const allSamePrice = uniquePrices.size <= 1;
+  const allSamePrice = uniquePrices.size <= 1 && chartData.length > 0;
   // For change display: show N/A if only 1 point or all same price
   const showChangeAsNA = chartData.length <= 1 || allSamePrice;
 
-  // If limited data, show a static price display instead of a misleading chart
-  if (hasLimitedData) {
+  // If limited data OR all prices identical, show a static price display instead of a misleading flat chart
+  if (hasLimitedData || allSamePrice) {
     return (
       <Box ref={chartRef}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 1, md: 2 }, mb: 0.5, flexWrap: 'wrap' }}>
@@ -294,10 +294,14 @@ export default function PriceChart({ priceData, cardName, compareData, onRemoveC
           bgcolor: '#0a0a0a', flexDirection: 'column', gap: 1,
         }}>
           <Typography sx={{ color: '#888', fontSize: '0.85rem', fontFamily: 'monospace' }}>
-            Limited price history — only {chartData.length} data point{chartData.length !== 1 ? 's' : ''} available
+            {allSamePrice && chartData.length > 3
+              ? `Price unchanged at $${currentPrice?.toFixed(2)} across ${chartData.length} data points`
+              : `Limited price history \u2014 only ${chartData.length} data point${chartData.length !== 1 ? 's' : ''} available`}
           </Typography>
           <Typography sx={{ color: '#555', fontSize: '0.75rem', fontFamily: 'monospace' }}>
-            Chart will appear as more price data is collected
+            {allSamePrice && chartData.length > 3
+              ? 'Chart will appear when price variation is detected'
+              : 'Chart will appear as more price data is collected'}
           </Typography>
         </Box>
       </Box>
