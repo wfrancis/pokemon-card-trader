@@ -1112,6 +1112,324 @@ async def sync_stale_cards(db: Session = Depends(get_db), days: int = 30):
     return {"status": "complete", **stats}
 
 
+@app.post("/api/sync/top-cards", dependencies=[Depends(verify_admin_key)])
+async def sync_top_cards(db: Session = Depends(get_db), n: int = 100):
+    """Force-sync prices and sales for the top N most expensive tracked cards.
+
+    Aggressively fetches data regardless of staleness:
+    1. Searches TCGPlayer for each card's product ID
+    2. Fetches price points and updates card/history
+    3. Fetches latest sales and stores Sale records
+    4. Handles variant mismatches (Normal/Foil mapping)
+    """
+    from server.services.tcgplayer_sync import _search_tcgplayer, _get_price
+    from server.services.sales_collector import _fetch_latest_sales
+    from server.models.price_history import PriceHistory
+    import httpx
+
+    today = date.today()
+
+    PRINTING_TO_VARIANT = {
+        "normal": "normal", "foil": "holofoil", "holofoil": "holofoil",
+        "1st edition holofoil": "1stEditionHolofoil",
+        "1st edition normal": "1stEditionNormal",
+        "reverse holofoil": "reverseHolofoil",
+    }
+
+    # Get top N most expensive tracked cards
+    top_cards = (
+        db.query(Card)
+        .filter(Card.is_tracked == True)
+        .order_by(Card.current_price.desc().nullslast())
+        .limit(n)
+        .all()
+    )
+
+    stats = {
+        "total": len(top_cards),
+        "prices_updated": 0,
+        "sales_added": 0,
+        "product_ids_found": 0,
+        "no_product": 0,
+        "no_price": 0,
+        "errors": 0,
+    }
+    details = []
+
+    logger.info(f"Top-cards sync: processing {len(top_cards)} cards")
+
+    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+        for idx, card in enumerate(top_cards):
+            card_detail = {
+                "id": card.id,
+                "name": card.name,
+                "set": card.set_name,
+                "number": card.number,
+                "old_price": card.current_price,
+                "old_variant": card.price_variant,
+                "status": "pending",
+            }
+            try:
+                # Step 1: Get product ID (use stored or search)
+                product_id = card.tcgplayer_product_id
+                if not product_id:
+                    product_data = await _search_tcgplayer(
+                        client, card.name, card.set_name or "", card.number or ""
+                    )
+                    if product_data:
+                        product_id = product_data.get("productId")
+                        if product_id:
+                            product_id = int(product_id)
+                            card.tcgplayer_product_id = product_id
+                            stats["product_ids_found"] += 1
+                            logger.info(f"  [{idx+1}/{len(top_cards)}] {card.name} -> product_id={product_id}")
+
+                if not product_id:
+                    stats["no_product"] += 1
+                    card_detail["status"] = "no_product"
+                    details.append(card_detail)
+                    await asyncio.sleep(1.0)
+                    continue
+
+                card_detail["product_id"] = product_id
+
+                # Step 2: Fetch price points
+                price_data = await _get_price(client, product_id)
+                if price_data and price_data.get("market_price"):
+                    mp = price_data["market_price"]
+                    card.current_price = round(mp, 2)
+                    card.updated_at = datetime.now(timezone.utc)
+
+                    # Update variant if TCGPlayer reports a different one
+                    printing_type = (price_data.get("printing_type") or "").lower()
+                    new_variant = PRINTING_TO_VARIANT.get(printing_type, card.price_variant or "normal")
+                    if new_variant != card.price_variant:
+                        logger.info(f"  Variant update: {card.name} {card.price_variant} -> {new_variant}")
+                        card.price_variant = new_variant
+
+                    variant = card.price_variant or "normal"
+
+                    # Create PriceHistory record for today
+                    existing = db.query(PriceHistory).filter(
+                        PriceHistory.card_id == card.id,
+                        PriceHistory.date == today,
+                    ).first()
+                    if not existing:
+                        db.add(PriceHistory(
+                            card_id=card.id, date=today, variant=variant,
+                            condition="Near Mint", market_price=round(mp, 2),
+                        ))
+
+                    stats["prices_updated"] += 1
+                    card_detail["new_price"] = round(mp, 2)
+                    card_detail["new_variant"] = variant
+                    card_detail["status"] = "price_updated"
+                else:
+                    stats["no_price"] += 1
+                    card_detail["status"] = "no_price"
+
+                # Step 3: Fetch latest sales
+                await asyncio.sleep(0.5)
+                sales_data = await _fetch_latest_sales(client, product_id)
+                new_sales = 0
+                if sales_data:
+                    for sale in sales_data:
+                        order_date_str = sale.get("orderDate", "")
+                        listing_id_raw = sale.get("customListingId") or ""
+                        price = sale.get("purchasePrice", 0)
+                        dedup_key = f"tcg-{product_id}-{order_date_str[:19]}-{price}-{listing_id_raw}"
+
+                        existing_sale = db.query(Sale.id).filter(
+                            Sale.listing_id == dedup_key
+                        ).first()
+                        if existing_sale:
+                            continue
+
+                        try:
+                            order_dt = datetime.fromisoformat(
+                                order_date_str.replace("Z", "+00:00")
+                            )
+                        except (ValueError, TypeError):
+                            continue
+
+                        db.add(Sale(
+                            card_id=card.id,
+                            source="tcgplayer",
+                            source_product_id=str(product_id),
+                            order_date=order_dt,
+                            purchase_price=price,
+                            shipping_price=sale.get("shippingPrice", 0),
+                            condition=sale.get("condition", ""),
+                            variant=sale.get("variant", ""),
+                            language=sale.get("language", "English"),
+                            quantity=sale.get("quantity", 1),
+                            listing_title=sale.get("title", ""),
+                            listing_id=dedup_key,
+                        ))
+                        new_sales += 1
+
+                    stats["sales_added"] += new_sales
+                    card_detail["sales_added"] = new_sales
+
+            except Exception as e:
+                logger.error(f"Top-cards sync error for {card.name}: {e}")
+                stats["errors"] += 1
+                card_detail["status"] = "error"
+                card_detail["error"] = str(e)
+
+            details.append(card_detail)
+
+            # Commit every 5 cards
+            if (idx + 1) % 5 == 0:
+                try:
+                    db.commit()
+                    logger.info(f"  Progress: {idx+1}/{len(top_cards)} cards processed")
+                except Exception as e:
+                    logger.error(f"Commit error at card {idx+1}: {e}")
+                    db.rollback()
+
+            # Rate limit
+            await asyncio.sleep(1.0)
+
+    try:
+        db.commit()
+    except Exception as e:
+        logger.error(f"Final commit error: {e}")
+        db.rollback()
+
+    logger.info(f"Top-cards sync complete: {stats}")
+    return {"status": "complete", **stats, "details": details}
+
+
+@app.post("/api/sync/card/{card_id}", dependencies=[Depends(verify_admin_key)])
+async def sync_single_card(card_id: int, db: Session = Depends(get_db)):
+    """Force-sync a single card by ID. Fetches product ID, price, and sales."""
+    from server.services.tcgplayer_sync import _search_tcgplayer, _get_price
+    from server.services.sales_collector import _fetch_latest_sales
+    from server.models.price_history import PriceHistory
+    import httpx
+
+    card = db.query(Card).filter(Card.id == card_id).first()
+    if not card:
+        raise HTTPException(status_code=404, detail=f"Card {card_id} not found")
+
+    today = date.today()
+
+    PRINTING_TO_VARIANT = {
+        "normal": "normal", "foil": "holofoil", "holofoil": "holofoil",
+        "1st edition holofoil": "1stEditionHolofoil",
+        "1st edition normal": "1stEditionNormal",
+        "reverse holofoil": "reverseHolofoil",
+    }
+
+    result = {
+        "card_id": card.id, "name": card.name, "set": card.set_name,
+        "number": card.number, "old_price": card.current_price,
+        "old_variant": card.price_variant, "old_product_id": card.tcgplayer_product_id,
+    }
+
+    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+        product_id = card.tcgplayer_product_id
+        if not product_id:
+            search_result = await _search_tcgplayer(
+                client, card.name, card.set_name or "", card.number or ""
+            )
+            if search_result:
+                product_id = search_result.get("productId")
+                if product_id:
+                    product_id = int(product_id)
+                    card.tcgplayer_product_id = product_id
+                    result["search_match"] = {
+                        "productName": search_result.get("productName"),
+                        "setName": search_result.get("setName"),
+                        "productId": product_id,
+                    }
+
+        result["product_id"] = product_id
+        if not product_id:
+            result["status"] = "no_product_found"
+            return result
+
+        price_data = await _get_price(client, product_id)
+        result["price_data"] = price_data
+
+        if price_data and price_data.get("market_price"):
+            mp = price_data["market_price"]
+            card.current_price = round(mp, 2)
+            card.updated_at = datetime.now(timezone.utc)
+
+            printing_type = (price_data.get("printing_type") or "").lower()
+            new_variant = PRINTING_TO_VARIANT.get(printing_type, card.price_variant or "normal")
+            if new_variant != card.price_variant:
+                result["variant_changed"] = {"from": card.price_variant, "to": new_variant}
+                card.price_variant = new_variant
+
+            variant = card.price_variant or "normal"
+            existing = db.query(PriceHistory).filter(
+                PriceHistory.card_id == card.id, PriceHistory.date == today,
+            ).first()
+            if not existing:
+                db.add(PriceHistory(
+                    card_id=card.id, date=today, variant=variant,
+                    condition="Near Mint", market_price=round(mp, 2),
+                ))
+                result["price_history_added"] = True
+
+            result["new_price"] = round(mp, 2)
+            result["new_variant"] = variant
+
+        await asyncio.sleep(0.5)
+        sales_data = await _fetch_latest_sales(client, product_id)
+        result["sales_fetched"] = len(sales_data) if sales_data else 0
+
+        new_sales = 0
+        if sales_data:
+            for sale in sales_data:
+                order_date_str = sale.get("orderDate", "")
+                listing_id_raw = sale.get("customListingId") or ""
+                price = sale.get("purchasePrice", 0)
+                dedup_key = f"tcg-{product_id}-{order_date_str[:19]}-{price}-{listing_id_raw}"
+
+                existing_sale = db.query(Sale.id).filter(Sale.listing_id == dedup_key).first()
+                if existing_sale:
+                    continue
+
+                try:
+                    order_dt = datetime.fromisoformat(order_date_str.replace("Z", "+00:00"))
+                except (ValueError, TypeError):
+                    continue
+
+                db.add(Sale(
+                    card_id=card.id, source="tcgplayer", source_product_id=str(product_id),
+                    order_date=order_dt, purchase_price=price,
+                    shipping_price=sale.get("shippingPrice", 0),
+                    condition=sale.get("condition", ""), variant=sale.get("variant", ""),
+                    language=sale.get("language", "English"), quantity=sale.get("quantity", 1),
+                    listing_title=sale.get("title", ""), listing_id=dedup_key,
+                ))
+                new_sales += 1
+
+        result["sales_added"] = new_sales
+
+    db.commit()
+    result["status"] = "complete"
+    return result
+
+
+@app.get("/api/admin/data-audit", dependencies=[Depends(verify_admin_key)])
+def data_audit(db: Session = Depends(get_db), limit: int = 100):
+    """Run data quality audit on top N most expensive cards."""
+    from server.services.data_quality import audit_top_cards
+    return audit_top_cards(db, limit=limit)
+
+
+@app.post("/api/admin/fix-variants", dependencies=[Depends(verify_admin_key)])
+async def fix_variants(db: Session = Depends(get_db)):
+    """Fix variant mismatches for modern common/uncommon cards."""
+    from server.services.data_quality import fix_variant_mismatches
+    return await fix_variant_mismatches(db)
+
+
 @app.get("/api/tracked/stats", dependencies=[Depends(verify_admin_key)])
 def tracked_stats(db: Session = Depends(get_db)):
     return get_tracked_stats(db)
@@ -1182,15 +1500,30 @@ async def backfill_from_sales_endpoint(db: Session = Depends(get_db)):
 @app.post("/api/sync/sales", dependencies=[Depends(verify_admin_key)])
 async def trigger_sales_collection(
     limit: int = 500,
+    force: bool = False,
     db: Session = Depends(get_db),
 ):
     """Collect latest completed sales from TCGPlayer for all tracked cards."""
     from server.services.sales_collector import collect_sales
     try:
-        stats = await collect_sales(db, limit=limit)
+        stats = await collect_sales(db, limit=limit, force=force)
         return {"status": "complete", "source": "tcgplayer_sales", **stats}
     except Exception as e:
         logger.error(f"Sales collection failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/sync/sales-backfill", dependencies=[Depends(verify_admin_key)])
+async def trigger_sales_backfill(
+    db: Session = Depends(get_db),
+):
+    """Aggressively backfill sales for top 100 most expensive cards."""
+    from server.services.sales_collector import backfill_sales
+    try:
+        stats = await backfill_sales(db)
+        return {"status": "complete", "source": "sales_backfill", **stats}
+    except Exception as e:
+        logger.error(f"Sales backfill failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

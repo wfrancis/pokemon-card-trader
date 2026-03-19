@@ -3,7 +3,7 @@ import {
   ResponsiveContainer, ComposedChart, Line, XAxis, YAxis,
   CartesianGrid, Tooltip, ReferenceLine, ReferenceArea,
 } from 'recharts';
-import { Box, Typography, Stack, Chip, ToggleButton, ToggleButtonGroup, IconButton, Tooltip as MuiTooltip } from '@mui/material';
+import { Box, Typography, Stack, Chip, ToggleButton, ToggleButtonGroup, IconButton, Tooltip as MuiTooltip, Skeleton, Alert } from '@mui/material';
 import DownloadIcon from '@mui/icons-material/Download';
 import html2canvas from 'html2canvas';
 import { SaleRecord } from '../services/api';
@@ -13,6 +13,8 @@ interface Props {
   sales: SaleRecord[];
   medianPrice: number | null;
   cardName: string;
+  loading?: boolean;
+  error?: string | null;
 }
 
 type TimeRange = '1W' | '1M' | '3M' | '6M' | 'ALL';
@@ -39,7 +41,7 @@ function getConditionColor(condition: string): string {
   return CONDITION_COLORS[condition] || '#888';
 }
 
-export default function SalesChart({ sales, medianPrice, cardName }: Props) {
+export default function SalesChart({ sales, medianPrice, cardName, loading, error }: Props) {
   const chartRef = useRef<HTMLDivElement>(null);
   const [range, setRange] = useState<TimeRange>('ALL');
   const [selectedConditions, setSelectedConditions] = useState<Set<string>>(new Set());
@@ -94,7 +96,7 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
       case 'ALL': cutoff.setFullYear(2000); break;
     }
 
-    return sales
+    const filtered = sales
       .filter(s => {
         const d = new Date(s.order_date);
         if (d < cutoff) return false;
@@ -124,6 +126,9 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
         };
       })
       .sort((a, b) => a.timestamp - b.timestamp);
+
+    // If range filter yields empty but we have data, auto-fallback happens via empty state
+    return filtered;
   }, [sales, range, selectedConditions]);
 
   // Apply zoom filter
@@ -152,7 +157,7 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
     });
   }, []);
 
-  // Click handler — open TCGPlayer product page
+  // Click handler -- open TCGPlayer product page
   const handleDotClick = useCallback((data: any) => {
     const payload = data?.payload;
     if (payload?.sourceProductId) {
@@ -163,11 +168,11 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
     }
   }, []);
 
-  // Compute SMA lines (30d and 180d) from daily medians — use filteredData for zoom
+  // Compute SMA lines (30d and 180d) from daily medians -- use filteredData for zoom
   const smaData = useMemo(() => {
     if (filteredData.length < 2) return { sma30: [], sma180: [] };
 
-    // Group by day → daily median
+    // Group by day -> daily median
     const dayMap = new Map<string, number[]>();
     for (const d of filteredData) {
       const key = new Date(d.timestamp).toISOString().slice(0, 10);
@@ -199,6 +204,74 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
     };
   }, [filteredData]);
 
+  // Loading state
+  if (loading) {
+    return (
+      <Box>
+        <Skeleton variant="text" width={200} height={40} sx={{ bgcolor: '#1a1a1a' }} />
+        <Skeleton variant="text" width={150} height={24} sx={{ bgcolor: '#1a1a1a', mb: 1 }} />
+        <Skeleton variant="rectangular" height={350} sx={{ bgcolor: '#1a1a1a', borderRadius: 1 }} />
+      </Box>
+    );
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300 }}>
+        <Alert severity="error" sx={{ bgcolor: '#1a0000', color: '#ff6b6b', border: '1px solid #330000', fontFamily: 'monospace' }}>
+          Unable to load chart data. Try refreshing the page.
+        </Alert>
+      </Box>
+    );
+  }
+
+  // Zero sales empty state
+  if (sales.length === 0) {
+    return (
+      <Box ref={chartRef}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+          <Typography variant="h4" sx={{ fontWeight: 700, fontFamily: 'monospace' }}>
+            COMPLETED SALES
+          </Typography>
+        </Box>
+        <Box sx={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          height: 300, color: '#666', border: '1px solid #222', borderRadius: 1,
+          bgcolor: '#0a0a0a', flexDirection: 'column', gap: 1.5, px: 3,
+        }}>
+          <Typography sx={{ color: '#888', fontSize: '0.9rem', fontFamily: 'monospace', textAlign: 'center' }}>
+            No completed sales recorded for this card yet.
+          </Typography>
+          <Typography sx={{ color: '#555', fontSize: '0.75rem', fontFamily: 'monospace', textAlign: 'center', maxWidth: 400 }}>
+            Sales data is collected periodically from TCGPlayer. Check back later for completed sale prices.
+          </Typography>
+        </Box>
+        {/* Always show condition legend */}
+        <Stack direction="row" spacing={{ xs: 1, md: 2 }} sx={{ mt: 1, justifyContent: 'center', flexWrap: 'wrap', py: 0.5 }}>
+          {Object.entries(CONDITION_COLORS).map(([cond, color]) => (
+            <Stack key={cond} direction="row" spacing={0.5} alignItems="center" sx={{ opacity: 0.5 }}>
+              {cond === 'Daily Average' ? (
+                <Box sx={{ width: 8, height: 8, bgcolor: color, transform: 'rotate(45deg)' }} />
+              ) : (
+                <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: color }} />
+              )}
+              <Typography sx={{ fontSize: 11, color: '#555', fontFamily: 'monospace', letterSpacing: 0.3 }}>
+                {CONDITION_SHORT[cond] || cond}
+              </Typography>
+            </Stack>
+          ))}
+        </Stack>
+      </Box>
+    );
+  }
+
+  // Range filter yielded 0 results but we have sales -- auto-fallback
+  if (chartData.length === 0 && sales.length > 0 && range !== 'ALL') {
+    // Auto-switch to ALL
+    setTimeout(() => setRange('ALL'), 0);
+  }
+
   if (chartData.length === 0) {
     return (
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300, color: '#666' }}>
@@ -209,7 +282,79 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
     );
   }
 
-  // Compute stats with outlier-aware Y-axis (IQR method) — use filteredData
+  // Single sale: show as annotated display
+  if (filteredData.length === 1) {
+    const sale = filteredData[0];
+    return (
+      <Box ref={chartRef}>
+        <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: { xs: 'flex-start', sm: 'center' }, gap: { xs: 0.5, md: 2 }, mb: 0.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography variant="h4" sx={{ fontWeight: 700, fontFamily: 'monospace' }}>
+              COMPLETED SALES
+            </Typography>
+          </Box>
+          <Typography variant="body2" sx={{ color: '#888', fontFamily: 'monospace' }}>
+            1 sale recorded
+          </Typography>
+        </Box>
+
+        <Box sx={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          height: 300, border: '1px solid #222', borderRadius: 1,
+          bgcolor: '#0a0a0a', flexDirection: 'column', gap: 2, px: 3,
+        }}>
+          {/* Single dot visualization */}
+          <Box sx={{
+            width: 16, height: 16, borderRadius: '50%',
+            bgcolor: getConditionColor(sale.condition),
+            boxShadow: `0 0 12px ${getConditionColor(sale.condition)}40`,
+          }} />
+          <Typography sx={{ color: '#fff', fontSize: '1.5rem', fontWeight: 700, fontFamily: 'monospace' }}>
+            ${sale.price.toFixed(2)}
+            {!sale.isAggregate && sale.shipping != null && sale.shipping > 0 && (
+              <Typography component="span" sx={{ color: '#666', fontSize: '0.8rem', ml: 1 }}>
+                +${sale.shipping.toFixed(2)} shipping
+              </Typography>
+            )}
+          </Typography>
+          <Box sx={{ textAlign: 'center' }}>
+            <Typography sx={{ color: getConditionColor(sale.condition), fontSize: '0.85rem', fontFamily: 'monospace', fontWeight: 600 }}>
+              {sale.condition} {sale.variant && `\u00B7 ${sale.variant}`}
+            </Typography>
+            <Typography sx={{ color: '#888', fontSize: '0.8rem', fontFamily: 'monospace', mt: 0.5 }}>
+              {sale.date} {!sale.isAggregate && sale.time}
+            </Typography>
+            {!sale.isAggregate && sale.title && (
+              <Typography sx={{ color: '#555', fontSize: '0.7rem', fontFamily: 'monospace', mt: 0.5, maxWidth: 350, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {sale.title}
+              </Typography>
+            )}
+          </Box>
+          <Typography sx={{ color: '#555', fontSize: '0.7rem', fontFamily: 'monospace' }}>
+            More sales data will appear as they are recorded from TCGPlayer.
+          </Typography>
+        </Box>
+
+        {/* Legend */}
+        <Stack direction="row" spacing={{ xs: 1, md: 2 }} sx={{ mt: 1, justifyContent: 'center', flexWrap: 'wrap', py: 0.5 }}>
+          {Object.entries(CONDITION_COLORS).map(([cond, color]) => (
+            <Stack key={cond} direction="row" spacing={0.5} alignItems="center" sx={{ opacity: 0.9 }}>
+              {cond === 'Daily Average' ? (
+                <Box sx={{ width: 8, height: 8, bgcolor: color, transform: 'rotate(45deg)' }} />
+              ) : (
+                <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: color }} />
+              )}
+              <Typography sx={{ fontSize: 11, color: '#777', fontFamily: 'monospace', letterSpacing: 0.3 }}>
+                {CONDITION_SHORT[cond] || cond}
+              </Typography>
+            </Stack>
+          ))}
+        </Stack>
+      </Box>
+    );
+  }
+
+  // Compute stats with outlier-aware Y-axis (IQR method) -- use filteredData
   const prices = filteredData.map(d => d.price);
   const sortedPrices = [...prices].sort((a, b) => a - b);
   const median = sortedPrices.length > 0 ? sortedPrices[Math.floor(sortedPrices.length / 2)] : 0;
@@ -221,9 +366,15 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
   const minPrice = sortedPrices[0];
   const maxNormalized = normalizedPrices.length > 0 ? normalizedPrices[normalizedPrices.length - 1] : sortedPrices[sortedPrices.length - 1];
   const maxPrice = sortedPrices[sortedPrices.length - 1];
-  const yMax = maxPrice > upperFence && normalizedPrices.length >= sortedPrices.length * 0.9
-    ? maxNormalized * 1.15 // Trim outliers from Y-axis
-    : maxPrice;
+
+  // Outlier handling: cap y-axis at 2x median if outliers exist > 5x median
+  const hasExtremeOutliers = maxPrice > median * 5 && median > 0;
+  const yMax = hasExtremeOutliers
+    ? median * 2 // Cap at 2x median so outliers clip rather than blowing up y-axis
+    : maxPrice > upperFence && normalizedPrices.length >= sortedPrices.length * 0.9
+      ? maxNormalized * 1.15
+      : maxPrice;
+
   const rawPadding = (yMax - minPrice) * 0.1 || yMax * 0.1;
   // Ensure minimum padding of 10% of the max price so single-value charts show meaningful Y-axis ticks
   const padding = Math.max(rawPadding, maxPrice * 0.1 || 1);
@@ -285,6 +436,7 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
             if (agg > 0) return `${agg} daily avg`;
             return `${indiv} sale${indiv !== 1 ? 's' : ''}`;
           })()} · Median ${median.toFixed(2)}
+          {hasExtremeOutliers && ` · ${filteredData.filter(d => d.price > median * 5).length} outlier${filteredData.filter(d => d.price > median * 5).length !== 1 ? 's' : ''} clipped`}
         </Typography>
       </Box>
 
@@ -333,7 +485,7 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
       </Box>
 
       {/* Line chart with condition-colored dots */}
-      <Box sx={{ height: { xs: 280, sm: 350, md: 420 }, userSelect: 'none' }}>
+      <Box sx={{ height: { xs: 280, sm: 350, md: 420 }, minHeight: 250, userSelect: 'none' }}>
       <ResponsiveContainer width="100%" height="100%">
         <ComposedChart
           data={(() => {
@@ -407,6 +559,7 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
               if (!active || !payload?.length) return null;
               const d = payload[0]?.payload;
               if (!d || d.price == null) return null;
+              const isOutlier = hasExtremeOutliers && d.price > median * 5;
               return (
                 <Box sx={{
                   bgcolor: '#111', border: '1px solid #333', borderRadius: 1,
@@ -415,6 +568,11 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
                 }}>
                   <Typography sx={{ fontWeight: 700, color: '#fff', fontSize: 14, mb: 0.5 }}>
                     ${d.price.toFixed(2)}
+                    {isOutlier && (
+                      <Typography component="span" sx={{ color: '#ff9800', fontSize: 11, ml: 1 }}>
+                        OUTLIER
+                      </Typography>
+                    )}
                     {!d.isAggregate && d.shipping != null && d.shipping > 0 && (
                       <Typography component="span" sx={{ color: '#666', fontSize: 11, ml: 1 }}>
                         +${d.shipping.toFixed(2)} ship
@@ -469,17 +627,19 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
             strokeWidth={1}
             dot={(props: any) => {
               const { cx, cy, payload } = props;
+              if (cx == null || cy == null || !payload || payload.price == null) return <g key={`dot-empty-${props.index}`} />;
               const color = getConditionColor(payload.condition);
+              const isOutlier = hasExtremeOutliers && payload.price > median * 5;
               if (payload.isAggregate) {
                 return (
                   <polygon
                     key={`dot-${payload.timestamp}`}
                     points={`${cx},${cy-5} ${cx+5},${cy} ${cx},${cy+5} ${cx-5},${cy}`}
                     fill={color}
-                    fillOpacity={0.7}
+                    fillOpacity={isOutlier ? 0.3 : 0.7}
                     stroke={color}
                     strokeWidth={1}
-                    strokeOpacity={0.4}
+                    strokeOpacity={isOutlier ? 0.2 : 0.4}
                     style={{ cursor: 'pointer' }}
                     onClick={() => handleDotClick({ payload })}
                   />
@@ -492,10 +652,10 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
                   cy={cy}
                   r={5}
                   fill={color}
-                  fillOpacity={0.85}
+                  fillOpacity={isOutlier ? 0.3 : 0.85}
                   stroke={color}
                   strokeWidth={2}
-                  strokeOpacity={0.3}
+                  strokeOpacity={isOutlier ? 0.15 : 0.3}
                   style={{ cursor: 'pointer' }}
                   onClick={() => handleDotClick({ payload })}
                 />
@@ -503,6 +663,7 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
             }}
             activeDot={(props: any) => {
               const { cx, cy, payload } = props;
+              if (cx == null || cy == null || !payload) return <g key={`adot-empty-${props.index}`} />;
               const color = getConditionColor(payload.condition);
               if (payload.isAggregate) {
                 return (
@@ -577,7 +738,7 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
       </ResponsiveContainer>
       </Box>
 
-      {/* Legend */}
+      {/* Legend -- always visible */}
       <Stack direction="row" spacing={{ xs: 1, md: 2 }} sx={{ mt: 1, justifyContent: 'center', flexWrap: 'wrap', py: 0.5 }}>
         {Object.entries(CONDITION_COLORS).map(([cond, color]) => (
           <Stack key={cond} direction="row" spacing={0.5} alignItems="center" sx={{ opacity: 0.9 }}>

@@ -1,7 +1,7 @@
 """Collect individual completed sale records from TCGPlayer.
 
 Uses the public `/v2/product/{id}/latestsales` endpoint (no API key).
-Returns up to 5 most recent sales per product per call.
+Supports fetching up to 25 sales per product per call.
 Poll every 6 hours to accumulate a rich tick-level dataset over time.
 """
 import httpx
@@ -9,6 +9,7 @@ import logging
 import asyncio
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
+from sqlalchemy import desc
 from server.models.card import Card
 from server.models.sale import Sale
 
@@ -106,13 +107,19 @@ async def _search_product_id(
 
 
 async def _fetch_latest_sales(
-    client: httpx.AsyncClient, product_id: int
+    client: httpx.AsyncClient, product_id: int, limit: int = 25
 ) -> list[dict]:
-    """Fetch latest completed sales from TCGPlayer (up to 5 per call)."""
+    """Fetch latest completed sales from TCGPlayer.
+
+    Args:
+        client: HTTP client.
+        product_id: TCGPlayer product ID.
+        limit: Number of sales to fetch (max 25).
+    """
     try:
         resp = await client.post(
             f"{SALES_API}/{product_id}/latestsales",
-            json={"limit": 25},
+            json={"limit": limit},
             headers=HEADERS,
         )
         if resp.status_code != 200:
@@ -126,18 +133,91 @@ async def _fetch_latest_sales(
         return []
 
 
-async def collect_sales(db: Session, limit: int = 500) -> dict:
+def _make_dedup_key(product_id: int, sale: dict) -> str:
+    """Create a composite dedup key from sale data.
+
+    Uses product_id + order_date + price + condition to uniquely identify sales.
+    """
+    order_date_str = sale.get("orderDate", "")
+    price = sale.get("purchasePrice", 0)
+    condition = sale.get("condition", "")
+    listing_id = sale.get("customListingId") or ""
+    return f"tcg-{product_id}-{order_date_str[:19]}-{price}-{condition}-{listing_id}"
+
+
+def _store_sales(
+    db: Session, card: Card, product_id: int, sales_data: list[dict]
+) -> dict:
+    """Store sale records for a card, deduplicating by composite key.
+
+    Returns dict with counts: new, duplicate, errors.
+    """
+    counts = {"new": 0, "duplicate": 0, "errors": 0}
+
+    for sale in sales_data:
+        dedup_key = _make_dedup_key(product_id, sale)
+
+        # Check if already exists
+        existing = db.query(Sale.id).filter(
+            Sale.listing_id == dedup_key
+        ).first()
+        if existing:
+            counts["duplicate"] += 1
+            continue
+
+        # Also check old-style dedup keys (without condition) to avoid re-inserting
+        order_date_str = sale.get("orderDate", "")
+        price = sale.get("purchasePrice", 0)
+        listing_id = sale.get("customListingId") or ""
+        old_key = f"tcg-{product_id}-{order_date_str[:19]}-{price}-{listing_id}"
+        existing_old = db.query(Sale.id).filter(
+            Sale.listing_id == old_key
+        ).first()
+        if existing_old:
+            counts["duplicate"] += 1
+            continue
+
+        # Parse order date
+        try:
+            order_dt = datetime.fromisoformat(
+                order_date_str.replace("Z", "+00:00")
+            )
+        except (ValueError, TypeError):
+            counts["errors"] += 1
+            continue
+
+        db.add(Sale(
+            card_id=card.id,
+            source="tcgplayer",
+            source_product_id=str(product_id),
+            order_date=order_dt,
+            purchase_price=price,
+            shipping_price=sale.get("shippingPrice", 0),
+            condition=sale.get("condition", ""),
+            variant=sale.get("variant", ""),
+            language=sale.get("language", "English"),
+            quantity=sale.get("quantity", 1),
+            listing_title=sale.get("title", ""),
+            listing_id=dedup_key,
+        ))
+        counts["new"] += 1
+
+    return counts
+
+
+async def collect_sales(db: Session, limit: int = 500, force: bool = False) -> dict:
     """Collect latest sales from TCGPlayer for all tracked cards.
 
     For each tracked card:
-    1. Search TCGPlayer for the product ID
-    2. Fetch latest 5 completed sales
-    3. Store new sales (dedup by listing_id)
+    1. Use stored tcgplayer_product_id, or search TCGPlayer for it
+    2. Fetch up to 25 completed sales
+    3. Store new sales (dedup by order_date + price + condition)
     4. Update card.current_price from median of recent sales
 
     Args:
         db: SQLAlchemy session.
         limit: Max cards to process.
+        force: If True, re-fetch sales even for recently-synced cards.
 
     Returns:
         Stats dict.
@@ -148,6 +228,7 @@ async def collect_sales(db: Session, limit: int = 500) -> dict:
         "sales_new": 0,
         "sales_duplicate": 0,
         "search_misses": 0,
+        "product_ids_found": 0,
         "no_sales": 0,
         "errors": 0,
     }
@@ -158,7 +239,7 @@ async def collect_sales(db: Session, limit: int = 500) -> dict:
         logger.info("No tracked cards for sales collection")
         return stats
 
-    logger.info(f"Sales collector: processing {len(cards)} tracked cards")
+    logger.info(f"Sales collector: processing {len(cards)} tracked cards (force={force})")
 
     async with httpx.AsyncClient(
         timeout=30.0,
@@ -168,61 +249,52 @@ async def collect_sales(db: Session, limit: int = 500) -> dict:
             stats["cards_processed"] += 1
 
             try:
-                # Search for TCGPlayer product ID
-                product_id = await _search_product_id(
-                    client, card.name, card.set_name or "", card.number or ""
-                )
+                # Use stored product ID or search for it
+                product_id = card.tcgplayer_product_id
                 if not product_id:
-                    stats["search_misses"] += 1
-                    continue
+                    product_id = await _search_product_id(
+                        client, card.name, card.set_name or "", card.number or ""
+                    )
+                    if product_id:
+                        card.tcgplayer_product_id = product_id
+                        stats["product_ids_found"] += 1
+                        logger.info(f"Found product ID {product_id} for {card.name} ({card.set_name})")
+                    else:
+                        stats["search_misses"] += 1
+                        logger.debug(f"No TCGPlayer match for {card.name} ({card.set_name})")
+                        continue
 
-                # Fetch latest sales
-                sales_data = await _fetch_latest_sales(client, product_id)
+                    # Rate limit after search
+                    await asyncio.sleep(1.0)
+
+                # Skip if card has recent sales and not forcing
+                if not force:
+                    recent_sale = db.query(Sale.id).filter(
+                        Sale.card_id == card.id,
+                        Sale.source == "tcgplayer",
+                    ).first()
+                    # If card already has sales, still fetch to get new ones
+                    # (the dedup will handle duplicates)
+
+                # Fetch latest sales (up to 25)
+                sales_data = await _fetch_latest_sales(client, product_id, limit=25)
                 if not sales_data:
                     stats["no_sales"] += 1
                     continue
 
                 stats["sales_collected"] += len(sales_data)
 
-                for sale in sales_data:
-                    # Build a unique listing_id for dedup
-                    order_date_str = sale.get("orderDate", "")
-                    listing_id = sale.get("customListingId") or ""
-                    # Create composite dedup key: product_id + date + price + listing_id
-                    price = sale.get("purchasePrice", 0)
-                    dedup_key = f"tcg-{product_id}-{order_date_str[:19]}-{price}-{listing_id}"
+                # Store sales with dedup
+                counts = _store_sales(db, card, product_id, sales_data)
+                stats["sales_new"] += counts["new"]
+                stats["sales_duplicate"] += counts["duplicate"]
+                stats["errors"] += counts["errors"]
 
-                    # Check if already exists
-                    existing = db.query(Sale.id).filter(
-                        Sale.listing_id == dedup_key
-                    ).first()
-                    if existing:
-                        stats["sales_duplicate"] += 1
-                        continue
-
-                    # Parse order date
-                    try:
-                        order_dt = datetime.fromisoformat(
-                            order_date_str.replace("Z", "+00:00")
-                        )
-                    except (ValueError, TypeError):
-                        continue
-
-                    db.add(Sale(
-                        card_id=card.id,
-                        source="tcgplayer",
-                        source_product_id=str(product_id),
-                        order_date=order_dt,
-                        purchase_price=price,
-                        shipping_price=sale.get("shippingPrice", 0),
-                        condition=sale.get("condition", ""),
-                        variant=sale.get("variant", ""),
-                        language=sale.get("language", "English"),
-                        quantity=sale.get("quantity", 1),
-                        listing_title=sale.get("title", ""),
-                        listing_id=dedup_key,
-                    ))
-                    stats["sales_new"] += 1
+                if counts["new"] > 0:
+                    logger.info(
+                        f"{card.name}: +{counts['new']} new sales, "
+                        f"{counts['duplicate']} dupes skipped"
+                    )
 
                 # Update card.current_price from latest sale
                 if sales_data:
@@ -236,16 +308,16 @@ async def collect_sales(db: Session, limit: int = 500) -> dict:
                 logger.error(f"Error collecting sales for {card.name}: {e}")
                 stats["errors"] += 1
 
-            # Rate limit: 0.5s between cards (2 requests per card)
-            await asyncio.sleep(0.5)
+            # Rate limit: 1s between cards
+            await asyncio.sleep(1.0)
 
-            # Commit every 20 cards
-            if stats["cards_processed"] % 20 == 0:
+            # Commit every 10 cards
+            if stats["cards_processed"] % 10 == 0:
                 try:
                     db.commit()
                     logger.info(
                         f"Sales progress: {stats['cards_processed']}/{len(cards)} cards, "
-                        f"{stats['sales_new']} new sales"
+                        f"{stats['sales_new']} new sales, {stats['product_ids_found']} product IDs found"
                     )
                 except Exception as e:
                     logger.error(f"Commit error: {e}")
@@ -259,4 +331,142 @@ async def collect_sales(db: Session, limit: int = 500) -> dict:
             db.rollback()
 
     logger.info(f"Sales collection complete: {stats}")
+    return stats
+
+
+async def backfill_sales(
+    db: Session, card_ids: list[int] | None = None, limit: int = 100
+) -> dict:
+    """Aggressively backfill sales for specific cards or top 100 by price.
+
+    For each card:
+    1. Search TCGPlayer if no product_id stored
+    2. Fetch up to 25 latest sales
+    3. Store all new Sale records (dedup by order_date + price + condition)
+    4. Update card's tcgplayer_product_id
+
+    Args:
+        db: SQLAlchemy session.
+        card_ids: Optional list of card IDs to backfill. If None, uses top 100 by price.
+        limit: Max cards to process (only used when card_ids is None).
+
+    Returns:
+        Stats dict.
+    """
+    stats = {
+        "cards_processed": 0,
+        "sales_added": 0,
+        "already_existed": 0,
+        "product_ids_found": 0,
+        "search_misses": 0,
+        "no_sales": 0,
+        "errors": 0,
+    }
+
+    if card_ids:
+        cards = db.query(Card).filter(Card.id.in_(card_ids)).all()
+    else:
+        # Top cards by price, preferring tracked/viable
+        cards = (
+            db.query(Card)
+            .filter(Card.current_price.isnot(None), Card.current_price > 0)
+            .order_by(desc(Card.current_price))
+            .limit(limit)
+            .all()
+        )
+
+    if not cards:
+        logger.info("No cards found for sales backfill")
+        return stats
+
+    logger.info(f"Sales backfill: processing {len(cards)} cards")
+
+    async with httpx.AsyncClient(
+        timeout=30.0,
+        follow_redirects=True,
+    ) as client:
+        for card in cards:
+            stats["cards_processed"] += 1
+
+            try:
+                product_id = card.tcgplayer_product_id
+
+                # Search for product ID if not stored
+                if not product_id:
+                    product_id = await _search_product_id(
+                        client, card.name, card.set_name or "", card.number or ""
+                    )
+                    if product_id:
+                        card.tcgplayer_product_id = product_id
+                        stats["product_ids_found"] += 1
+                        logger.info(
+                            f"[backfill] Found product ID {product_id} for "
+                            f"{card.name} ({card.set_name} #{card.number})"
+                        )
+                    else:
+                        stats["search_misses"] += 1
+                        logger.warning(
+                            f"[backfill] No TCGPlayer match for "
+                            f"{card.name} ({card.set_name} #{card.number})"
+                        )
+                        await asyncio.sleep(1.0)
+                        continue
+
+                    # Rate limit after search
+                    await asyncio.sleep(1.0)
+
+                # Fetch up to 25 latest sales
+                sales_data = await _fetch_latest_sales(client, product_id, limit=25)
+                if not sales_data:
+                    stats["no_sales"] += 1
+                    logger.debug(f"[backfill] No sales for {card.name} (product {product_id})")
+                else:
+                    # Store sales with dedup
+                    counts = _store_sales(db, card, product_id, sales_data)
+                    stats["sales_added"] += counts["new"]
+                    stats["already_existed"] += counts["duplicate"]
+                    stats["errors"] += counts["errors"]
+
+                    logger.info(
+                        f"[backfill] {card.name} (${card.current_price}): "
+                        f"+{counts['new']} new, {counts['duplicate']} dupes, "
+                        f"product_id={product_id}"
+                    )
+
+                    # Update price from sales if we got new data
+                    if counts["new"] > 0:
+                        prices = [s["purchasePrice"] for s in sales_data if s.get("purchasePrice")]
+                        if prices:
+                            median_price = sorted(prices)[len(prices) // 2]
+                            card.current_price = round(median_price, 2)
+                            card.updated_at = datetime.now(timezone.utc)
+
+            except Exception as e:
+                logger.error(f"[backfill] Error for {card.name}: {e}")
+                stats["errors"] += 1
+
+            # Rate limit: 1s between cards
+            await asyncio.sleep(1.0)
+
+            # Commit every 10 cards
+            if stats["cards_processed"] % 10 == 0:
+                try:
+                    db.commit()
+                    logger.info(
+                        f"[backfill] Progress: {stats['cards_processed']}/{len(cards)} cards, "
+                        f"{stats['sales_added']} sales added, "
+                        f"{stats['product_ids_found']} product IDs found"
+                    )
+                except Exception as e:
+                    logger.error(f"[backfill] Commit error: {e}")
+                    db.rollback()
+
+        # Final commit
+        try:
+            db.commit()
+        except Exception as e:
+            logger.error(f"[backfill] Final commit error: {e}")
+            db.rollback()
+
+    logger.info(f"Sales backfill complete: {stats}")
     return stats

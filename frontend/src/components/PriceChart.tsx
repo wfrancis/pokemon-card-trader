@@ -3,10 +3,11 @@ import {
   ResponsiveContainer, ComposedChart, Line, Area, XAxis, YAxis,
   CartesianGrid, Tooltip, ReferenceArea, ReferenceLine,
 } from 'recharts';
-import { Box, Typography, ToggleButton, ToggleButtonGroup, IconButton, Tooltip as MuiTooltip, Chip } from '@mui/material';
+import { Box, Typography, ToggleButton, ToggleButtonGroup, IconButton, Tooltip as MuiTooltip, Chip, Skeleton, Alert } from '@mui/material';
 import DownloadIcon from '@mui/icons-material/Download';
 import ZoomOutMapIcon from '@mui/icons-material/ZoomOutMap';
 import CloseIcon from '@mui/icons-material/Close';
+import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import html2canvas from 'html2canvas';
 import { PricePoint } from '../services/api';
 
@@ -21,6 +22,8 @@ interface Props {
   cardName?: string;
   compareData?: CompareData | null;
   onRemoveCompare?: () => void;
+  loading?: boolean;
+  error?: string | null;
 }
 
 type TimeRange = '1M' | '3M' | '6M' | '1Y' | 'ALL';
@@ -67,9 +70,22 @@ function cleanTickValue(v: number): string {
   return `$${v.toFixed(2)}`;
 }
 
-export default function PriceChart({ priceData, cardName, compareData, onRemoveCompare }: Props) {
+/** Determine the best default time range based on data span */
+function getBestDefaultRange(data: { date: string }[]): TimeRange {
+  if (data.length === 0) return 'ALL';
+  const firstDate = new Date(data[0].date + 'T00:00:00');
+  const lastDate = new Date(data[data.length - 1].date + 'T00:00:00');
+  const spanDays = (lastDate.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24);
+  if (spanDays <= 35) return 'ALL'; // Less than ~1 month, show all
+  if (spanDays <= 100) return '3M';
+  if (spanDays <= 200) return '6M';
+  if (spanDays <= 400) return '1Y';
+  return 'ALL';
+}
+
+export default function PriceChart({ priceData, cardName, compareData, onRemoveCompare, loading, error }: Props) {
   const chartRef = useRef<HTMLDivElement>(null);
-  const [range, setRange] = useState<TimeRange>('ALL');
+  const [range, setRange] = useState<TimeRange | null>(null); // null = auto-select
   const [showBB, setShowBB] = useState(true);
 
   // Drag-to-zoom state
@@ -129,29 +145,39 @@ export default function PriceChart({ priceData, cardName, compareData, onRemoveC
     setRefAreaRight('');
   }, [refAreaLeft, refAreaRight]);
 
+  // Filter out $0/null prices before processing
+  const cleanedPriceData = useMemo(() => {
+    return priceData.filter(p => p.market_price != null && p.market_price > 0);
+  }, [priceData]);
+
   const fullChartData = useMemo(() => {
-    if (priceData.length === 0) return [];
-    const rawPrices = priceData.map(p => p.market_price);
+    if (cleanedPriceData.length === 0) return [];
+    const rawPrices = cleanedPriceData.map(p => p.market_price);
     const cleanedPrices = cleanOutliers(rawPrices);
-    return priceData.map((p, i) => ({
+    return cleanedPriceData.map((p, i) => ({
       date: p.date,
       price: cleanedPrices[i],
     }));
-  }, [priceData]);
+  }, [cleanedPriceData]);
 
-  // Process compare card data
+  // Process compare card data (also filter $0/null)
   const fullCompareData = useMemo(() => {
     if (!compareData || compareData.priceData.length === 0) return [];
-    const rawPrices = compareData.priceData.map(p => p.market_price);
+    const filtered = compareData.priceData.filter(p => p.market_price != null && p.market_price > 0);
+    if (filtered.length === 0) return [];
+    const rawPrices = filtered.map(p => p.market_price);
     const cleanedPrices = cleanOutliers(rawPrices);
-    return compareData.priceData.map((p, i) => ({
+    return filtered.map((p, i) => ({
       date: p.date,
       price: cleanedPrices[i],
     }));
   }, [compareData]);
 
-  const rangeData = useMemo(() => filterByRange(fullChartData, range), [fullChartData, range]);
-  const rangeCompareData = useMemo(() => filterByRange(fullCompareData, range), [fullCompareData, range]);
+  // Auto-select best range on first render
+  const effectiveRange = range ?? getBestDefaultRange(fullChartData);
+
+  const rangeData = useMemo(() => filterByRange(fullChartData, effectiveRange), [fullChartData, effectiveRange]);
+  const rangeCompareData = useMemo(() => filterByRange(fullCompareData, effectiveRange), [fullCompareData, effectiveRange]);
 
   // Apply zoom filter on top of range filter
   const chartData = useMemo(() => {
@@ -246,10 +272,43 @@ export default function PriceChart({ priceData, cardName, compareData, onRemoveC
   }, [handleResetZoom]);
 
   // Auto-fallback to ALL if selected range has no data but full dataset does
-  const hasDataButNotInRange = chartData.length === 0 && fullChartData.length > 0 && range !== 'ALL';
+  const hasDataButNotInRange = chartData.length === 0 && fullChartData.length > 0 && effectiveRange !== 'ALL';
   if (hasDataButNotInRange) {
     // Auto-switch to ALL range
     setTimeout(() => setRange('ALL'), 0);
+  }
+
+  // Stale data check: warn if most recent data is > 7 days old
+  const staleWarning = useMemo(() => {
+    if (fullChartData.length === 0) return null;
+    const lastDate = new Date(fullChartData[fullChartData.length - 1].date + 'T00:00:00');
+    const daysSinceUpdate = Math.floor((Date.now() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
+    if (daysSinceUpdate > 7) {
+      return `Price data last updated: ${lastDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}. Current price may differ.`;
+    }
+    return null;
+  }, [fullChartData]);
+
+  // Loading state
+  if (loading) {
+    return (
+      <Box>
+        <Skeleton variant="text" width={180} height={50} sx={{ bgcolor: '#1a1a1a' }} />
+        <Skeleton variant="text" width={120} height={24} sx={{ bgcolor: '#1a1a1a', mb: 1 }} />
+        <Skeleton variant="rectangular" height={350} sx={{ bgcolor: '#1a1a1a', borderRadius: 1 }} />
+      </Box>
+    );
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300 }}>
+        <Alert severity="error" sx={{ bgcolor: '#1a0000', color: '#ff6b6b', border: '1px solid #330000', fontFamily: 'monospace' }}>
+          Unable to load chart data. Try refreshing the page.
+        </Alert>
+      </Box>
+    );
   }
 
   if (chartData.length === 0 && fullChartData.length === 0) {
@@ -288,6 +347,15 @@ export default function PriceChart({ priceData, cardName, compareData, onRemoveC
             {showChangeAsNA ? '\u2014' : `${isPositive ? '+' : ''}${priceChange.toFixed(2)} (${pctChange.toFixed(1)}%)`}
           </Typography>
         </Box>
+        {staleWarning && (
+          <Alert
+            severity="warning"
+            icon={<WarningAmberIcon sx={{ fontSize: 16 }} />}
+            sx={{ mb: 1, bgcolor: '#1a1500', color: '#ffb74d', border: '1px solid #332200', fontFamily: 'monospace', fontSize: '0.75rem', py: 0, '& .MuiAlert-icon': { color: '#ffb74d' } }}
+          >
+            {staleWarning}
+          </Alert>
+        )}
         <Box sx={{
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           height: 200, color: '#666', border: '1px solid #222', borderRadius: 1,
@@ -311,7 +379,10 @@ export default function PriceChart({ priceData, cardName, compareData, onRemoveC
   const pricesInView = chartData.map((d: any) => d.price).filter(Boolean);
   const minPrice = Math.min(...pricesInView);
   const maxPrice = Math.max(...pricesInView);
-  const padding = (maxPrice - minPrice) * 0.08 || maxPrice * 0.1;
+  // Ensure at least 5% padding so the line isn't pressed against edges
+  const rawPadding = (maxPrice - minPrice) * 0.08;
+  const minPadding = maxPrice * 0.05 || 0.5; // At least 5% of max, or $0.50
+  const padding = Math.max(rawPadding, minPadding);
   const yDomain: [number, number] = [Math.max(0, minPrice - padding), maxPrice + padding];
 
   // Compute median for reference line
@@ -341,6 +412,7 @@ export default function PriceChart({ priceData, cardName, compareData, onRemoveC
   const activeData = isComparing ? mergedCompareData : chartData;
   const xTickInterval = activeData.length > 365 ? Math.floor(activeData.length / 12) :
                          activeData.length > 90 ? Math.floor(activeData.length / 8) :
+                         activeData.length <= 7 ? 0 :
                          Math.floor(activeData.length / 6);
 
   return (
@@ -382,6 +454,17 @@ export default function PriceChart({ priceData, cardName, compareData, onRemoveC
         )}
       </Box>
 
+      {/* Stale data warning */}
+      {staleWarning && (
+        <Alert
+          severity="warning"
+          icon={<WarningAmberIcon sx={{ fontSize: 16 }} />}
+          sx={{ mb: 1, bgcolor: '#1a1500', color: '#ffb74d', border: '1px solid #332200', fontFamily: 'monospace', fontSize: '0.75rem', py: 0, '& .MuiAlert-icon': { color: '#ffb74d' } }}
+        >
+          {staleWarning}
+        </Alert>
+      )}
+
       {/* Compare legend */}
       {isComparing && compareData && (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1, flexWrap: 'wrap' }}>
@@ -417,7 +500,7 @@ export default function PriceChart({ priceData, cardName, compareData, onRemoveC
       {/* Time range toggles */}
       <Box sx={{ mb: 1 }}>
         <ToggleButtonGroup
-          value={range}
+          value={effectiveRange}
           exclusive
           onChange={handleRangeChange}
           size="small"
@@ -456,7 +539,7 @@ export default function PriceChart({ priceData, cardName, compareData, onRemoveC
             </Box>
           )}
           {chartData.length >= 20 && (
-            <MuiTooltip title="Bollinger Bands show price volatility — when price touches the upper band, it may be overbought">
+            <MuiTooltip title="Bollinger Bands show price volatility -- when price touches the upper band, it may be overbought">
               <Chip
                 label="Bollinger Bands"
                 size="small"
@@ -487,7 +570,7 @@ export default function PriceChart({ priceData, cardName, compareData, onRemoveC
       )}
 
       {/* Chart */}
-      <Box sx={{ height: { xs: 280, sm: 350, md: 420 }, cursor: 'crosshair', userSelect: 'none' }}>
+      <Box sx={{ height: { xs: 280, sm: 350, md: 420 }, minHeight: 250, cursor: 'crosshair', userSelect: 'none' }}>
       <ResponsiveContainer width="100%" height="100%">
         {isComparing && mergedCompareData.length > 0 ? (
           /* Compare mode: normalized % change chart */
@@ -507,7 +590,7 @@ export default function PriceChart({ priceData, cardName, compareData, onRemoveC
               interval={xTickInterval}
               tickFormatter={(d) => {
                 const dt = new Date(d + 'T00:00:00');
-                if (range === '1M' || range === '3M') {
+                if (effectiveRange === '1M' || effectiveRange === '3M') {
                   return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
                 }
                 return dt.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
@@ -599,7 +682,7 @@ export default function PriceChart({ priceData, cardName, compareData, onRemoveC
               interval={xTickInterval}
               tickFormatter={(d) => {
                 const dt = new Date(d + 'T00:00:00');
-                if (range === '1M' || range === '3M') {
+                if (effectiveRange === '1M' || effectiveRange === '3M') {
                   return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
                 }
                 return dt.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
