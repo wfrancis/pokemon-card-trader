@@ -374,10 +374,65 @@ export default function CardDetail() {
             )}
 
             {/* Spread Analysis */}
-            {card.current_price != null && card.current_price > 0 && medianPrice != null && medianPrice > 0 && (() => {
-              const spread = ((card.current_price! - medianPrice) / medianPrice) * 100;
+            {card.current_price != null && card.current_price > 0 && (() => {
+              const hasSalesData = sales.length > 0 && medianPrice != null && medianPrice > 0;
+              const tcgUrl = card.tcgplayer_product_id
+                ? `https://www.tcgplayer.com/product/${card.tcgplayer_product_id}`
+                : `https://www.tcgplayer.com/search/pokemon/product?q=${encodeURIComponent(card.name + ' ' + card.set_name)}`;
+
+              if (!hasSalesData) {
+                // No sales data — show market price only, no misleading spread/profit calculations
+                return (
+                  <Box sx={{ mt: 2, border: '1px solid #333', borderRadius: 1, overflow: 'hidden' }}>
+                    <Box sx={{ bgcolor: '#1a1a2e', px: 1, py: 0.4 }}>
+                      <Typography sx={{ color: '#00bcd4', fontWeight: 700, fontSize: '0.65rem', fontFamily: '"JetBrains Mono", monospace', letterSpacing: 1 }}>
+                        SPREAD ANALYSIS
+                      </Typography>
+                    </Box>
+                    <Box sx={{ px: 1, py: 0.5, display: 'flex', flexDirection: 'column', gap: 0.3 }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <Typography sx={{ color: '#666', fontSize: '0.65rem', fontFamily: 'monospace' }}><GlossaryTooltip term="market_price">Market</GlossaryTooltip></Typography>
+                        <Typography sx={{ color: '#ccc', fontSize: '0.65rem', fontFamily: '"JetBrains Mono", monospace', fontWeight: 700 }}>
+                          ${card.current_price!.toFixed(2)}
+                        </Typography>
+                      </Box>
+                      <Typography sx={{ color: '#888', fontSize: '0.6rem', fontFamily: 'monospace', mt: 0.5, lineHeight: 1.4 }}>
+                        No completed sales recorded yet — spread analysis requires sale data.
+                      </Typography>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        href={tcgUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        endIcon={<OpenInNewIcon sx={{ fontSize: '14px !important' }} />}
+                        sx={{
+                          mt: 0.5,
+                          width: '100%',
+                          height: 28,
+                          fontSize: '0.65rem',
+                          fontWeight: 700,
+                          fontFamily: '"JetBrains Mono", monospace',
+                          color: '#ff9800',
+                          borderColor: '#ff980066',
+                          textTransform: 'none',
+                          '&:hover': {
+                            borderColor: '#ff9800',
+                            bgcolor: '#ff980011',
+                          },
+                        }}
+                      >
+                        Buy on TCGPlayer
+                      </Button>
+                    </Box>
+                  </Box>
+                );
+              }
+
+              // Has sales data — show full spread analysis
+              const spread = ((card.current_price! - medianPrice!) / medianPrice!) * 100;
               const SELLER_FEE_RATE = 0.8745; // 1 - 12.55% (10.25% seller + 2.3% payment)
-              const flipProfit = medianPrice * SELLER_FEE_RATE - card.current_price!;
+              const flipProfit = medianPrice! * SELLER_FEE_RATE - card.current_price!;
               const isProfitable = flipProfit > 0;
               return (
                 <Box sx={{ mt: 2, border: '1px solid #333', borderRadius: 1, overflow: 'hidden' }}>
@@ -396,7 +451,7 @@ export default function CardDetail() {
                     <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                       <Typography sx={{ color: '#666', fontSize: '0.65rem', fontFamily: 'monospace' }}><GlossaryTooltip term="median_sold">Median Sold</GlossaryTooltip></Typography>
                       <Typography sx={{ color: '#ccc', fontSize: '0.65rem', fontFamily: '"JetBrains Mono", monospace', fontWeight: 700 }}>
-                        ${medianPrice.toFixed(2)}
+                        ${medianPrice!.toFixed(2)}
                       </Typography>
                     </Box>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #222', pt: 0.3 }}>
@@ -405,9 +460,17 @@ export default function CardDetail() {
                         color: spread > 0 ? '#ff1744' : '#00ff41',
                         fontSize: '0.65rem', fontFamily: '"JetBrains Mono", monospace', fontWeight: 700,
                       }}>
-                        {spread > 0 ? '+' : ''}{spread.toFixed(1)}%
+                        {Math.abs(spread) > 999
+                          ? (spread > 0 ? '>+999%' : '>-999%')
+                          : `${spread > 0 ? '+' : ''}${spread.toFixed(1)}%`}
                       </Typography>
                     </Box>
+                    {/* Variant mismatch warning: median sold price wildly different from market */}
+                    {(medianPrice! < 1 && card.current_price! > 100 || card.current_price! < 1 && medianPrice! > 100 || Math.abs(spread) > 500) && (
+                      <Typography sx={{ color: '#ff9800', fontSize: '0.55rem', fontFamily: 'monospace', mt: 0.2 }}>
+                        ⚠ Median may include different variants
+                      </Typography>
+                    )}
                     <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                       <Typography sx={{ color: '#666', fontSize: '0.65rem', fontFamily: 'monospace' }}><GlossaryTooltip term="flip_profit">Flip Profit</GlossaryTooltip></Typography>
                       <Typography sx={{
@@ -421,36 +484,34 @@ export default function CardDetail() {
                       after 12.55% seller fees
                     </Typography>
                     {/* Buy Target — prominent standalone box */}
-                    {medianPrice > 0 && (
-                      <Box sx={{
-                        mt: 0.8,
-                        p: 1,
-                        bgcolor: isProfitable ? '#00ff4108' : '#0a1a0a',
-                        border: `2px solid ${isProfitable ? '#00ff4155' : '#ff980055'}`,
-                        borderRadius: 1,
-                        textAlign: 'center',
+                    <Box sx={{
+                      mt: 0.8,
+                      p: 1,
+                      bgcolor: isProfitable ? '#00ff4108' : '#0a1a0a',
+                      border: `2px solid ${isProfitable ? '#00ff4155' : '#ff980055'}`,
+                      borderRadius: 1,
+                      textAlign: 'center',
+                    }}>
+                      <Typography sx={{
+                        color: isProfitable ? '#00ff41' : '#ff9800',
+                        fontSize: '0.85rem',
+                        fontFamily: '"JetBrains Mono", monospace',
+                        fontWeight: 800,
+                        letterSpacing: 0.5,
                       }}>
-                        <Typography sx={{
-                          color: isProfitable ? '#00ff41' : '#ff9800',
-                          fontSize: '0.85rem',
-                          fontFamily: '"JetBrains Mono", monospace',
-                          fontWeight: 800,
-                          letterSpacing: 0.5,
-                        }}>
-                          BUY TARGET: ${(medianPrice * SELLER_FEE_RATE).toFixed(2)}
-                        </Typography>
-                        <Typography sx={{
-                          color: '#888',
-                          fontSize: '0.55rem',
-                          fontFamily: 'monospace',
-                          mt: 0.2,
-                        }}>
-                          {isProfitable
-                            ? 'Current price is in the buy zone for a profitable flip'
-                            : 'Buy at or below this price for a profitable flip after fees'}
-                        </Typography>
-                      </Box>
-                    )}
+                        BUY TARGET: ${(medianPrice! * SELLER_FEE_RATE).toFixed(2)}
+                      </Typography>
+                      <Typography sx={{
+                        color: '#888',
+                        fontSize: '0.55rem',
+                        fontFamily: 'monospace',
+                        mt: 0.2,
+                      }}>
+                        {isProfitable
+                          ? 'Current price is in the buy zone for a profitable flip'
+                          : 'Buy at or below this price for a profitable flip after fees'}
+                      </Typography>
+                    </Box>
                     {/* Buy Zone Indicator */}
                     <Box sx={{ mt: 0.5, pt: 0.5, borderTop: '1px solid #222', display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
                       <Chip
@@ -515,45 +576,38 @@ export default function CardDetail() {
                       })()}
                     </Box>
                     {/* Buy on TCGPlayer Button */}
-                    {(() => {
-                      const tcgUrl = card.tcgplayer_product_id
-                        ? `https://www.tcgplayer.com/product/${card.tcgplayer_product_id}`
-                        : `https://www.tcgplayer.com/search/pokemon/product?q=${encodeURIComponent(card.name + ' ' + card.set_name)}`;
-                      return (
-                        <Button
-                          variant="outlined"
-                          size="small"
-                          href={tcgUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          endIcon={<OpenInNewIcon sx={{ fontSize: '14px !important' }} />}
-                          sx={{
-                            mt: 0.5,
-                            width: '100%',
-                            height: 28,
-                            fontSize: '0.65rem',
-                            fontWeight: 700,
-                            fontFamily: '"JetBrains Mono", monospace',
-                            color: '#ff9800',
-                            borderColor: '#ff980066',
-                            textTransform: 'none',
-                            '&:hover': {
-                              borderColor: '#ff9800',
-                              bgcolor: '#ff980011',
-                            },
-                          }}
-                        >
-                          Buy on TCGPlayer
-                        </Button>
-                      );
-                    })()}
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      href={tcgUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      endIcon={<OpenInNewIcon sx={{ fontSize: '14px !important' }} />}
+                      sx={{
+                        mt: 0.5,
+                        width: '100%',
+                        height: 28,
+                        fontSize: '0.65rem',
+                        fontWeight: 700,
+                        fontFamily: '"JetBrains Mono", monospace',
+                        color: '#ff9800',
+                        borderColor: '#ff980066',
+                        textTransform: 'none',
+                        '&:hover': {
+                          borderColor: '#ff9800',
+                          bgcolor: '#ff980011',
+                        },
+                      }}
+                    >
+                      Buy on TCGPlayer
+                    </Button>
                   </Box>
                 </Box>
               );
             })()}
 
-            {/* Standalone Buy on TCGPlayer - shows when spread analysis is hidden */}
-            {!(card.current_price != null && card.current_price > 0 && medianPrice != null && medianPrice > 0) && (() => {
+            {/* Standalone Buy on TCGPlayer - shows when spread analysis is hidden (no market price at all) */}
+            {!(card.current_price != null && card.current_price > 0) && (() => {
               const tcgUrl = card.tcgplayer_product_id
                 ? `https://www.tcgplayer.com/product/${card.tcgplayer_product_id}`
                 : `https://www.tcgplayer.com/search/pokemon/product?q=${encodeURIComponent(card.name + ' ' + card.set_name)}`;

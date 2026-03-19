@@ -266,6 +266,44 @@ export default function PriceChart({ priceData, cardName, compareData, onRemoveC
   const pctChange = firstPrice ? (priceChange / firstPrice) * 100 : 0;
   const isPositive = priceChange >= 0;
 
+  // Determine if we have too few data points for a meaningful chart
+  const uniquePrices = new Set(chartData.map(d => d.price));
+  const hasLimitedData = chartData.length <= 3;
+  const allSamePrice = uniquePrices.size <= 1;
+  // For change display: show N/A if only 1 point or all same price
+  const showChangeAsNA = chartData.length <= 1 || allSamePrice;
+
+  // If limited data, show a static price display instead of a misleading chart
+  if (hasLimitedData) {
+    return (
+      <Box ref={chartRef}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 1, md: 2 }, mb: 0.5, flexWrap: 'wrap' }}>
+          <Typography variant="h2" sx={{ fontWeight: 700, fontFamily: 'monospace' }}>
+            ${currentPrice?.toFixed(2)}
+          </Typography>
+          <Typography
+            variant="body1"
+            sx={{ color: '#888', fontWeight: 600, fontFamily: 'monospace' }}
+          >
+            {showChangeAsNA ? '\u2014' : `${isPositive ? '+' : ''}${priceChange.toFixed(2)} (${pctChange.toFixed(1)}%)`}
+          </Typography>
+        </Box>
+        <Box sx={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          height: 200, color: '#666', border: '1px solid #222', borderRadius: 1,
+          bgcolor: '#0a0a0a', flexDirection: 'column', gap: 1,
+        }}>
+          <Typography sx={{ color: '#888', fontSize: '0.85rem', fontFamily: 'monospace' }}>
+            Limited price history \u2014 only {chartData.length} data point{chartData.length !== 1 ? 's' : ''} available
+          </Typography>
+          <Typography sx={{ color: '#555', fontSize: '0.75rem', fontFamily: 'monospace' }}>
+            Chart will appear as more price data is collected
+          </Typography>
+        </Box>
+      </Box>
+    );
+  }
+
   const pricesInView = chartData.map((d: any) => d.price).filter(Boolean);
   const minPrice = Math.min(...pricesInView);
   const maxPrice = Math.max(...pricesInView);
@@ -310,9 +348,9 @@ export default function PriceChart({ priceData, cardName, compareData, onRemoveC
         </Typography>
         <Typography
           variant="body1"
-          sx={{ color: isPositive ? '#00ff41' : '#ff1744', fontWeight: 600, fontFamily: 'monospace' }}
+          sx={{ color: showChangeAsNA ? '#888' : isPositive ? '#00ff41' : '#ff1744', fontWeight: 600, fontFamily: 'monospace' }}
         >
-          {isPositive ? '+' : ''}{priceChange.toFixed(2)} ({pctChange.toFixed(1)}%)
+          {showChangeAsNA ? '\u2014' : `${isPositive ? '+' : ''}${priceChange.toFixed(2)} (${pctChange.toFixed(1)}%)`}
         </Typography>
         <MuiTooltip title="Save Chart as PNG">
           <IconButton onClick={handleExportPng} size="small" sx={{ color: '#888', border: '1px solid #333', borderRadius: 1, px: 1, '&:hover': { color: '#00bcd4', borderColor: '#00bcd4' } }}>
