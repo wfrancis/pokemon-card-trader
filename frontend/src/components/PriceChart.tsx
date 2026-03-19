@@ -192,7 +192,7 @@ export default function PriceChart({ priceData, cardName, compareData, onRemoveC
         for (let j = i - bbWindow + 1; j <= i; j++) sqSum += (chartData[j].price - mean) ** 2;
         const stddev = Math.sqrt(sqSum / bbWindow);
         bbUpper.push(mean + 2 * stddev);
-        bbLower.push(mean - 2 * stddev);
+        bbLower.push(Math.max(0, mean - 2 * stddev));
       }
     }
 
@@ -294,7 +294,7 @@ export default function PriceChart({ priceData, cardName, compareData, onRemoveC
           bgcolor: '#0a0a0a', flexDirection: 'column', gap: 1,
         }}>
           <Typography sx={{ color: '#888', fontSize: '0.85rem', fontFamily: 'monospace' }}>
-            Limited price history \u2014 only {chartData.length} data point{chartData.length !== 1 ? 's' : ''} available
+            Limited price history — only {chartData.length} data point{chartData.length !== 1 ? 's' : ''} available
           </Typography>
           <Typography sx={{ color: '#555', fontSize: '0.75rem', fontFamily: 'monospace' }}>
             Chart will appear as more price data is collected
@@ -308,7 +308,7 @@ export default function PriceChart({ priceData, cardName, compareData, onRemoveC
   const minPrice = Math.min(...pricesInView);
   const maxPrice = Math.max(...pricesInView);
   const padding = (maxPrice - minPrice) * 0.08 || maxPrice * 0.1;
-  const yDomain = [Math.max(0, minPrice - padding), maxPrice + padding];
+  const yDomain: [number, number] = [Math.max(0, minPrice - padding), maxPrice + padding];
 
   // Compute median for reference line
   const sortedPrices = [...pricesInView].sort((a, b) => a - b);

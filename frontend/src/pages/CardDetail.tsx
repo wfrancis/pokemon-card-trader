@@ -1170,7 +1170,7 @@ export default function CardDetail() {
             </Box>
 
             {chartView === 'sales' ? (
-              <SalesChart sales={sales} medianPrice={medianPrice} cardName={card.name} />
+              <SalesChart key={`sales-${chartView}`} sales={sales} medianPrice={medianPrice} cardName={card.name} />
             ) : (
               <>
                 <Typography variant="h3" sx={{ mb: 0.3, color: '#00bcd4' }}>

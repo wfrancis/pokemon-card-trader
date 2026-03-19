@@ -224,7 +224,9 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
   const yMax = maxPrice > upperFence && normalizedPrices.length >= sortedPrices.length * 0.9
     ? maxNormalized * 1.15 // Trim outliers from Y-axis
     : maxPrice;
-  const padding = (yMax - minPrice) * 0.1 || yMax * 0.1;
+  const rawPadding = (yMax - minPrice) * 0.1 || yMax * 0.1;
+  // Ensure minimum padding of 10% of the max price so single-value charts show meaningful Y-axis ticks
+  const padding = Math.max(rawPadding, maxPrice * 0.1 || 1);
 
   // Zoom mouse handlers
   const handleMouseDown = (e: any) => {
@@ -374,7 +376,12 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
             axisLine={{ stroke: '#333' }}
             tickFormatter={(ts: number) => {
               const d = new Date(ts);
-              if (range === '1W' || range === '1M') {
+              // Check actual data span to decide format
+              const dataSpanMs = filteredData.length > 1
+                ? filteredData[filteredData.length - 1].timestamp - filteredData[0].timestamp
+                : 0;
+              const twoMonthsMs = 60 * 24 * 60 * 60 * 1000;
+              if (dataSpanMs < twoMonthsMs) {
                 return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
               }
               return d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
@@ -390,6 +397,8 @@ export default function SalesChart({ sales, medianPrice, cardName }: Props) {
             axisLine={false}
             tickFormatter={(v: number) => `$${v.toFixed(v >= 100 ? 0 : 2)}`}
             width={65}
+            tickCount={5}
+            allowDecimals={false}
           />
 
           <Tooltip
