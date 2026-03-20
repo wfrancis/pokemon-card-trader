@@ -90,54 +90,43 @@ def calculate_slippage(
     liquidity_score: float,
     sales_per_day: float,
 ) -> float:
-    """Calculate realistic slippage based on card liquidity.
+    """Calculate realistic slippage for TCGPlayer listed-price marketplace.
 
-    Slippage model:
-    - High liquidity (score > 70, >1 sale/day): 1-3% slippage
-    - Medium liquidity (score 40-70, 0.3-1 sale/day): 3-7% slippage
-    - Low liquidity (score < 40, <0.3 sale/day): 7-15% slippage
-    - Very low liquidity (<0.1 sale/day): 15-25% slippage
+    TCGPlayer is NOT an auction/negotiated market. Buyers pay the lowest
+    listed price; sellers list competitively. "Slippage" is really the
+    bid-ask spread between listed sell price and what buyers actually pay.
 
-    For buys: slippage increases price (you pay more).
-    For sells: slippage decreases price (you receive less).
+    Calibrated to real TCGPlayer spreads:
+    - High liquidity (>1 sale/day): 0.5-1.5% — tight spreads, fast fills
+    - Medium liquidity (0.3-1 sale/day): 1.5-3% — may need to undercut slightly
+    - Low liquidity (0.1-0.3 sale/day): 3-5% — wider spreads, slower fills
+    - Very low liquidity (<0.1 sale/day): 5-8% — illiquid, may sit for weeks
 
-    Returns slippage as a decimal (e.g., 0.05 for 5%).
+    Returns slippage as a decimal (e.g., 0.02 for 2%).
     """
     if card_price <= 0:
-        return 0.25  # worst case for zero-priced cards
+        return 0.08  # worst case
 
-    # Very low liquidity override: <0.1 sales/day = extremely hard to trade
+    # Very low liquidity: <0.1 sales/day
     if sales_per_day < 0.1:
-        # 15-25% range, scaled by how close to zero velocity is
-        # At 0 sales/day -> 25%, at 0.1 -> 15%
         ratio = sales_per_day / 0.1  # 0.0 to 1.0
-        return 0.25 - (ratio * 0.10)  # 25% down to 15%
+        return 0.08 - (ratio * 0.03)  # 8% down to 5%
 
-    # Low liquidity: score < 40 or 0.1-0.3 sales/day
-    if liquidity_score < 40 or sales_per_day < 0.3:
-        # 7-15% range
-        if sales_per_day < 0.3:
-            ratio = (sales_per_day - 0.1) / 0.2  # 0.0 to 1.0
-            return 0.15 - (ratio * 0.08)  # 15% down to 7%
-        # Score-based fallback
-        ratio = liquidity_score / 40.0
-        return 0.15 - (ratio * 0.08)
+    # Low liquidity: 0.1-0.3 sales/day
+    if sales_per_day < 0.3:
+        ratio = (sales_per_day - 0.1) / 0.2  # 0.0 to 1.0
+        return 0.05 - (ratio * 0.02)  # 5% down to 3%
 
-    # Medium liquidity: score 40-70 or 0.3-1.0 sales/day
-    if liquidity_score < 70 or sales_per_day < 1.0:
-        # 3-7% range
-        if sales_per_day < 1.0:
-            ratio = (sales_per_day - 0.3) / 0.7  # 0.0 to 1.0
-            return 0.07 - (ratio * 0.04)  # 7% down to 3%
-        ratio = (liquidity_score - 40) / 30.0
-        return 0.07 - (ratio * 0.04)
+    # Medium liquidity: 0.3-1.0 sales/day
+    if sales_per_day < 1.0:
+        ratio = (sales_per_day - 0.3) / 0.7  # 0.0 to 1.0
+        return 0.03 - (ratio * 0.015)  # 3% down to 1.5%
 
-    # High liquidity: score >= 70 and >= 1 sale/day
-    # 1-3% range, further refined by velocity
+    # High liquidity: >= 1 sale/day
     if sales_per_day >= 3.0:
-        return 0.01  # very liquid, minimal slippage
+        return 0.005  # very liquid, minimal spread
     ratio = (sales_per_day - 1.0) / 2.0  # 0.0 to 1.0
-    return 0.03 - (ratio * 0.02)  # 3% down to 1%
+    return 0.015 - (ratio * 0.01)  # 1.5% down to 0.5%
 
 
 # ── Order Execution ──────────────────────────────────────────────────────────

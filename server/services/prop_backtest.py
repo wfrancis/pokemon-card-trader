@@ -1007,88 +1007,115 @@ def _check_sell_signals_at_date(
 
     price = td["current_price"]
     entry_price = position["entry_price"]
+    strategy = position.get("strategy", "unknown")
     reasons: list[str] = []
     sell_strength = 0.0
 
     gain_pct = (price - entry_price) / entry_price if entry_price > 0 else 0
 
-    # 1. Stop-loss
+    # Days held
+    entry_date = position.get("entry_date")
+    days_held = (sim_date - entry_date).days if entry_date else 0
+
+    # Strategy-aware minimum hold period (don't sell too early — fees need time)
+    # Mean reversion and vintage strategies need 30+ days to play out
+    # All strategies need at least 14 days (no 7-day stops that get killed by friction)
+    MIN_HOLD_DAYS = {
+        STRATEGY_VELOCITY_SPIKE: 14,
+        STRATEGY_ACCUMULATION: 21,
+        STRATEGY_MEAN_REVERSION: 30,
+        STRATEGY_VWAP_DIVERGENCE: 21,
+        STRATEGY_OOP_MOMENTUM: 30,
+        STRATEGY_MOMENTUM_BREAKOUT: 14,
+        STRATEGY_VINTAGE_VALUE: 45,
+    }
+    min_hold = MIN_HOLD_DAYS.get(strategy, 14)
+
+    # Only stop-loss can override minimum hold (catastrophic protection)
+    in_hold_period = days_held < min_hold
+
+    # 1. Stop-loss (ALWAYS active — catastrophic protection)
     stop_loss = position.get("stop_loss", entry_price * (1 - DEFAULT_STOP_LOSS_PCT))
     if price <= stop_loss:
         reasons.append(f"Stop-loss hit: price {price:.2f} <= stop {stop_loss:.2f}")
         sell_strength = max(sell_strength, 1.0)
 
-    # 2. Take-profit
-    take_profit = position.get("take_profit", entry_price * (1 + DEFAULT_TAKE_PROFIT_PCT))
-    if price >= take_profit:
-        reasons.append(f"Take-profit hit: price {price:.2f} >= target {take_profit:.2f}")
-        sell_strength = max(sell_strength, 0.9)
+    # Everything below respects minimum hold period
+    if not in_hold_period:
+        # 2. Take-profit
+        take_profit = position.get("take_profit", entry_price * (1 + DEFAULT_TAKE_PROFIT_PCT))
+        if price >= take_profit:
+            reasons.append(f"Take-profit hit: price {price:.2f} >= target {take_profit:.2f}")
+            sell_strength = max(sell_strength, 0.9)
 
-    # 3. Trailing stop: if position is up 20%+, check 8% from peak
-    if gain_pct >= 0.20:
-        prices = td.get("prices", [])
-        entry_date = position.get("entry_date")
-        if prices and entry_date:
-            # Find peak price since entry
-            dates = td.get("dates", [])
-            peak_price = price
-            for i, d in enumerate(dates):
-                if d >= entry_date and i < len(prices):
-                    peak_price = max(peak_price, prices[i])
-            trailing_stop = peak_price * 0.92  # 8% from peak
-            if price <= trailing_stop and peak_price > entry_price:
-                reasons.append(
-                    f"Trailing stop: price {price:.2f} fell 8%+ from peak {peak_price:.2f} "
-                    f"(stop {trailing_stop:.2f})"
-                )
-                sell_strength = max(sell_strength, 0.85)
+        # 3. Trailing stop: if position is up 20%+, check 8% from peak
+        if gain_pct >= 0.20:
+            prices = td.get("prices", [])
+            if prices and entry_date:
+                dates = td.get("dates", [])
+                peak_price = price
+                for i, d in enumerate(dates):
+                    if d >= entry_date and i < len(prices):
+                        peak_price = max(peak_price, prices[i])
+                trailing_stop = peak_price * 0.92  # 8% from peak
+                if price <= trailing_stop and peak_price > entry_price:
+                    reasons.append(
+                        f"Trailing stop: price {price:.2f} fell 8%+ from peak {peak_price:.2f} "
+                        f"(stop {trailing_stop:.2f})"
+                    )
+                    sell_strength = max(sell_strength, 0.85)
 
-    # 4. SMA Death Cross
-    sma_7 = td.get("sma_7")
-    sma_30 = td.get("sma_30")
-    prev_7 = td.get("prev_sma_7")
-    prev_30 = td.get("prev_sma_30")
-    if all(v is not None for v in [sma_7, sma_30, prev_7, prev_30]):
-        if prev_7 >= prev_30 and sma_7 < sma_30:
-            reasons.append(f"SMA Death Cross: 7d ({sma_7:.2f}) crossed below 30d ({sma_30:.2f})")
-            sell_strength = max(sell_strength, 0.7)
+        # 4. SMA Death Cross (skip for mean reversion/vintage — they buy dips)
+        if strategy not in (STRATEGY_MEAN_REVERSION, STRATEGY_VINTAGE_VALUE):
+            sma_7 = td.get("sma_7")
+            sma_30 = td.get("sma_30")
+            prev_7 = td.get("prev_sma_7")
+            prev_30 = td.get("prev_sma_30")
+            if all(v is not None for v in [sma_7, sma_30, prev_7, prev_30]):
+                if prev_7 >= prev_30 and sma_7 < sma_30:
+                    reasons.append(f"SMA Death Cross: 7d ({sma_7:.2f}) crossed below 30d ({sma_30:.2f})")
+                    sell_strength = max(sell_strength, 0.7)
 
-    # 5. RSI Overbought + near upper Bollinger band
-    rsi = td.get("rsi_14")
-    bb_upper = td.get("bb_upper")
-    bb_lower = td.get("bb_lower")
-    if rsi is not None and rsi > 70 and bb_upper is not None and bb_lower is not None:
-        band_range = bb_upper - bb_lower
-        if band_range > 0:
-            bb_position = (price - bb_lower) / band_range
-            if bb_position > 0.80:
-                reasons.append(f"RSI overbought ({rsi:.1f}) + near upper BB ({bb_position:.0%})")
-                sell_strength = max(sell_strength, 0.75)
+        # 5. RSI Overbought + near upper Bollinger band
+        rsi = td.get("rsi_14")
+        bb_upper = td.get("bb_upper")
+        bb_lower = td.get("bb_lower")
+        if rsi is not None and rsi > 70 and bb_upper is not None and bb_lower is not None:
+            band_range = bb_upper - bb_lower
+            if band_range > 0:
+                bb_position = (price - bb_lower) / band_range
+                if bb_position > 0.80:
+                    reasons.append(f"RSI overbought ({rsi:.1f}) + near upper BB ({bb_position:.0%})")
+                    sell_strength = max(sell_strength, 0.75)
 
-    # 6. Regime shift to distribution/markdown
-    regime = td.get("regime", "")
-    if regime in ("distribution", "markdown"):
-        reasons.append(f"Bearish regime: {regime}")
-        sell_strength = max(sell_strength, 0.6)
+        # 6. Regime shift to distribution/markdown
+        # SKIP for mean_reversion and vintage — they deliberately buy into bearish regimes
+        regime = td.get("regime", "")
+        if strategy not in (STRATEGY_MEAN_REVERSION, STRATEGY_VINTAGE_VALUE, STRATEGY_VWAP_DIVERGENCE):
+            if regime in ("distribution", "markdown"):
+                reasons.append(f"Bearish regime: {regime}")
+                sell_strength = max(sell_strength, 0.6)
 
-    # 7. Liquidity dry-up
-    velocity = td.get("sales_per_day", 0)
-    if velocity < 0.1:
-        reasons.append(f"Liquidity dried up: {velocity:.2f} sales/day")
-        sell_strength = max(sell_strength, 0.5)
+        # 7. Liquidity dry-up (always check — can't exit if no buyers)
+        velocity = td.get("sales_per_day", 0)
+        if velocity < 0.05:
+            reasons.append(f"Liquidity dried up: {velocity:.2f} sales/day")
+            sell_strength = max(sell_strength, 0.5)
 
-    # 8. Stale position
-    entry_date = position.get("entry_date")
-    if entry_date:
-        days_held = (sim_date - entry_date).days
-        if days_held > STALE_POSITION_DAYS and gain_pct < STALE_GAIN_THRESHOLD:
+        # 8. Stale position
+        stale_days = STALE_POSITION_DAYS
+        stale_threshold = STALE_GAIN_THRESHOLD
+        if strategy == STRATEGY_VINTAGE_VALUE:
+            stale_days = 365
+            stale_threshold = 0.05
+        if days_held > stale_days and gain_pct < stale_threshold:
             reasons.append(f"Stale position: {days_held}d held, only {gain_pct:.1%} gain")
             sell_strength = max(sell_strength, 0.45)
 
-    # 9. Seasonal sell window (Nov/Dec)
-    if sim_date.month in (11, 12) and gain_pct > 0.05:
-        reasons.append(f"Seasonal sell window (month {sim_date.month}), gain: {gain_pct:.1%}")
-        sell_strength = max(sell_strength, 0.55)
+        # 9. Seasonal sell window (Nov/Dec)
+        if sim_date.month in (11, 12) and gain_pct > 0.05:
+            reasons.append(f"Seasonal sell window (month {sim_date.month}), gain: {gain_pct:.1%}")
+            sell_strength = max(sell_strength, 0.55)
 
     if not reasons:
         return None
@@ -1745,6 +1772,7 @@ async def run_prop_backtest(
                 "stop_loss": pos.stop_loss,
                 "take_profit": pos.take_profit,
                 "quantity": pos.quantity,
+                "strategy": pos.strategy,
             }
 
             sell_signal = _check_sell_signals_at_date(td, pos_dict, sim_date)
@@ -1865,39 +1893,40 @@ async def run_prop_backtest(
         # Advance to next step
         sim_date += timedelta(days=step_days)
 
-    # Step 4: Close all remaining positions at end
-    logger.info("Backtest complete. Closing %d remaining positions...", len(portfolio.positions))
+    # Step 4: Report remaining positions as open (don't force-close)
+    # Force-closing adds fake friction losses that distort results
+    logger.info("Backtest complete. %d positions still open.", len(portfolio.positions))
     final_prices: dict[int, float] = {}
     for card_id, cpd in price_cache.items():
         dates, prices = _get_prices_up_to(cpd, bt_end)
         if prices:
             final_prices[card_id] = prices[-1]
 
-    for card_id in list(portfolio.positions.keys()):
-        pos = portfolio.positions[card_id]
+    open_positions = []
+    for card_id, pos in portfolio.positions.items():
         mkt_price = final_prices.get(card_id, pos.entry_price)
+        unrealized_pnl = (mkt_price - pos.entry_price) * pos.quantity
+        unrealized_pnl_pct = ((mkt_price - pos.entry_price) / pos.entry_price * 100) if pos.entry_price > 0 else 0
+        open_positions.append({
+            "card_id": card_id,
+            "card_name": pos.card_name,
+            "quantity": pos.quantity,
+            "entry_price": pos.entry_price,
+            "current_price": mkt_price,
+            "unrealized_pnl": round(unrealized_pnl, 2),
+            "unrealized_pnl_pct": round(unrealized_pnl_pct, 2),
+            "days_held": (bt_end - pos.entry_date).days,
+            "strategy": pos.strategy,
+        })
 
-        cpd = price_cache.get(card_id)
-        velocity = _estimate_sales_velocity(cpd, bt_end) if cpd else 0.0
-        liq_score = _estimate_liquidity_score(cpd, bt_end, mkt_price) if cpd else 0
-        slippage = calculate_slippage(mkt_price, liq_score, velocity)
-
-        portfolio.sell(
-            card_id=card_id,
-            card_name=pos.card_name,
-            market_price=mkt_price,
-            quantity=pos.quantity,
-            slippage=slippage,
-            signal="Backtest end — force close",
-            strategy="backtest_close",
-            sim_date=bt_end,
-        )
-
-    # Record final snapshot
+    # Record final snapshot (using market prices for open positions)
     portfolio.record_snapshot(bt_end, final_prices)
 
-    # Step 5: Calculate metrics
+    # Step 5: Calculate metrics (includes unrealized in portfolio value)
     result = _compute_metrics(portfolio, bt_start, bt_end)
+    result["open_positions"] = open_positions
+    result["num_open_positions"] = len(open_positions)
+    result["unrealized_pnl"] = round(sum(p["unrealized_pnl"] for p in open_positions), 2)
 
     logger.info(
         "Backtest results: %.1f%% return (%.1f%% annualized), "

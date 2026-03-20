@@ -1195,6 +1195,19 @@ def check_sell_signals(db: Session, position: dict) -> Optional[dict]:
     velocity = td.get("sales_per_day", 0) or 0
     regime = td.get("regime", "")
 
+    # Minimum hold period — trades need time to overcome friction
+    MIN_HOLD_DAYS = {
+        STRATEGY_VELOCITY_SPIKE: 14,
+        STRATEGY_ACCUMULATION: 21,
+        STRATEGY_MEAN_REVERSION: 30,
+        STRATEGY_VWAP_DIVERGENCE: 21,
+        STRATEGY_OOP_MOMENTUM: 30,
+        STRATEGY_MOMENTUM_BREAKOUT: 14,
+        STRATEGY_VINTAGE_VALUE: 45,
+    }
+    min_hold = MIN_HOLD_DAYS.get(strategy, 14)
+    in_hold_period = days_held < min_hold
+
     def _sell(signal_name: str, strength: float, reason: str) -> dict:
         return {
             "card_id": position["card_id"],
@@ -1222,6 +1235,20 @@ def check_sell_signals(db: Session, position: dict) -> Optional[dict]:
     if velocity < vel_threshold and days_held > vel_days:
         return _sell("liquidity_death", 0.95,
                       f"Velocity {velocity:.3f}/day for {days_held}d — liquidity evaporated")
+
+    # Skip non-critical exits during minimum hold period
+    # Only catastrophic stop (P0), liquidity death (P1), and stop loss (P4) can fire early
+    if in_hold_period:
+        # P4: Standard stop loss (allowed during hold period)
+        sl_pct = VINTAGE_STOP_LOSS_PCT if is_vintage else DEFAULT_STOP_LOSS_PCT
+        custom_sl = position.get("stop_loss")
+        if custom_sl and price <= custom_sl:
+            return _sell("stop_loss", 0.85,
+                          f"Stop loss hit during hold period: ${price:.2f} <= ${custom_sl:.2f}")
+        elif price <= entry_price * (1 - sl_pct):
+            return _sell("stop_loss", 0.85,
+                          f"Stop loss during hold period: price dropped {sl_pct:.0%}")
+        return None  # Hold — still in minimum hold period
 
     # P2: Take profit (ratcheting — let winners run if velocity hot)
     tp_pct = VINTAGE_TAKE_PROFIT_PCT if is_vintage else DEFAULT_TAKE_PROFIT_PCT
@@ -1258,12 +1285,9 @@ def check_sell_signals(db: Session, position: dict) -> Optional[dict]:
                       f"Stop loss: price dropped {sl_pct:.0%} from entry")
 
     # P5: Regime breakdown
-    if regime in ("distribution", "markdown"):
-        if is_vintage:
-            if days_held > 30 and unrealized_pct > 0:
-                return _sell("regime_breakdown", 0.7,
-                              f"Regime '{regime}' for vintage — taking {unrealized_pct:.1%} gain")
-        else:
+    # SKIP for mean reversion, VWAP divergence, vintage — they deliberately buy dips
+    if strategy not in (STRATEGY_MEAN_REVERSION, STRATEGY_VWAP_DIVERGENCE, STRATEGY_VINTAGE_VALUE):
+        if regime in ("distribution", "markdown"):
             if unrealized_pct > 0:
                 return _sell("regime_breakdown", 0.75,
                               f"Regime shifted to '{regime}' — taking {unrealized_pct:.1%} gain")
