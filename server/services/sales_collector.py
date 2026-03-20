@@ -110,9 +110,15 @@ async def _search_product_id(
                 pid = p.get("productId")
                 return int(pid) if pid else None
 
-        # Fallback: first result
-        pid = products[0].get("productId")
-        return int(pid) if pid else None
+        # Partial name match (name appears in product name)
+        for p in products:
+            pname = (p.get("productName") or "").lower().strip()
+            if name_lower in pname:
+                pid = p.get("productId")
+                return int(pid) if pid else None
+
+        # No match — do NOT blindly return products[0]
+        return None
 
     except Exception as e:
         logger.error(f"Search error for '{query}': {e}")

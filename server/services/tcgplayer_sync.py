@@ -128,13 +128,20 @@ async def _search_tcgplayer(
             if name_lower in pname and _set_matches(pset):
                 return p
 
-        # Name match only
+        # Name match only (no set constraint)
         for p in products:
             pname = (p.get("productName") or "").lower().strip()
             if pname == name_lower:
                 return p
 
-        return products[0] if products else None
+        # Partial name match only (name appears in product name)
+        for p in products:
+            pname = (p.get("productName") or "").lower().strip()
+            if name_lower in pname:
+                return p
+
+        # No match found — do NOT blindly return products[0]
+        return None
 
     except Exception as e:
         logger.error(f"TCGPlayer search error for '{query}': {e}")
