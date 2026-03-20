@@ -7,3 +7,7 @@ from .agent_prediction import AgentPrediction
 from .agent_insight import AgentInsight
 from .liquidity_history import LiquidityHistory
 from .price_alert import PriceAlert
+from .virtual_portfolio import VirtualPortfolio
+from .virtual_position import VirtualPosition
+from .virtual_trade import VirtualTrade
+from .portfolio_snapshot import PortfolioSnapshot

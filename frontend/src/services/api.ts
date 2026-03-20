@@ -266,6 +266,16 @@ export const api = {
   // Set Analytics
   getSetAnalytics: () =>
     fetchApi<SetAnalytics[]>('/api/sets/analytics'),
+
+  // Prop Trading Desk
+  getPropPortfolio: () => fetchApi<PropPortfolio>('/api/prop/portfolio'),
+  getPropSummary: () => fetchApi<PropSummary>('/api/prop/portfolio/summary'),
+  getPropTrades: (limit?: number) => fetchApi<PropTrade[]>(`/api/prop/trades?limit=${limit || 50}`),
+  getPropPositions: () => fetchApi<PropPosition[]>('/api/prop/positions'),
+  getPropEquityCurve: () => fetchApi<PropEquityPoint[]>('/api/prop/equity-curve'),
+  getPropSignals: () => fetchApi<PropSignal[]>('/api/prop/signals'),
+  getPropPerformance: () => fetchApi<PropPerformance>('/api/prop/performance'),
+  runPropCycle: () => fetchApi<{ status: string; trades_executed?: number }>('/api/prop/run-cycle', { method: 'POST', timeoutMs: 300_000 }),
 };
 
 export interface BacktestTrade {
@@ -688,4 +698,103 @@ export interface WeeklyRecapResponse {
   gainers: Mover[];
   losers: Mover[];
   hottest: HotCard[];
+}
+
+// ── Prop Trading Desk Types ─────────────────────────────────────────────────
+
+export interface PropSummary {
+  total_value: number;
+  cash: number;
+  positions_value: number;
+  total_pnl: number;
+  total_pnl_pct: number;
+  starting_capital: number;
+  position_count: number;
+  win_rate: number | null;
+  sharpe_ratio: number | null;
+  max_drawdown_pct: number | null;
+  total_trades: number;
+  last_cycle_at: string | null;
+}
+
+export interface PropPortfolio {
+  summary: PropSummary;
+  positions: PropPosition[];
+  recent_trades: PropTrade[];
+}
+
+export interface PropPosition {
+  id: number;
+  card_id: number;
+  card_name: string;
+  card_image: string | null;
+  set_name: string;
+  quantity: number;
+  entry_price: number;
+  current_price: number | null;
+  pnl: number | null;
+  pnl_pct: number | null;
+  stop_loss: number | null;
+  days_held: number;
+  signal: string | null;
+  strategy: string | null;
+}
+
+export interface PropTrade {
+  id: number;
+  card_id: number;
+  card_name: string;
+  card_image: string | null;
+  side: 'BUY' | 'SELL';
+  quantity: number;
+  signal_price: number;
+  exec_price: number;
+  slippage: number | null;
+  slippage_pct: number | null;
+  fees: number | null;
+  pnl: number | null;
+  signal: string | null;
+  strategy: string | null;
+  executed_at: string;
+}
+
+export interface PropEquityPoint {
+  date: string;
+  total_value: number;
+  cash: number;
+  positions_value: number;
+  daily_pnl: number | null;
+  drawdown_pct: number | null;
+}
+
+export interface PropSignal {
+  card_id: number;
+  card_name: string;
+  card_image: string | null;
+  set_name: string;
+  signal_type: 'BUY' | 'SELL';
+  strength: number;
+  strategy: string;
+  reasons: string[];
+  entry_price: number | null;
+  target_price: number | null;
+  stop_loss: number | null;
+  current_price: number | null;
+}
+
+export interface PropPerformance {
+  total_return_pct: number;
+  sharpe_ratio: number | null;
+  max_drawdown_pct: number | null;
+  win_rate: number | null;
+  avg_win: number | null;
+  avg_loss: number | null;
+  profit_factor: number | null;
+  avg_hold_days: number | null;
+  best_trade: PropTrade | null;
+  worst_trade: PropTrade | null;
+  total_trades: number;
+  winning_trades: number;
+  losing_trades: number;
+  by_strategy: Record<string, { pnl: number; trades: number; win_rate: number }>;
 }

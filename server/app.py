@@ -2,7 +2,7 @@ import logging
 import asyncio
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
-from fastapi import FastAPI, Depends, Header, HTTPException
+from fastapi import FastAPI, Depends, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse
@@ -20,6 +20,7 @@ from server.routes import screener
 from server.routes import alerts
 from server.routes import sets
 from server.routes import chart_image
+from server.routes import prop_trader
 from server.services.card_sync import sync_all_cards
 from server.services.price_collector import collect_prices_for_cards
 from server.services.tcgdex_sync import sync_tcgdex_cards, import_tcgdex_prices, sync_tcgdex_sets
@@ -710,6 +711,7 @@ app.include_router(screener.router)
 app.include_router(alerts.router)
 app.include_router(sets.router)
 app.include_router(chart_image.router)
+app.include_router(prop_trader.router)
 
 
 @app.get("/health")
@@ -1515,12 +1517,18 @@ async def trigger_sales_collection(
 
 @app.post("/api/sync/sales-backfill", dependencies=[Depends(verify_admin_key)])
 async def trigger_sales_backfill(
+    request: Request,
     db: Session = Depends(get_db),
 ):
-    """Aggressively backfill sales for top 100 most expensive cards."""
+    """Aggressively backfill sales for specific cards or top 100 most expensive."""
     from server.services.sales_collector import backfill_sales
     try:
-        stats = await backfill_sales(db)
+        body = await request.json()
+        card_ids = body.get("card_ids")
+    except Exception:
+        card_ids = None
+    try:
+        stats = await backfill_sales(db, card_ids=card_ids, limit=len(card_ids) if card_ids else 100)
         return {"status": "complete", "source": "sales_backfill", **stats}
     except Exception as e:
         logger.error(f"Sales backfill failed: {e}")
