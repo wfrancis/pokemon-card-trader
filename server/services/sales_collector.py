@@ -55,7 +55,8 @@ async def _search_product_id(
 
     try:
         resp = await client.post(
-            f"{SEARCH_API}?q={query}&isList=false",
+            SEARCH_API,
+            params={"q": query, "isList": "false"},
             json=payload,
             headers=HEADERS,
         )
