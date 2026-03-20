@@ -39,24 +39,38 @@ logger = logging.getLogger(__name__)
 
 # ── Constants (mirror prop_strategies.py) ────────────────────────────────────
 
-DEFAULT_STOP_LOSS_PCT = 0.15
-DEFAULT_TAKE_PROFIT_PCT = 0.30
-STALE_POSITION_DAYS = 90
-STALE_GAIN_THRESHOLD = 0.05
-MIN_DATA_POINTS = 3
+DEFAULT_STOP_LOSS_PCT = 0.20
+DEFAULT_TAKE_PROFIT_PCT = 0.40
+STALE_POSITION_DAYS = 180
+STALE_GAIN_THRESHOLD = 0.10
+MIN_DATA_POINTS = 5
 
+# Strategy names (updated to collectibles-specific strategies)
+STRATEGY_VELOCITY_SPIKE = "velocity_spike"
+STRATEGY_ACCUMULATION = "accumulation_phase"
+STRATEGY_MEAN_REVERSION = "mean_reversion_v2"
+STRATEGY_VWAP_DIVERGENCE = "vwap_divergence"
+STRATEGY_OOP_MOMENTUM = "oop_momentum"
+STRATEGY_MOMENTUM_BREAKOUT = "momentum_breakout"
+STRATEGY_VINTAGE_VALUE = "vintage_value_buy"
+
+# Legacy names kept for backward compatibility with backtest strategy param
 STRATEGY_SMA_CROSS = "sma_golden_cross"
 STRATEGY_RSI_OVERSOLD = "rsi_oversold_bounce"
 STRATEGY_SPREAD_COMPRESSION = "spread_compression"
-STRATEGY_MEAN_REVERSION = "mean_reversion"
-STRATEGY_MOMENTUM = "momentum_breakout"
 
 ALL_BUY_STRATEGIES = [
+    STRATEGY_VELOCITY_SPIKE,
+    STRATEGY_ACCUMULATION,
+    STRATEGY_MEAN_REVERSION,
+    STRATEGY_VWAP_DIVERGENCE,
+    STRATEGY_OOP_MOMENTUM,
+    STRATEGY_MOMENTUM_BREAKOUT,
+    STRATEGY_VINTAGE_VALUE,
+    # Legacy (disabled by default but available for comparison)
     STRATEGY_SMA_CROSS,
     STRATEGY_RSI_OVERSOLD,
     STRATEGY_SPREAD_COMPRESSION,
-    STRATEGY_MEAN_REVERSION,
-    STRATEGY_MOMENTUM,
 ]
 
 # TCGPlayer simplified seller fee rate (matches virtual_trader.py)
@@ -509,7 +523,7 @@ def _check_momentum(td: dict) -> Optional[dict]:
         "card_name": td["card_name"],
         "signal": "buy",
         "strength": round(strength, 3),
-        "strategy": STRATEGY_MOMENTUM,
+        "strategy": STRATEGY_MOMENTUM_BREAKOUT,
         "reasons": [
             f"Investment score: {inv_score:.0f}",
             f"Appreciation slope: {slope:.2f}%/day",
@@ -526,7 +540,7 @@ BUY_CHECK_FNS = {
     STRATEGY_RSI_OVERSOLD: _check_rsi_oversold,
     STRATEGY_SPREAD_COMPRESSION: _check_spread_compression,
     STRATEGY_MEAN_REVERSION: _check_mean_reversion,
-    STRATEGY_MOMENTUM: _check_momentum,
+    STRATEGY_MOMENTUM_BREAKOUT: _check_momentum,
 }
 
 
