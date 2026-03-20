@@ -16,6 +16,7 @@ from sqlalchemy import asc, func
 from sqlalchemy.orm import Session
 
 from server.models.card import Card
+from server.models.card_set import CardSet
 from server.models.price_history import PriceHistory
 from server.models.sale import Sale
 from server.services.market_analysis import (
@@ -59,7 +60,8 @@ STRATEGY_SMA_CROSS = "sma_golden_cross"
 STRATEGY_RSI_OVERSOLD = "rsi_oversold_bounce"
 STRATEGY_SPREAD_COMPRESSION = "spread_compression"
 
-ALL_BUY_STRATEGIES = [
+# Default strategies: the 7 new collectibles-specific strategies
+DEFAULT_STRATEGIES = [
     STRATEGY_VELOCITY_SPIKE,
     STRATEGY_ACCUMULATION,
     STRATEGY_MEAN_REVERSION,
@@ -67,11 +69,28 @@ ALL_BUY_STRATEGIES = [
     STRATEGY_OOP_MOMENTUM,
     STRATEGY_MOMENTUM_BREAKOUT,
     STRATEGY_VINTAGE_VALUE,
+]
+
+ALL_BUY_STRATEGIES = DEFAULT_STRATEGIES + [
     # Legacy (disabled by default but available for comparison)
     STRATEGY_SMA_CROSS,
     STRATEGY_RSI_OVERSOLD,
     STRATEGY_SPREAD_COMPRESSION,
 ]
+
+# Vintage set identifiers (copied from prop_strategies.py)
+VINTAGE_SET_IDS = {
+    "base1", "base2", "base3", "base4", "base5",
+    "basep", "jungle", "fossil", "gym1", "gym2",
+    "neo1", "neo2", "neo3", "neo4",
+    "base6", "ecard1", "ecard2", "ecard3",
+    "ex1", "ex2", "ex3", "ex4", "ex5", "ex6", "ex7", "ex8",
+    "ex9", "ex10", "ex11", "ex12", "ex13", "ex14", "ex15", "ex16",
+}
+VINTAGE_INVESTABLE_RARITIES = {
+    "Rare Holo", "Rare Secret", "Rare Holo EX", "Rare Holo Star",
+    "Rare", "Promo",
+}
 
 # TCGPlayer simplified seller fee rate (matches virtual_trader.py)
 TCGPLAYER_SELLER_FEE_RATE = 0.1255
@@ -86,6 +105,8 @@ class CardPriceData:
     card_name: str
     set_id: str
     set_name: str
+    rarity: Optional[str] = None
+    release_date: Optional[date] = None
     dates: list[date] = field(default_factory=list)
     prices: list[float] = field(default_factory=list)
     mid_prices: list[Optional[float]] = field(default_factory=list)
@@ -93,30 +114,42 @@ class CardPriceData:
     monthly_sales: dict[str, int] = field(default_factory=dict)
 
 
-def _build_price_cache(db: Session, min_price: float) -> dict[int, CardPriceData]:
+def _build_price_cache(db: Session, min_price: float, max_cards: int = 0) -> dict[int, CardPriceData]:
     """Pre-load all price history into memory for fast backtesting.
 
     Filters to tracked cards with current_price >= min_price.
     Deduplicates to one price per date per card (dominant variant).
+    If max_cards > 0, limits to the top N cards by liquidity_score.
     """
     logger.info("Building price cache...")
 
     # Get eligible cards
-    cards = (
+    query = (
         db.query(Card)
         .filter(
             Card.is_tracked == True,
             Card.current_price.isnot(None),
             Card.current_price >= min_price,
         )
-        .all()
+        .order_by(Card.liquidity_score.desc().nullslast())
     )
+    if max_cards > 0:
+        query = query.limit(max_cards)
+    cards = query.all()
     card_map = {c.id: c for c in cards}
     card_ids = list(card_map.keys())
 
     if not card_ids:
         logger.warning("No eligible cards found for backtest")
         return {}
+
+    # Load CardSet release dates
+    set_ids = list({c.set_id for c in cards if c.set_id})
+    set_release_dates: dict[str, Optional[date]] = {}
+    if set_ids:
+        card_sets = db.query(CardSet).filter(CardSet.id.in_(set_ids)).all()
+        for cs in card_sets:
+            set_release_dates[cs.id] = cs.release_date
 
     # Batch-load all price history for eligible cards
     all_records = (
@@ -163,6 +196,8 @@ def _build_price_cache(db: Session, min_price: float) -> dict[int, CardPriceData
             card_name=card.name,
             set_id=card.set_id or "",
             set_name=card.set_name or "",
+            rarity=card.rarity,
+            release_date=set_release_dates.get(card.set_id or ""),
             dates=sorted_dates,
             prices=prices,
             mid_prices=mid_prices,
@@ -230,6 +265,20 @@ def _estimate_sales_velocity(cpd: CardPriceData, sim_date: date) -> float:
     return total / 60.0  # approximate daily rate over 2 months
 
 
+def _estimate_velocity_90d(cpd: CardPriceData, sim_date: date) -> float:
+    """Estimate 90-day velocity from last 3 months of sales data."""
+    month_key = sim_date.strftime("%Y-%m")
+    prev_month = (sim_date.replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
+    two_months_ago = (sim_date.replace(day=1) - timedelta(days=32)).strftime("%Y-%m")
+
+    total = (
+        cpd.monthly_sales.get(month_key, 0)
+        + cpd.monthly_sales.get(prev_month, 0)
+        + cpd.monthly_sales.get(two_months_ago, 0)
+    )
+    return total / 90.0
+
+
 def _estimate_liquidity_score(cpd: CardPriceData, sim_date: date, current_price: float) -> float:
     """Estimate liquidity score at a historical point in time."""
     month_key = sim_date.strftime("%Y-%m")
@@ -282,12 +331,44 @@ def _compute_technical_data_at_date(
     prev_sma_7 = _sma(prices[:-1], 7) if len(prices) > 7 else None
     prev_sma_30 = _sma(prices[:-1], 30) if len(prices) > 30 else None
 
-    # 30-day high
+    # 30-day high/low
     high_30d = max(prices[-30:]) if len(prices) >= 30 else max(prices)
+    low_30d = min(prices[-30:]) if len(prices) >= 30 else min(prices)
+
+    # 90-day high (for vintage value buy)
+    high_90d = max(prices[-90:]) if len(prices) >= 90 else max(prices)
 
     # Sales velocity estimated from cache
     sales_per_day = _estimate_sales_velocity(cpd, sim_date)
+    velocity_90d = _estimate_velocity_90d(cpd, sim_date)
     liquidity_score = _estimate_liquidity_score(cpd, sim_date, current_price)
+
+    # Acceleration ratio
+    if velocity_90d > 0.01:
+        acceleration_ratio = sales_per_day / velocity_90d
+    else:
+        acceleration_ratio = 1.0
+
+    # Price changes over various windows
+    price_change_7d = None
+    if len(prices) >= 7 and prices[-7] > 0:
+        price_change_7d = (prices[-1] - prices[-7]) / prices[-7]
+
+    price_change_14d = None
+    if len(prices) >= 14 and prices[-14] > 0:
+        price_change_14d = abs(prices[-1] - prices[-14]) / prices[-14]
+
+    price_change_30d = None
+    if len(prices) >= 30 and prices[-30] > 0:
+        price_change_30d = (prices[-1] - prices[-30]) / prices[-30]
+
+    # Vintage / set age
+    is_vintage = cpd.set_id in VINTAGE_SET_IDS
+
+    set_age_months = None
+    if cpd.release_date:
+        delta = sim_date - cpd.release_date
+        set_age_months = max(0, delta.days / 30.44)  # approximate months
 
     # Spread % from mid vs market
     spread_pct = None
@@ -315,6 +396,7 @@ def _compute_technical_data_at_date(
         "card_name": cpd.card_name,
         "set_id": cpd.set_id,
         "set_name": cpd.set_name,
+        "rarity": cpd.rarity,
         "current_price": current_price,
         "prices": prices,
         "dates": dates,
@@ -333,20 +415,448 @@ def _compute_technical_data_at_date(
         "regime": regime,
         "adx": adx_val,
         "high_30d": high_30d,
+        "low_30d": low_30d,
+        "high_90d": high_90d,
         "sales_per_day": sales_per_day,
+        "velocity_90d": velocity_90d,
+        "acceleration_ratio": acceleration_ratio,
         "sales_30d": int(sales_per_day * 30),
         "sales_90d": int(sales_per_day * 90),
         "liquidity_score": liquidity_score,
         "spread_pct": spread_pct,
+        "price_change_7d": price_change_7d,
+        "price_change_14d": price_change_14d,
+        "price_change_30d": price_change_30d,
+        "is_vintage": is_vintage,
+        "set_age_months": set_age_months,
         "appreciation_slope": appreciation_slope,
         "appreciation_score": app_score,
         "investment_score": inv_score,
     }
 
 
-# ── Signal Checks (reproduced from prop_strategies.py) ──────────────────────
-# These are direct copies of the strategy logic so the backtest faithfully
-# reproduces the same signals as the live system.
+# ── New Collectibles-Specific Strategy Checks (backtest-compatible) ──────────
+# These operate ONLY on the td dict — no DB queries.
+
+
+def _check_velocity_spike_bt(td: dict) -> Optional[dict]:
+    """BUY: Velocity acceleration as proxy for z-score spike.
+
+    Uses acceleration_ratio as proxy for velocity z-score since we can't
+    compute real z-score without individual Sale records in the backtest cache.
+    """
+    accel = td.get("acceleration_ratio", 1.0)
+    price_change_7d = td.get("price_change_7d")
+    velocity = td.get("sales_per_day", 0)
+    price = td.get("current_price", 0)
+
+    # Need meaningful acceleration
+    if accel < 2.0:
+        return None
+
+    # Price hasn't already responded (anti-chase)
+    if price_change_7d is not None and abs(price_change_7d) > 0.30:
+        return None
+
+    # Minimum velocity floor
+    if velocity < 0.3:
+        return None
+
+    # Proxy z-score from acceleration
+    z_proxy = (accel - 1.0) * 2.0
+
+    # Strength based on z-score proxy
+    strength = min(1.0, 0.4 + z_proxy * 0.15)
+
+    # Freshness bonus: stronger signal if price data is recent
+    num_pts = td.get("num_data_points", 0)
+    if num_pts > 30:
+        strength = min(1.0, strength + 0.1)
+
+    return {
+        "card_id": td["card_id"],
+        "card_name": td["card_name"],
+        "signal": "buy",
+        "strength": round(strength, 3),
+        "strategy": STRATEGY_VELOCITY_SPIKE,
+        "reasons": [
+            f"Velocity spike: accel ratio {accel:.1f}x (z-proxy {z_proxy:.1f})",
+            f"Price stable: 7d change {price_change_7d:.1%}" if price_change_7d is not None else "Price stable",
+            f"Velocity: {velocity:.2f} sales/day",
+        ],
+        "entry_price": price,
+        "target_price": round(price * 1.30, 2),
+        "stop_loss": round(price * 0.85, 2),
+    }
+
+
+def _check_accumulation_phase_bt(td: dict) -> Optional[dict]:
+    """BUY: Velocity up 80%+ but price flat — smart money accumulating."""
+    velocity = td.get("sales_per_day", 0)
+    velocity_90d = td.get("velocity_90d", 0)
+    price_change_14d = td.get("price_change_14d")
+    price_change_7d = td.get("price_change_7d")
+    price = td.get("current_price", 0)
+
+    # Need baseline velocity to compare against
+    if velocity_90d <= 0.05:
+        return None
+
+    # Velocity must be significantly elevated vs 90d baseline
+    vel_ratio = velocity / velocity_90d
+    if vel_ratio < 1.8:
+        return None
+
+    # Price must be flat (not already responding)
+    if price_change_14d is not None and price_change_14d >= 0.05:
+        return None
+    if price_change_7d is not None and abs(price_change_7d) >= 0.10:
+        return None
+
+    strength = min(1.0, 0.4 + (vel_ratio - 1.8) * 0.15)
+
+    return {
+        "card_id": td["card_id"],
+        "card_name": td["card_name"],
+        "signal": "buy",
+        "strength": round(strength, 3),
+        "strategy": STRATEGY_ACCUMULATION,
+        "reasons": [
+            f"Velocity {vel_ratio:.1f}x above 90d baseline",
+            f"Price flat: 14d change {price_change_14d:.1%}" if price_change_14d is not None else "Price flat",
+        ],
+        "entry_price": price,
+        "target_price": round(price * 1.25, 2),
+        "stop_loss": round(price * 0.85, 2),
+    }
+
+
+def _check_mean_reversion_v2_bt(td: dict) -> Optional[dict]:
+    """BUY: Z-score entry with liquidity-adjusted thresholds.
+
+    Uses price z-score from 60-day lookback with velocity-adjusted
+    entry thresholds (tighter for liquid cards, wider for illiquid).
+    """
+    prices = td.get("prices", [])
+    velocity = td.get("sales_per_day", 0)
+    velocity_90d = td.get("velocity_90d", 0)
+    adx = td.get("adx")
+    price = td.get("current_price", 0)
+
+    if len(prices) < 30:
+        return None
+    if velocity < 0.1:
+        return None
+
+    # ADX filter: avoid strong trends (mean reversion doesn't work in trends)
+    if adx is not None and adx >= 25:
+        return None
+
+    # Compute z-score from 60-day price lookback
+    lookback = prices[-60:] if len(prices) >= 60 else prices
+    mean_price = sum(lookback) / len(lookback)
+    if mean_price <= 0:
+        return None
+    variance = sum((p - mean_price) ** 2 for p in lookback) / len(lookback)
+    std_price = math.sqrt(variance) if variance > 0 else 0
+    if std_price <= 0:
+        return None
+
+    z_score = (price - mean_price) / std_price
+
+    # Liquidity-adjusted z-score threshold
+    if velocity > 1.0:
+        z_threshold = -1.2
+    elif velocity > 0.3:
+        z_threshold = -1.5
+    else:
+        z_threshold = -2.0
+
+    if z_score >= z_threshold:
+        return None
+
+    # Velocity must not be declining (avoid catching falling knives)
+    if velocity_90d > 0 and velocity < velocity_90d * 0.5:
+        return None
+
+    strength = min(1.0, 0.4 + abs(z_score - z_threshold) * 0.2)
+
+    # Target: reversion to mean
+    target = round(mean_price, 2)
+
+    return {
+        "card_id": td["card_id"],
+        "card_name": td["card_name"],
+        "signal": "buy",
+        "strength": round(strength, 3),
+        "strategy": STRATEGY_MEAN_REVERSION,
+        "reasons": [
+            f"Price z-score: {z_score:.2f} (threshold: {z_threshold})",
+            f"Velocity: {velocity:.2f}/day (stable)",
+            f"ADX: {adx:.1f}" if adx is not None else "ADX: N/A",
+        ],
+        "entry_price": price,
+        "target_price": target,
+        "stop_loss": round(price * 0.85, 2),
+    }
+
+
+def _check_vwap_divergence_bt(td: dict) -> Optional[dict]:
+    """BUY: Market price below actual sale VWAP.
+
+    Uses spread_pct as proxy since we don't have individual Sale records
+    in the backtest cache. A negative spread implies market is below VWAP.
+    """
+    spread_pct = td.get("spread_pct")
+    sales_30d = td.get("sales_30d", 0)
+    price = td.get("current_price", 0)
+
+    # Need spread data and sufficient sales
+    if spread_pct is None:
+        return None
+    if sales_30d < 5:
+        return None
+
+    # Negative spread means market < mid (proxy for market < VWAP)
+    # spread_pct is stored as absolute value, so we need to check
+    # if current_price < mid_price by looking at the raw values
+    # We use a threshold: if spread is large, market is likely below VWAP
+    if spread_pct < 5.0:
+        return None
+
+    # Proxy VWAP divergence: larger spread = bigger divergence
+    divergence_pct = -spread_pct / 100.0
+
+    if divergence_pct >= -0.05:
+        return None
+
+    strength = min(1.0, 0.4 + abs(divergence_pct) * 3.0)
+
+    return {
+        "card_id": td["card_id"],
+        "card_name": td["card_name"],
+        "signal": "buy",
+        "strength": round(strength, 3),
+        "strategy": STRATEGY_VWAP_DIVERGENCE,
+        "reasons": [
+            f"Market/mid spread: {spread_pct:.1f}% (proxy VWAP divergence)",
+            f"30d sales: {sales_30d}",
+        ],
+        "entry_price": price,
+        "target_price": round(price * 1.20, 2),
+        "stop_loss": round(price * 0.88, 2),
+    }
+
+
+def _check_oop_momentum_bt(td: dict) -> Optional[dict]:
+    """BUY: Out-of-print set momentum — set age + card-level acceleration.
+
+    Detects cards in out-of-print sets that are seeing renewed demand.
+    """
+    set_age_months = td.get("set_age_months")
+    is_vintage = td.get("is_vintage", False)
+    velocity = td.get("sales_per_day", 0)
+    accel = td.get("acceleration_ratio", 1.0)
+    regime = td.get("regime", "")
+    price = td.get("current_price", 0)
+
+    # Must be old enough to be OOP (at least 9 months)
+    if set_age_months is None or set_age_months < 9:
+        return None
+
+    # Vintage cards use the vintage strategy instead
+    if is_vintage:
+        return None
+
+    # Need decent velocity
+    if velocity < 0.3:
+        return None
+
+    # Not in markdown
+    if regime == "markdown":
+        return None
+
+    # Acceleration must be positive
+    if accel < 1.2:
+        return None
+
+    # OOP score: combination of set age, acceleration, and regime
+    oop_score = 0
+    # Set age contribution (max 40 points)
+    if set_age_months >= 36:
+        oop_score += 40
+    elif set_age_months >= 18:
+        oop_score += 25
+    elif set_age_months >= 9:
+        oop_score += 15
+
+    # Acceleration contribution (max 30 points)
+    oop_score += min(30, int((accel - 1.0) * 20))
+
+    # Regime contribution (max 30 points)
+    regime_points = {"markup": 30, "accumulation": 20, "unknown": 10, "distribution": 0}
+    oop_score += regime_points.get(regime, 10)
+
+    if oop_score < 35:
+        return None
+
+    strength = min(1.0, 0.3 + oop_score / 100.0)
+
+    return {
+        "card_id": td["card_id"],
+        "card_name": td["card_name"],
+        "signal": "buy",
+        "strength": round(strength, 3),
+        "strategy": STRATEGY_OOP_MOMENTUM,
+        "reasons": [
+            f"OOP set ({set_age_months:.0f} months old), score: {oop_score}",
+            f"Acceleration: {accel:.1f}x",
+            f"Regime: {regime}",
+        ],
+        "entry_price": price,
+        "target_price": round(price * 1.35, 2),
+        "stop_loss": round(price * 0.85, 2),
+    }
+
+
+def _check_momentum_breakout_bt(td: dict) -> Optional[dict]:
+    """BUY: Confirmed uptrend with velocity support + anti-chase filter.
+
+    Requires 2 consecutive weekly increases, velocity support, and
+    limited rally from 30d low to avoid chasing.
+    """
+    prices = td.get("prices", [])
+    velocity = td.get("sales_per_day", 0)
+    velocity_90d = td.get("velocity_90d", 0)
+    regime = td.get("regime", "")
+    low_30d = td.get("low_30d", 0)
+    price = td.get("current_price", 0)
+
+    if len(prices) < 21:
+        return None
+
+    # 2 consecutive weekly increases
+    week_1_start = prices[-14] if len(prices) >= 14 else prices[0]
+    week_1_end = prices[-7] if len(prices) >= 7 else prices[-1]
+    week_2_end = prices[-1]
+
+    if week_1_start <= 0 or week_1_end <= 0:
+        return None
+    if week_1_end <= week_1_start:
+        return None
+    if week_2_end <= week_1_end:
+        return None
+
+    # Anti-chase: rally from 30d low must be < 30%
+    if low_30d > 0:
+        rally_pct = (price - low_30d) / low_30d
+        if rally_pct >= 0.30:
+            return None
+    else:
+        return None
+
+    # Need velocity
+    if velocity < 0.3:
+        return None
+
+    # Bullish regime
+    if regime not in ("accumulation", "markup"):
+        return None
+
+    # Velocity not declining vs 90d
+    if velocity_90d > 0 and velocity < velocity_90d * 0.5:
+        return None
+
+    # Weekly change magnitudes for strength
+    w1_change = (week_1_end - week_1_start) / week_1_start
+    w2_change = (week_2_end - week_1_end) / week_1_end
+    strength = min(1.0, 0.4 + (w1_change + w2_change) * 2.0)
+
+    return {
+        "card_id": td["card_id"],
+        "card_name": td["card_name"],
+        "signal": "buy",
+        "strength": round(strength, 3),
+        "strategy": STRATEGY_MOMENTUM_BREAKOUT,
+        "reasons": [
+            f"2 weekly increases: +{w1_change:.1%}, +{w2_change:.1%}",
+            f"Rally from 30d low: {rally_pct:.1%} (< 30% anti-chase)",
+            f"Velocity: {velocity:.2f}/day, regime: {regime}",
+        ],
+        "entry_price": price,
+        "target_price": round(price * 1.30, 2),
+        "stop_loss": round(price * 0.88, 2),
+    }
+
+
+def _check_vintage_value_buy_bt(td: dict) -> Optional[dict]:
+    """BUY: Vintage-specific dip buy with wider parameters.
+
+    Targets vintage set cards with investable rarities that have dipped
+    from their 90d high while maintaining some velocity.
+    """
+    is_vintage = td.get("is_vintage", False)
+    rarity = td.get("rarity", "")
+    velocity = td.get("sales_per_day", 0)
+    regime = td.get("regime", "")
+    rsi = td.get("rsi_14")
+    high_90d = td.get("high_90d", 0)
+    price = td.get("current_price", 0)
+
+    # Must be vintage set
+    if not is_vintage:
+        return None
+
+    # Must be investable rarity
+    if rarity not in VINTAGE_INVESTABLE_RARITIES:
+        return None
+
+    # Price floor for vintage
+    if price < 15:
+        return None
+
+    # Need some velocity (vintage is lower liquidity, so lower threshold)
+    if velocity < 0.05:
+        return None
+
+    # Not in markdown
+    if regime == "markdown":
+        return None
+
+    # Must have dropped at least 15% from 90d high
+    if high_90d <= 0:
+        return None
+    drop_pct = (high_90d - price) / high_90d
+    if drop_pct < 0.15:
+        return None
+
+    # RSI should be below 45 (not overbought)
+    if rsi is not None and rsi >= 45:
+        return None
+
+    # Strength based on drop magnitude and RSI
+    drop_factor = min(1.0, drop_pct / 0.40)
+    rsi_factor = (45 - (rsi or 30)) / 45 if rsi is not None else 0.3
+    strength = min(1.0, 0.35 + drop_factor * 0.4 + rsi_factor * 0.25)
+
+    return {
+        "card_id": td["card_id"],
+        "card_name": td["card_name"],
+        "signal": "buy",
+        "strength": round(strength, 3),
+        "strategy": STRATEGY_VINTAGE_VALUE,
+        "reasons": [
+            f"Vintage dip: -{drop_pct:.0%} from 90d high (${high_90d:.2f})",
+            f"RSI: {rsi:.1f}" if rsi is not None else "RSI: N/A",
+            f"Rarity: {rarity}",
+        ],
+        "entry_price": price,
+        "target_price": round(price + (high_90d - price) * 0.6, 2),
+        "stop_loss": round(price * 0.80, 2),
+    }
+
+
+# ── Legacy Signal Checks (kept for comparison backtests) ─────────────────────
 
 def _check_sma_golden_cross(td: dict) -> Optional[dict]:
     """BUY: 7d SMA crosses above 30d SMA + regime is accumulation/markup."""
@@ -462,85 +972,21 @@ def _check_spread_compression(td: dict) -> Optional[dict]:
     }
 
 
-def _check_mean_reversion(td: dict) -> Optional[dict]:
-    """BUY: Price dropped >20% from 30d high + sales velocity stable."""
-    price = td.get("current_price", 0)
-    high_30d = td.get("high_30d", 0)
-    velocity = td.get("sales_per_day", 0)
-
-    if high_30d <= 0:
-        return None
-
-    drop_pct = (high_30d - price) / high_30d
-    if drop_pct < 0.20:
-        return None
-    if velocity < 0.1:
-        return None
-
-    drop_factor = min(1.0, drop_pct / 0.40)
-    velocity_factor = min(1.0, velocity / 1.0)
-    strength = min(1.0, 0.3 + drop_factor * 0.5 + velocity_factor * 0.2)
-
-    sma_30 = td.get("sma_30", price * 1.10)
-    target = max(sma_30 or price * 1.10, price + (high_30d - price) * 0.5)
-
-    return {
-        "card_id": td["card_id"],
-        "card_name": td["card_name"],
-        "signal": "buy",
-        "strength": round(strength, 3),
-        "strategy": STRATEGY_MEAN_REVERSION,
-        "reasons": [
-            f"Price dropped {drop_pct:.0%} from 30d high ({high_30d:.2f})",
-            f"Sales velocity stable at {velocity:.1f}/day",
-        ],
-        "entry_price": price,
-        "target_price": round(target, 2),
-        "stop_loss": round(price * 0.85, 2),
-    }
-
-
-def _check_momentum(td: dict) -> Optional[dict]:
-    """BUY: investment_score > 75 + appreciation_slope > 0.1 + markup regime."""
-    inv_score = td.get("investment_score", 0)
-    slope = td.get("appreciation_slope")
-    regime = td.get("regime", "")
-    price = td.get("current_price", 0)
-
-    if inv_score < 75:
-        return None
-    if slope is None or slope <= 0.1:
-        return None
-    if regime not in ("markup",):
-        return None
-
-    score_factor = min(1.0, (inv_score - 75) / 25)
-    slope_factor = min(1.0, slope / 0.5)
-    strength = min(1.0, 0.4 + score_factor * 0.35 + slope_factor * 0.25)
-
-    return {
-        "card_id": td["card_id"],
-        "card_name": td["card_name"],
-        "signal": "buy",
-        "strength": round(strength, 3),
-        "strategy": STRATEGY_MOMENTUM_BREAKOUT,
-        "reasons": [
-            f"Investment score: {inv_score:.0f}",
-            f"Appreciation slope: {slope:.2f}%/day",
-            f"Regime: {regime} (strong uptrend)",
-        ],
-        "entry_price": price,
-        "target_price": round(price * (1 + DEFAULT_TAKE_PROFIT_PCT), 2),
-        "stop_loss": round(price * (1 - 0.12), 2),
-    }
-
+# ── Buy Check Function Registry ─────────────────────────────────────────────
 
 BUY_CHECK_FNS = {
+    # New collectibles-specific strategies
+    STRATEGY_VELOCITY_SPIKE: _check_velocity_spike_bt,
+    STRATEGY_ACCUMULATION: _check_accumulation_phase_bt,
+    STRATEGY_MEAN_REVERSION: _check_mean_reversion_v2_bt,
+    STRATEGY_VWAP_DIVERGENCE: _check_vwap_divergence_bt,
+    STRATEGY_OOP_MOMENTUM: _check_oop_momentum_bt,
+    STRATEGY_MOMENTUM_BREAKOUT: _check_momentum_breakout_bt,
+    STRATEGY_VINTAGE_VALUE: _check_vintage_value_buy_bt,
+    # Legacy (kept for comparison)
     STRATEGY_SMA_CROSS: _check_sma_golden_cross,
     STRATEGY_RSI_OVERSOLD: _check_rsi_oversold,
     STRATEGY_SPREAD_COMPRESSION: _check_spread_compression,
-    STRATEGY_MEAN_REVERSION: _check_mean_reversion,
-    STRATEGY_MOMENTUM_BREAKOUT: _check_momentum,
 }
 
 
@@ -564,6 +1010,8 @@ def _check_sell_signals_at_date(
     reasons: list[str] = []
     sell_strength = 0.0
 
+    gain_pct = (price - entry_price) / entry_price if entry_price > 0 else 0
+
     # 1. Stop-loss
     stop_loss = position.get("stop_loss", entry_price * (1 - DEFAULT_STOP_LOSS_PCT))
     if price <= stop_loss:
@@ -576,7 +1024,26 @@ def _check_sell_signals_at_date(
         reasons.append(f"Take-profit hit: price {price:.2f} >= target {take_profit:.2f}")
         sell_strength = max(sell_strength, 0.9)
 
-    # 3. SMA Death Cross
+    # 3. Trailing stop: if position is up 20%+, check 8% from peak
+    if gain_pct >= 0.20:
+        prices = td.get("prices", [])
+        entry_date = position.get("entry_date")
+        if prices and entry_date:
+            # Find peak price since entry
+            dates = td.get("dates", [])
+            peak_price = price
+            for i, d in enumerate(dates):
+                if d >= entry_date and i < len(prices):
+                    peak_price = max(peak_price, prices[i])
+            trailing_stop = peak_price * 0.92  # 8% from peak
+            if price <= trailing_stop and peak_price > entry_price:
+                reasons.append(
+                    f"Trailing stop: price {price:.2f} fell 8%+ from peak {peak_price:.2f} "
+                    f"(stop {trailing_stop:.2f})"
+                )
+                sell_strength = max(sell_strength, 0.85)
+
+    # 4. SMA Death Cross
     sma_7 = td.get("sma_7")
     sma_30 = td.get("sma_30")
     prev_7 = td.get("prev_sma_7")
@@ -586,7 +1053,7 @@ def _check_sell_signals_at_date(
             reasons.append(f"SMA Death Cross: 7d ({sma_7:.2f}) crossed below 30d ({sma_30:.2f})")
             sell_strength = max(sell_strength, 0.7)
 
-    # 4. RSI Overbought + near upper Bollinger band
+    # 5. RSI Overbought + near upper Bollinger band
     rsi = td.get("rsi_14")
     bb_upper = td.get("bb_upper")
     bb_lower = td.get("bb_lower")
@@ -598,26 +1065,30 @@ def _check_sell_signals_at_date(
                 reasons.append(f"RSI overbought ({rsi:.1f}) + near upper BB ({bb_position:.0%})")
                 sell_strength = max(sell_strength, 0.75)
 
-    # 5. Regime shift to distribution/markdown
+    # 6. Regime shift to distribution/markdown
     regime = td.get("regime", "")
     if regime in ("distribution", "markdown"):
         reasons.append(f"Bearish regime: {regime}")
         sell_strength = max(sell_strength, 0.6)
 
-    # 6. Liquidity dry-up
+    # 7. Liquidity dry-up
     velocity = td.get("sales_per_day", 0)
     if velocity < 0.1:
         reasons.append(f"Liquidity dried up: {velocity:.2f} sales/day")
         sell_strength = max(sell_strength, 0.5)
 
-    # 7. Stale position
+    # 8. Stale position
     entry_date = position.get("entry_date")
     if entry_date:
         days_held = (sim_date - entry_date).days
-        gain_pct = (price - entry_price) / entry_price if entry_price > 0 else 0
         if days_held > STALE_POSITION_DAYS and gain_pct < STALE_GAIN_THRESHOLD:
             reasons.append(f"Stale position: {days_held}d held, only {gain_pct:.1%} gain")
             sell_strength = max(sell_strength, 0.45)
+
+    # 9. Seasonal sell window (Nov/Dec)
+    if sim_date.month in (11, 12) and gain_pct > 0.05:
+        reasons.append(f"Seasonal sell window (month {sim_date.month}), gain: {gain_pct:.1%}")
+        sell_strength = max(sell_strength, 0.55)
 
     if not reasons:
         return None
@@ -631,7 +1102,7 @@ def _check_sell_signals_at_date(
         "reasons": reasons,
         "current_price": price,
         "entry_price": entry_price,
-        "pnl_pct": round((price - entry_price) / entry_price * 100, 2) if entry_price > 0 else 0,
+        "pnl_pct": round(gain_pct * 100, 2),
     }
 
 
@@ -931,16 +1402,25 @@ def _generate_signals_at_date(
         if not cpd.dates or cpd.dates[0] > sim_date:
             continue
 
+        # ── Fast pre-filter: check price without computing indicators ──
+        dates_up, prices_up = _get_prices_up_to(cpd, sim_date)
+        if len(prices_up) < MIN_DATA_POINTS:
+            continue
+        current_price = prices_up[-1]
+        if current_price < min_price:
+            continue
+
+        # Quick velocity check — skip cards with zero sales history
+        velocity = _estimate_sales_velocity(cpd, sim_date)
+        if velocity < 0.01 and not (cpd.set_id in VINTAGE_SET_IDS):
+            continue
+
         td = _compute_technical_data_at_date(cpd, sim_date)
         if td is None:
             continue
 
         # Filters
-        if td["current_price"] < min_price:
-            continue
         if td["liquidity_score"] < min_liquidity:
-            continue
-        if td["num_data_points"] < MIN_DATA_POINTS:
             continue
 
         # Run enabled strategy checks
@@ -1146,6 +1626,7 @@ async def run_prop_backtest(
     min_price: float = 5.0,
     min_liquidity_score: float = 20,
     strategies: list[str] | None = None,
+    max_cards: int = 100,
 ) -> dict:
     """Run a full backtest of the prop trading system.
 
@@ -1165,14 +1646,14 @@ async def run_prop_backtest(
     Returns dict with complete backtest results including equity curve,
     trade log, performance metrics, and per-strategy breakdown.
     """
-    active_strategies = strategies or list(ALL_BUY_STRATEGIES)
+    active_strategies = strategies or list(DEFAULT_STRATEGIES)
     # Validate strategies
     active_strategies = [s for s in active_strategies if s in BUY_CHECK_FNS]
     if not active_strategies:
         return {"error": "No valid strategies specified"}
 
     # Step 1: Build price cache (all data loaded into memory)
-    price_cache = _build_price_cache(db, min_price)
+    price_cache = _build_price_cache(db, min_price, max_cards=max_cards)
     if not price_cache:
         return {"error": "No eligible cards with price history found"}
 

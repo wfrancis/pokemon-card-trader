@@ -339,8 +339,9 @@ async def run_backtest(
     starting_capital: float = Query(10000, ge=100, le=1000000),
     step_days: int = Query(7, ge=1, le=30),
     max_positions: int = Query(20, ge=1, le=50),
-    strategies: str | None = Query(None, description="Comma-separated: sma_cross,rsi_oversold,spread_compression,mean_reversion,momentum"),
-    min_price: float = Query(5.0, ge=1),
+    strategies: str | None = Query(None, description="Comma-separated: velocity_spike,accumulation_phase,mean_reversion_v2,vwap_divergence,oop_momentum,momentum_breakout,vintage_value_buy"),
+    min_price: float = Query(20.0, ge=1),
+    max_cards: int = Query(100, ge=10, le=500, description="Max cards to include (top by liquidity)"),
     db: Session = Depends(get_db),
 ):
     """Run a multi-year backtest of the prop trading system.
@@ -365,5 +366,6 @@ async def run_backtest(
         max_positions=max_positions,
         strategies=strat_list,
         min_price=min_price,
+        max_cards=max_cards,
     )
     return result

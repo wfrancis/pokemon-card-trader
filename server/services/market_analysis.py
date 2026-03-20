@@ -107,7 +107,7 @@ def _macd(prices: list[float]) -> tuple[float | None, float | None, float | None
     Signal = 9-period EMA of the MACD line.
     Histogram = MACD - Signal.
     """
-    if len(prices) < 26:
+    if len(prices) < 27:
         return None, None, None
 
     # Compute full EMA-12 series starting from index 12
