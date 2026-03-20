@@ -82,6 +82,23 @@ async def _search_tcgplayer(
         name_lower = card_name.lower().strip()
         set_lower = set_name.lower().strip()
 
+        def _set_matches(pset: str) -> bool:
+            """Fuzzy set matching — handles TCGPlayer set name prefixes.
+
+            TCGPlayer uses names like 'SV01: Scarlet & Violet Base Set'
+            while we store 'Scarlet & Violet'. Check if either contains the other.
+            """
+            if pset == set_lower:
+                return True
+            if set_lower in pset or pset in set_lower:
+                return True
+            # Strip common prefixes like "SV01: " or "SWSH12: "
+            if ": " in pset:
+                pset_stripped = pset.split(": ", 1)[1]
+                if set_lower in pset_stripped or pset_stripped in set_lower:
+                    return True
+            return False
+
         # Best match: exact name + set + number in product name
         if card_number:
             for p in products:
@@ -89,7 +106,7 @@ async def _search_tcgplayer(
                 pset = (p.get("setName") or "").lower().strip()
                 pnum = (p.get("customAttributes", {}).get("number") or
                         p.get("number") or "")
-                if pset == set_lower and (
+                if _set_matches(pset) and (
                     f"#{card_number}" in pname or
                     f"- {card_number}" in pname or
                     str(pnum) == str(card_number)
@@ -100,14 +117,14 @@ async def _search_tcgplayer(
         for p in products:
             pname = (p.get("productName") or "").lower().strip()
             pset = (p.get("setName") or "").lower().strip()
-            if pname == name_lower and pset == set_lower:
+            if pname == name_lower and _set_matches(pset):
                 return p
 
         # Name match with set
         for p in products:
             pname = (p.get("productName") or "").lower().strip()
             pset = (p.get("setName") or "").lower().strip()
-            if name_lower in pname and pset == set_lower:
+            if name_lower in pname and _set_matches(pset):
                 return p
 
         # Name match only
