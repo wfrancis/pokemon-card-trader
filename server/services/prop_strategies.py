@@ -1436,6 +1436,64 @@ async def run_trading_cycle(
     held_card_ids = {p["card_id"] for p in positions} - selling_card_ids
     buy_signals = [s for s in all_signals if s["card_id"] not in held_card_ids]
 
+    # Filter out cards on cooldown (recently sold at a loss — don't re-buy falling knives)
+    from server.models.virtual_trade import VirtualTrade
+    COOLDOWN_DAYS_LOSS = 60    # 2 months cooldown after selling at a loss
+    COOLDOWN_DAYS_NEUTRAL = 14 # 2 weeks cooldown after any sell
+    MAX_LOSSES_PER_CARD = 2    # Ban card after 2 losses
+    cooldown_cutoff_loss = datetime.now(timezone.utc) - timedelta(days=COOLDOWN_DAYS_LOSS)
+    cooldown_cutoff_neutral = datetime.now(timezone.utc) - timedelta(days=COOLDOWN_DAYS_NEUTRAL)
+
+    # Get recently sold card IDs with loss
+    recent_loss_sells = (
+        db.query(VirtualTrade.card_id)
+        .filter(
+            VirtualTrade.portfolio_id == portfolio_id,
+            VirtualTrade.side == "sell",
+            VirtualTrade.executed_at >= cooldown_cutoff_loss,
+            VirtualTrade.realized_pnl < 0,
+        )
+        .distinct()
+        .all()
+    )
+    loss_cooldown_ids = {r[0] for r in recent_loss_sells}
+
+    # Get any recently sold card IDs (even at profit — avoid churn)
+    recent_any_sells = (
+        db.query(VirtualTrade.card_id)
+        .filter(
+            VirtualTrade.portfolio_id == portfolio_id,
+            VirtualTrade.side == "sell",
+            VirtualTrade.executed_at >= cooldown_cutoff_neutral,
+        )
+        .distinct()
+        .all()
+    )
+    neutral_cooldown_ids = {r[0] for r in recent_any_sells}
+
+    # Cards with too many historical losses — permanently banned
+    from sqlalchemy import func as sqlfunc
+    repeat_losers = (
+        db.query(VirtualTrade.card_id)
+        .filter(
+            VirtualTrade.portfolio_id == portfolio_id,
+            VirtualTrade.side == "sell",
+            VirtualTrade.realized_pnl < 0,
+        )
+        .group_by(VirtualTrade.card_id)
+        .having(sqlfunc.count(VirtualTrade.id) >= MAX_LOSSES_PER_CARD)
+        .all()
+    )
+    banned_ids = {r[0] for r in repeat_losers}
+
+    # Also block cards being sold this cycle
+    cooldown_ids = loss_cooldown_ids | neutral_cooldown_ids | selling_card_ids | banned_ids
+    buy_signals = [s for s in buy_signals if s["card_id"] not in cooldown_ids]
+
+    if cooldown_ids:
+        logger.info("Cooldown active: %d cards blocked from re-buy (%d loss, %d neutral, %d selling)",
+                     len(cooldown_ids), len(loss_cooldown_ids), len(neutral_cooldown_ids), len(selling_card_ids))
+
     # Only buy signals above threshold
     buy_signals = [s for s in buy_signals if s.get("composite_score", 0) >= 55]
 

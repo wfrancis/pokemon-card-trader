@@ -1212,11 +1212,19 @@ class BacktestPosition:
 class BacktestPortfolio:
     """In-memory portfolio for backtesting. No database writes."""
 
+    COOLDOWN_DAYS_LOSS = 60    # 2 months after selling at a loss
+    COOLDOWN_DAYS_NEUTRAL = 14 # 2 weeks after any sell
+    MAX_LOSSES_PER_CARD = 2    # Ban a card after 2 losing trades
+
     def __init__(self, starting_capital: float):
         self.starting_capital = starting_capital
         self.cash = starting_capital
         self.positions: dict[int, BacktestPosition] = {}  # card_id -> position
         self.trades: list[dict] = []
+        # Cooldown tracking: card_id -> (sell_date, was_loss)
+        self._sell_cooldowns: dict[int, tuple[date, bool]] = {}
+        # Loss counter: card_id -> number of losing trades
+        self._loss_counts: dict[int, int] = {}
         self.equity_curve: list[dict] = []
         self.high_water_mark = starting_capital
 
@@ -1341,7 +1349,24 @@ class BacktestPortfolio:
             "hold_days": (sim_date - pos.entry_date).days,
         }
         self.trades.append(trade)
+
+        # Record cooldown and loss count
+        self._sell_cooldowns[card_id] = (sim_date, realized_pnl < 0)
+        if realized_pnl < 0:
+            self._loss_counts[card_id] = self._loss_counts.get(card_id, 0) + 1
+
         return trade
+
+    def is_on_cooldown(self, card_id: int, sim_date: date) -> bool:
+        """Check if a card is on cooldown (recently sold or too many losses)."""
+        # Permanent ban after too many losses on this card
+        if self._loss_counts.get(card_id, 0) >= self.MAX_LOSSES_PER_CARD:
+            return True
+        if card_id not in self._sell_cooldowns:
+            return False
+        sell_date, was_loss = self._sell_cooldowns[card_id]
+        cooldown_days = self.COOLDOWN_DAYS_LOSS if was_loss else self.COOLDOWN_DAYS_NEUTRAL
+        return (sim_date - sell_date).days < cooldown_days
 
     def get_value(self, current_prices: dict[int, float]) -> float:
         """Total portfolio value = cash + sum(position_value)."""
@@ -1758,9 +1783,13 @@ async def run_prop_backtest(
             price_cache, sim_date, min_price, min_liquidity_score, active_strategies,
         )
 
-        # Filter out cards we already hold
+        # Filter out cards we already hold or on cooldown
         held_card_ids = set(portfolio.positions.keys())
-        buy_signals = [s for s in buy_signals if s["card_id"] not in held_card_ids]
+        buy_signals = [
+            s for s in buy_signals
+            if s["card_id"] not in held_card_ids
+            and not portfolio.is_on_cooldown(s["card_id"], sim_date)
+        ]
 
         # Phase 3: Execute top buys (respecting limits)
         buys_executed = 0
